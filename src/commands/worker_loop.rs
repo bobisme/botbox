@@ -50,12 +50,19 @@ impl WorkerLoop {
         }
 
         // Apply config [env] vars to our own process so tools we invoke (cargo, etc.) inherit them
-        for (k, v) in config.resolved_env() {
+        let resolved_env = config.resolved_env();
+        for (k, v) in &resolved_env {
             // SAFETY: single-threaded at startup
             unsafe {
-                std::env::set_var(&k, &v);
+                std::env::set_var(k, v);
             }
         }
+
+        // Emit startup diagnostic for build-related env vars.
+        // This confirms whether vars from .botbox.toml [env] actually reach
+        // the process where cargo runs, helping diagnose OOM issues from
+        // unthrottled parallel builds in multi-agent setups.
+        emit_build_env_diagnostic(&resolved_env);
 
         // Project name from config
         let project = config.channel();
@@ -495,6 +502,68 @@ pub enum LoopStatus {
     Complete,
     Blocked,
     Unknown,
+}
+
+/// Emit startup diagnostic for build-related environment variables.
+///
+/// Logs the effective values of CARGO_BUILD_JOBS, RUSTC_WRAPPER, and SCCACHE_DIR
+/// to stderr. These vars control cargo parallelism and caching — critical for
+/// preventing OOM when multiple agents build concurrently.
+///
+/// Warns if any of these vars are unset or empty, which could indicate that
+/// the .botbox.toml [env] configuration isn't reaching the build process.
+fn emit_build_env_diagnostic(config_env: &std::collections::HashMap<String, String>) {
+    use std::env;
+
+    const BUILD_VARS: &[(&str, &str)] = &[
+        ("CARGO_BUILD_JOBS", "limits parallel rustc processes"),
+        ("RUSTC_WRAPPER", "enables sccache for build caching"),
+        ("SCCACHE_DIR", "sccache cache directory"),
+    ];
+
+    eprintln!("--- build env diagnostic ---");
+
+    let mut any_missing = false;
+    for &(var, purpose) in BUILD_VARS {
+        let effective = env::var(var).ok().filter(|v| !v.is_empty());
+        let from_config = config_env.get(var);
+
+        match (&effective, from_config) {
+            (Some(val), Some(cfg_val)) if val == cfg_val => {
+                eprintln!("  {var}={val} (from config)");
+            }
+            (Some(val), Some(cfg_val)) => {
+                // Value exists but differs from config — inherited from parent process
+                // or overridden by botty spawn --env flag
+                eprintln!("  {var}={val} (effective; config has {cfg_val})");
+            }
+            (Some(val), None) => {
+                // Not in config but set in environment (from botty spawn --env or parent)
+                eprintln!("  {var}={val} (from environment, not in config)");
+            }
+            (None, Some(cfg_val)) => {
+                // This shouldn't happen since we just applied config env, but
+                // log it for completeness
+                eprintln!("  {var}=<unset> (config has {cfg_val}, failed to apply?)");
+                any_missing = true;
+            }
+            (None, None) => {
+                eprintln!("  {var}=<unset> — warning: {purpose}");
+                any_missing = true;
+            }
+        }
+    }
+
+    if any_missing {
+        eprintln!(
+            "  ⚠ Some build env vars are unset. Consider adding them to .botbox.toml [env]"
+        );
+        eprintln!(
+            "    to prevent OOM from unthrottled parallel builds in multi-agent setups."
+        );
+    }
+
+    eprintln!("--- end build env diagnostic ---");
 }
 
 /// Load config from .botbox.toml or .botbox.json using the canonical priority
@@ -1040,5 +1109,24 @@ mod tests {
         assert!(is_rate_limit_error("resource_exhausted"));
         assert!(!is_rate_limit_error("normal error"));
         assert!(!is_rate_limit_error("exit code 1"));
+    }
+
+    #[test]
+    fn build_env_diagnostic_does_not_panic() {
+        // The diagnostic function should handle all combinations of
+        // set/unset vars without panicking. It writes to stderr only.
+        let mut config_env = std::collections::HashMap::new();
+        config_env.insert("CARGO_BUILD_JOBS".to_string(), "2".to_string());
+        // RUSTC_WRAPPER not in config, SCCACHE_DIR not in config
+
+        // Should not panic regardless of env state
+        emit_build_env_diagnostic(&config_env);
+    }
+
+    #[test]
+    fn build_env_diagnostic_with_empty_config() {
+        let config_env = std::collections::HashMap::new();
+        // All vars unset + empty config = should emit warnings without panic
+        emit_build_env_diagnostic(&config_env);
     }
 }
