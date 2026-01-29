@@ -33,8 +33,12 @@ br create --title="Add hello world endpoint" \
   --type=task --priority=2
 
 # Note: Use fixed template repo (not random code generation) to reduce variance
-# Template repo could have: package.json, basic server stub, test framework setup
+# Template repo must be strictly versioned/committed for reproducibility
+# Template could have: package.json, basic server stub, test framework setup
+# Consider: botbox-eval-templates repo with tagged versions
 ```
+
+**Critical dependency (per gemini feedback)**: Template repo must be strictly versioned to ensure true reproducibility across eval runs.
 
 **Note on dependencies:** `br create` does not have `--depends-on` flag. Use `br dep add <child> <parent>` after creating both beads.
 
