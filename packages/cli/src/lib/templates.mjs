@@ -48,6 +48,7 @@ const DOC_DESCRIPTIONS = {
   "merge-check.md": "Verify approval before merge",
   "preflight.md": "Validate toolchain health",
   "report-issue.md": "Report bugs/features to other projects",
+  "ux-test.md": "Test agent comprehension of workflow docs",
 }
 
 /**
