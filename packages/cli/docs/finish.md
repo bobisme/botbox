@@ -1,6 +1,8 @@
 # Finish
 
-Mandatory teardown after completing work on a bead. Never skip this, even on failure paths.
+**Mandatory teardown** after completing work on a bead. Never skip this, even on failure paths.
+
+All steps below are required — they clean up resources, prevent workspace leaks, and ensure the bead ledger stays synchronized.
 
 ## Arguments
 
@@ -12,7 +14,8 @@ Mandatory teardown after completing work on a bead. Never skip this, even on fai
 1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user.
 2. Add a completion comment to the bead: `br comments add <bead-id> "Completed by $AGENT"`
 3. Close the bead: `br close <bead-id> --reason="Completed" --suggest-next`
-4. Merge and destroy the workspace: `maw ws merge $AGENT --destroy -f`
+4. **Merge and destroy the workspace**: `maw ws merge $AGENT --destroy -f`
+   - The `--destroy` flag is required — it cleans up the workspace after merging
    - If merge fails due to conflicts, do NOT destroy. Instead add a comment: `br comments add <bead-id> "Merge conflict — workspace preserved for manual resolution"` and announce the conflict in the project channel.
 5. Release all claims held by this agent: `botbus release --agent $AGENT --all`
 6. Sync the beads ledger: `br sync --flush-only`

@@ -28,7 +28,9 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 
 - Read the bead details: `br show <bead-id>`
 - Do the work using the tools available in the workspace.
-- Periodically add progress comments: `br comments add <bead-id> "Progress: ..."`
+- **Add at least one progress comment** during work: `br comments add <bead-id> "Progress: ..."`
+  - Post when you've made meaningful progress or hit a milestone
+  - Essential for visibility and debugging if something goes wrong
 
 ### 4. Stuck check — recognize when you are stuck
 

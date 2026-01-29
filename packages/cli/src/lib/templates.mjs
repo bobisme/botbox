@@ -40,7 +40,7 @@ ${MANAGED_END}
 const DOC_DESCRIPTIONS = {
   "triage.md": "Find work from inbox and beads",
   "start.md": "Claim bead, create workspace, announce",
-  "update.md": "Post status updates",
+  "update.md": "Change bead status (open/in_progress/blocked/done)",
   "finish.md": "Close bead, merge workspace, release claims, sync",
   "worker-loop.md": "Full triage-work-finish lifecycle",
   "review-request.md": "Request a review",
@@ -74,6 +74,10 @@ Generate one with \`botbus generate-name\` or accept one from the caller.
 
 ### Lifecycle
 
+**New to the workflow?** Start with [worker-loop.md](.agents/botbox/worker-loop.md) — it covers the complete triage → start → work → finish cycle.
+
+Individual workflow docs:
+
 ${lifecycleLinks}
 
 ### Quick Start
@@ -94,7 +98,7 @@ br ready
 ### Mesh Protocol
 
 - Include \`-L mesh\` on botbus messages.
-- Claim before edit: \`botbus claim --agent $AGENT "path/**" -m "<bead-id>: task summary"\`.
+- Claim before edit: \`botbus claim --agent $AGENT "file://$BOTBOX_PROJECT/path/**" -m "<bead-id>: task summary"\`.
 - Claim agents before spawning: \`botbus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
 - Release claims when done: \`botbus release --agent $AGENT --all\`.
 

@@ -248,11 +248,18 @@ Agent runs worker-loop continuously (or on schedule). Observe over 10+ iteration
 - ~~Implement **Level 2: Task Execution Eval** with **automated grading harness**~~ ✅ Done
   - ✅ Used real tools (botbus, br, maw, crit)
   - ✅ Automated scoring via tool outputs (see Verification Methods above)
-  - ✅ First run: 92/92 perfect score — AGENTS.md works!
-- **Next**: Run 3-5 more evals to establish baseline variance
-  - Test different task types (bug fix, refactor, new feature)
-  - Test different agent models (if available)
-  - Document success rate and common patterns
+  - ✅ Run 1 (Opus): 92/92 perfect score
+  - ✅ Run 2 (Sonnet): 81/92 (88%) — all critical steps, some optional gaps
+- **Workflow doc improvements** (2026-01-29, based on eval results):
+  - Fixed claim format: `"path/**"` → `"file://$BOTBOX_PROJECT/path/**"` (start.md, templates.mjs)
+  - Emphasized progress comments: "at least one during work" (worker-loop.md)
+  - Clarified update.md: "status updates" → "change bead status" to avoid confusion with progress comments
+  - Emphasized workspace cleanup: made `--destroy` flag importance clear (finish.md)
+  - Added pointer to worker-loop.md as canonical workflow in managed section
+  - All changes merged, version hash: 14e15a9821fe
+- **Next**: Run 2-3 more evals with improved docs to validate improvements
+  - Test if Sonnet score improves with clearer docs
+  - Document new baseline
 
 **Phase 2** (Later):
 - **Comparative eval**: Current docs vs **minimal only** (reduce runs, focus on value)
