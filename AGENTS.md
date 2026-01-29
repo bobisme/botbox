@@ -6,9 +6,8 @@ Botbox is a setup and sync tool for multi-agent workflows. It is NOT a runtime �
 
 ```
 packages/cli/       @botbox/cli — the main CLI (commander + inquirer)
+packages/cli/docs/  Workflow docs (source of truth, bundled with npm package)
 packages/botbox/    botbox — npm alias that re-exports @botbox/cli
-draft/              Workflow doc drafts (source of truth for content)
-packages/cli/docs/  Bundled copies of draft/ docs shipped with the CLI
 scripts/            agent-loop.sh and other shell scripts
 .beads/             Issue tracker (beads)
 ```
@@ -51,13 +50,12 @@ Key modules:
 
 ## Workflow Docs
 
-The `draft/` directory contains the source-of-truth workflow docs. These get copied into `packages/cli/docs/` for bundling with the npm package. When `botbox init` runs in a target project, they're copied into `.agents/botbox/` and referenced from the generated AGENTS.md.
+Workflow docs live in `packages/cli/docs/` and are bundled with the npm package. When `botbox init` runs in a target project, they're copied into `.agents/botbox/` and referenced from the generated AGENTS.md.
 
 To add or edit a workflow doc:
-1. Edit the file in `draft/`
-2. Copy the updated file to `packages/cli/docs/`
-3. Run `bun test` to verify the version hash changes and tests pass
-4. Update the description map in `renderManagedSection()` if adding a new doc
+1. Edit the file in `packages/cli/docs/`
+2. Run `bun test` to verify the version hash changes and tests pass
+3. Update the description map in `renderManagedSection()` if adding a new doc
 
 ## Beads
 
