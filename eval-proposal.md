@@ -204,13 +204,21 @@ Agent runs worker-loop continuously (or on schedule). Observe over 10+ iteration
 ## Recommended Next Steps
 
 **Phase 1** (Now):
-- Implement **Level 2: Task Execution Eval** with manual grading
+- Implement **Level 2: Task Execution Eval** with **automated grading harness**
+  - Use **real tools** (botbus, br, maw, crit) — not mocks
+  - Automate scoring via tool outputs:
+    - `botbus inbox --all --mark-read` + parse JSON for protocol messages
+    - `br audit` / `br history` for bead state transitions
+    - `maw ws status` / `maw ws merge` for workspace lifecycle
+    - `crit status` for review participation
+  - Log all botbus/crit outputs in JSON/TOON format for scoring
+  - Weight protocol compliance heavily (70%)
 - Run 3-5 evals, document findings
 - Iterate on AGENTS.md based on behavioral gaps
 
 **Phase 2** (Later):
-- Automate grading for Level 2 (parse agent output, check for protocol markers)
-- Build test harness: mock botbus/beads, deterministic task setup
+- **Comparative eval**: Current docs vs **minimal only** (reduce runs, focus on value)
+- Refine grading automation based on Phase 1 learnings
 
 **Phase 3** (Future):
 - **Level 4: Multi-Agent** eval to validate cross-project workflow
@@ -220,24 +228,28 @@ Agent runs worker-loop continuously (or on schedule). Observe over 10+ iteration
 
 ## Open Questions
 
-1. **Mock vs Real Tools**: Should we mock botbus/beads for eval, or use real instances?
-   - Mock: Faster, cheaper, deterministic
-   - Real: More realistic, catches integration issues
+1. **Mock vs Real Tools**: ~~Should we mock botbus/beads for eval, or use real instances?~~
+   - **Decision**: Use real tools (per codex feedback)
+   - Rationale: More realistic, enables automated grading via tool outputs
 
-2. **Grading Automation**: How much can we automate?
-   - Parse agent output for keywords (`br ready`, `botbus claim`, etc.)
-   - Check filesystem state (workspace created, files changed)
-   - Query botbus/beads for expected state changes
+2. **Grading Automation**: ~~How much can we automate?~~
+   - **Decision**: Automate via tool outputs (per codex feedback)
+   - Approach:
+     - `botbus inbox --all` — check for protocol messages (claim, announce, update, finish)
+     - `br audit` / `br history` — verify bead state transitions
+     - `maw ws status` / `maw ws merge` — check workspace lifecycle
+     - `crit status` — verify review participation
+     - Log outputs in JSON/TOON for scoring
 
 3. **Task Complexity**: How complex should eval tasks be?
    - Too simple: Agent might succeed without following protocol
    - Too complex: Hard to grade, expensive
    - Sweet spot: ~10-turn task, requires 2-3 workflow steps
 
-4. **Baseline**: What's the comparison?
-   - Without AGENTS.md? (to prove value)
-   - With alternate doc structures? (to optimize)
-   - Across model versions? (to track capability)
+4. **Baseline**: ~~What's the comparison?~~
+   - **Decision**: Current docs vs minimal only (per codex feedback)
+   - Rationale: Reduces runs needed, focuses on value validation
+   - Other comparisons (model versions, no-docs) can come later
 
 5. **Pass/Fail Threshold**: What's acceptable?
    - 100% protocol compliance? (unrealistic)
