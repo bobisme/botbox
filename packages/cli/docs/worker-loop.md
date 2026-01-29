@@ -6,13 +6,14 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 
 ## Loop
 
-### 1. Triage — find exactly one small task (always run this, even if you already know what to work on)
+### 1. Triage — find and groom work, then pick one small task (always run this, even if you already know what to work on)
 
 - Check inbox: `botbus inbox --agent $AGENT --all --mark-read`
 - For messages that request work, create beads: `br create --title="..." --description="..." --type=task --priority=2`
 - For questions or status checks, reply directly: `botbus send --agent $AGENT <channel> "<reply>" -L mesh -L triage-reply`
 - Check ready beads: `br ready`
 - If no ready beads and no new beads from inbox, stop with message "No work available."
+- **Groom each ready bead** (`br show <id>`): ensure it has a clear title, description with acceptance criteria and testing strategy, appropriate priority, and labels. Fix anything missing and comment what you changed.
 - Pick one task: `bv --robot-next` — parse the JSON to get the bead ID.
 - If the task is large (epic or multi-step), break it into smaller beads with `br create` + `br dep add`, then run `bv --robot-next` again. Repeat until you have exactly one small, atomic task.
 - If the bead is claimed by another agent (`botbus check-claim --agent $AGENT "bead://$BOTBOX_PROJECT/<id>"`), skip it and pick the next recommendation. If all are claimed, stop with "No work available."

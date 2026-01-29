@@ -24,19 +24,27 @@ EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
 botbox init --name eval-project --type api --tools beads,maw,crit,botbus,botty --no-interactive
 
-# Use deterministic seed for bead IDs
-export BR_TEST_SEED=12345
-
-# Create minimal reproducible task
-br create --title="Add hello world endpoint" \
-  --description="Create a /hello endpoint that returns {\"message\": \"hello world\"}. Use whatever web framework makes sense." \
+# Seed multiple beads of varying quality to test triage + grooming
+# Bead 1: Well-specified (clear title, description, acceptance criteria)
+br create --title="Add echo endpoint" \
+  --description="Create POST /echo endpoint that returns the request body with an added received_at timestamp. Use Express or similar. Tests: verify JSON round-trip, verify timestamp added, verify 400 on non-JSON body." \
   --type=task --priority=2
 
-# Note: Use fixed template repo (not random code generation) to reduce variance
-# Template repo must be strictly versioned/committed for reproducibility
-# Template could have: package.json, basic server stub, test framework setup
-# Consider: botbox-eval-templates repo with tagged versions
+# Bead 2: Poorly specified (vague, missing context — agent must groom before starting)
+br create --title="fix the health thing" \
+  --description="it's broken" \
+  --type=bug --priority=1
+
+# Bead 3: Reasonable but missing acceptance criteria
+br create --title="Add request logging middleware" \
+  --description="Log incoming requests with method, path, status code, and duration." \
+  --type=task --priority=3
 ```
+
+**Why multiple beads?** Single-bead evals hide triage behavior — the agent can skip triage and jump straight to work. Multiple beads (with varying quality) force the agent to:
+1. Run `br ready` / `bv --robot-next` (observable)
+2. Groom poorly-specified beads (observable via bead comments and field changes)
+3. Make a prioritization decision (observable via which bead they pick)
 
 **Critical dependency (per gemini feedback)**: Template repo must be strictly versioned to ensure true reproducibility across eval runs.
 
@@ -62,10 +70,13 @@ Let them run for N turns or until they say "done."
 
 *Optional steps (bonus points):*
 - [ ] Generated agent identity (`botbus generate-name`)
-- [ ] Ran triage workflow (`br ready`, picked a bead)
-- [ ] Created workspace if using maw
-- [ ] Posted updates during work
+- [ ] Ran triage workflow (`br ready`, picked a bead via `bv --robot-next`)
+- [ ] Groomed beads during triage (fixed titles, descriptions, acceptance criteria, priorities)
+- [ ] Created workspace with `maw ws create --random`
+- [ ] Worked from workspace path (`.workspaces/$WS/`)
+- [ ] Posted progress updates during work
 - [ ] Announced on botbus (`-L mesh`)
+- [ ] Destroyed workspace on finish (`maw ws merge --destroy`)
 
 **Work Quality (20% weight):**
 - [ ] Actually completed the task (endpoint exists, works)
@@ -78,12 +89,12 @@ Let them run for N turns or until they say "done."
 
 **Scoring Rubric:**
 - Critical steps: 10 points each (50 points total)
-- Optional steps: 2 points each (12 points available)
+- Optional steps: 2 points each (16 points available)
 - Work quality: 20 points
 - Error handling: 10 points
-- **Total**: 92 points possible
-- **Pass threshold**: ≥70 points (76%)
-- **Excellent**: ≥85 points (92%)
+- **Total**: 96 points possible
+- **Pass threshold**: ≥70 points (73%)
+- **Excellent**: ≥85 points (89%)
 
 **Verification Methods** (automated via tool outputs):
 - **Bead state**: `br show <id>` or `sqlite3 .beads/beads.db "SELECT status, closed_at FROM issues WHERE id='<id>'"`
