@@ -1,0 +1,18 @@
+{
+  "name": "botbox",
+  "version": "0.0.1",
+  "description": "Setup and sync tool for botbox multi-agent workflows",
+  "type": "module",
+  "bin": {
+    "botbox": "./index.mjs"
+  },
+  "dependencies": {
+    "@botbox/cli": "0.0.1"
+  },
+  "keywords": ["botbox", "agents", "multi-agent", "workflow"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/botbox/botbox"
+  }
+}

@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Botbox</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>botbox</h1>
+      <p>Chat-first, decentralized tooling for multi-agent software work.</p>
+      <p>
+        <em
+          >No hierarchy. No single coordinator. Agents claim work, spawn peers,
+          and review through shared logs.</em
+        >
+      </p>
+    </header>
+
+    <main>
+      <section>
+        <h2>stack</h2>
+        <dl>
+          <dt><a href="botbus.html">botbus</a></dt>
+          <dd>communication, claims, and agent presence.</dd>
+          <dt><a href="maw.html">maw</a></dt>
+          <dd>isolated workspaces (jj) per agent.</dd>
+          <dt><a href="beads.html">beads</a></dt>
+          <dd>work tracking ledger.</dd>
+          <dt><a href="botcrit.html">botcrit</a></dt>
+          <dd>reviews as event streams.</dd>
+          <dt><a href="botty.html">botty</a></dt>
+          <dd>runtime for spawning agents.</dd>
+        </dl>
+      </section>
+
+      <section>
+        <h2>workflow</h2>
+        <ol>
+          <li>Create/claim a bead.</li>
+          <li>Claim files + spawn a workspace.</li>
+          <li>Work in isolation, post updates.</li>
+          <li>Request reviews, spawn reviewers if needed.</li>
+          <li>Merge and release claims.</li>
+        </ol>
+      </section>
+
+      <section>
+        <h2>conventions</h2>
+        <ul>
+          <li>Chat stays human-readable; labels mark events.</li>
+          <li>Claims auto-announce to <code>#general</code>.</li>
+          <li>Project channels imply scope.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>quick start</h2>
+        <pre><code>export BOTBUS_AGENT=$(botbus generate-name)
+br ready
+botbus agents</code></pre>
+      </section>
+
+      <section>
+        <h2>install</h2>
+        <ul>
+          <li>
+            Get the CLIs: <code>botbus</code>, <code>maw</code>,
+            <code>beads</code> (br/bv), <code>botcrit</code>,
+            <code>botty</code>.
+          </li>
+          <li>
+            Ensure <code>jj</code> + <code>git</code> are available for
+            workspaces.
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>first read</h2>
+        <ul>
+          <li>
+            <a
+              href="https://raw.githubusercontent.com/bobisme/ai-docs/main/agents/AGENTS.multi-agent.md"
+              >agents template</a
+            >
+          </li>
+          <li>
+            <a
+              href="https://raw.githubusercontent.com/bobisme/ai-docs/main/agents/mesh-protocol.md"
+              >mesh protocol doc</a
+            >
+          </li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>merge</h2>
+        <p>
+          Merge means integrate agent work into the main workspace via git/jj
+          following repo rules.
+        </p>
+      </section>
+
+      <section>
+        <h2>example</h2>
+        <pre><code>br create --title="Fix cache" --description="..."
+botbus claim "bead://proj/bd-123" -m "bd-123"
+maw ws create agent-bd-123
+botbus send myproj "Working on bd-123" -L mesh -L task-claim
+crit reviews create
+botbus send myproj "Review requested: cr-9ab1" -L mesh -L review-request</code></pre>
+      </section>
+    </main>
+
+    <footer>
+      <h2>docs</h2>
+      <nav>
+        <a href="https://raw.githubusercontent.com/bobisme/ai-docs/main/agents/AGENTS.multi-agent.md"
+          >agents template</a
+        >
+        /
+        <a href="https://raw.githubusercontent.com/bobisme/ai-docs/main/agents/mesh-protocol.md"
+          >mesh protocol</a
+        >
+      </nav>
+    </footer>
+  </body>
+</html>

@@ -1,0 +1,148 @@
+import { listWorkflowDocs } from "./docs.mjs"
+
+const MANAGED_START = "<!-- botbox:managed-start -->"
+const MANAGED_END = "<!-- botbox:managed-end -->"
+
+/**
+ * @typedef {object} ProjectConfig
+ * @property {string} name
+ * @property {string} type
+ * @property {string[]} tools
+ * @property {string[]} reviewers
+ */
+
+/**
+ * Render a full AGENTS.md for a new project.
+ * @param {ProjectConfig} config
+ * @returns {string}
+ */
+export function renderAgentsMd(config) {
+  const toolList = config.tools.map((t) => `\`${t}\``).join(", ")
+  const reviewerLine =
+    config.reviewers.length > 0
+      ? `\nReviewer roles: ${config.reviewers.join(", ")}`
+      : ""
+
+  return `# ${config.name}
+
+Project type: ${config.type}
+Tools: ${toolList}${reviewerLine}
+
+<!-- Add project-specific context below: architecture, conventions, key files, etc. -->
+
+${MANAGED_START}
+${renderManagedSection()}
+${MANAGED_END}
+`
+}
+
+/** @type {Record<string, string>} */
+const DOC_DESCRIPTIONS = {
+  "triage.md": "Find work from inbox and beads",
+  "start.md": "Claim bead, create workspace, announce",
+  "update.md": "Post status updates",
+  "finish.md": "Close bead, merge workspace, release claims, sync",
+  "worker-loop.md": "Full triage-work-finish lifecycle",
+  "review-request.md": "Request a review",
+  "review-loop.md": "Reviewer agent loop",
+  "merge-check.md": "Verify approval before merge",
+  "preflight.md": "Validate toolchain health",
+}
+
+/**
+ * Render the managed section content.
+ * @returns {string}
+ */
+function renderManagedSection() {
+  let lifecycleLinks = listWorkflowDocs()
+    .sort()
+    .map((doc) => {
+      let desc = DOC_DESCRIPTIONS[doc] ?? doc.replace(".md", "")
+      return `- [${desc}](.agents/botbox/${doc})`
+    })
+    .join("\n")
+
+  return `## Botbox Workflow
+
+This project uses the botbox multi-agent workflow.
+
+### Identity
+
+Every command that touches botbus or crit requires \`--agent <name>\`.
+Generate one with \`botbus generate-name\` or accept one from the caller.
+
+### Lifecycle
+
+${lifecycleLinks}
+
+### Quick Start
+
+\`\`\`bash
+AGENT=$(botbus generate-name)
+botbus whoami --agent $AGENT
+br ready
+\`\`\`
+
+### Beads Conventions
+
+- Create a bead for each unit of work before starting.
+- Update status as you progress: \`open\` → \`in_progress\` → \`closed\`.
+- Reference bead IDs in all botbus messages.
+- Sync on session end: \`br sync --flush-only\`.
+
+### Mesh Protocol
+
+- Include \`-L mesh\` on botbus messages.
+- Claim before edit: \`botbus claim --agent $AGENT "path/**" -m "<bead-id>: task summary"\`.
+- Claim agents before spawning: \`botbus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
+- Release claims when done: \`botbus release --agent $AGENT --all\`.
+
+### Spawning Agents
+
+1. Check if the role is online: \`botbus agents\`.
+2. Claim the agent lease: \`botbus claim --agent $AGENT "agent://role"\`.
+3. Spawn with an explicit identity (e.g., via botty or agent-loop.sh).
+4. Announce with \`-L spawn-ack\`.
+
+### Reviews
+
+- Use \`crit\` to open and request reviews.
+- If a reviewer is not online, claim \`agent://reviewer-<role>\` and spawn them.
+- Reviewer agents loop until no pending reviews remain (see review-loop doc).
+
+### Stack Reference
+
+| Tool | Purpose | Key commands |
+|------|---------|-------------|
+| botbus | Communication, claims, presence | \`send\`, \`inbox\`, \`claim\`, \`release\`, \`agents\` |
+| maw | Isolated jj workspaces | \`ws create\`, \`ws merge\`, \`ws destroy\` |
+| br/bv | Work tracking + triage | \`ready\`, \`create\`, \`close\`, \`--robot-next\` |
+| crit | Code review | \`review\`, \`comment\`, \`lgtm\`, \`block\` |
+| botty | Agent runtime | \`spawn\`, \`kill\`, \`tail\`, \`snapshot\` |`
+}
+
+/**
+ * Replace the managed section in an existing AGENTS.md.
+ * @param {string} content
+ * @returns {string}
+ */
+export function updateManagedSection(content) {
+  const startIdx = content.indexOf(MANAGED_START)
+  const endIdx = content.indexOf(MANAGED_END)
+
+  const managed = `${MANAGED_START}\n${renderManagedSection()}\n${MANAGED_END}`
+
+  if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+    // Missing markers, only one marker, or markers out of order — strip any
+    // partial markers and append a clean managed section
+    let cleaned = content
+      .replace(MANAGED_START, "")
+      .replace(MANAGED_END, "")
+      .trimEnd()
+    return `${cleaned}\n\n${managed}\n`
+  }
+
+  const before = content.slice(0, startIdx)
+  const after = content.slice(endIdx + MANAGED_END.length)
+  return `${before}${managed}${after}`
+}

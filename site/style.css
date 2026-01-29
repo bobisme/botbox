@@ -1,0 +1,146 @@
+:root {
+  color-scheme: dark;
+  --bg: #0a0a0a;
+  --text: #e0e0e0;
+  --accent: #00ff9d;
+  --accent-dim: #008f58;
+  --code-bg: #111;
+  --border: #333;
+  --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  line-height: 1.6;
+  margin: 0;
+  padding: 2rem 2rem 2.5rem 4rem;
+  max-width: 860px;
+  margin: 0 auto;
+}
+
+h1,
+h2,
+h3 {
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 2rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.5rem;
+  position: relative;
+}
+
+header h1 {
+  margin-top: 0;
+}
+
+h1::before {
+  content: "# ";
+  color: var(--border);
+  position: absolute;
+  left: -2rem;
+}
+
+h2::before {
+  content: "## ";
+  color: var(--border);
+  position: absolute;
+  left: -2.5rem;
+}
+
+h3::before {
+  content: "### ";
+  color: var(--border);
+  position: absolute;
+  left: -3rem;
+}
+
+dl {
+  display: grid;
+  grid-template-columns: max-content auto;
+  gap: 0.5rem 1rem;
+}
+
+dt {
+  font-weight: bold;
+  color: var(--accent);
+  grid-column: 1;
+}
+
+dt::after {
+  content: " ::";
+  color: var(--border);
+}
+
+dd {
+  margin-left: 0;
+  margin-bottom: 0;
+  grid-column: 2;
+}
+
+pre {
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  padding: 1rem;
+  border-radius: 4px;
+  overflow-x: auto;
+  position: relative;
+  margin-top: 1rem;
+  font-size: 1rem;
+}
+
+pre::before {
+  content: "botbox@terminal:~$";
+  display: block;
+  color: #555;
+  font-size: 0.8rem;
+  margin-bottom: 0.5rem;
+  border-bottom: 1px solid #222;
+  padding-bottom: 0.5rem;
+}
+
+code {
+  font-family: inherit;
+  color: #fff;
+  font-size: 1em;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-dim);
+}
+
+a:hover {
+  background: var(--accent-dim);
+  color: #fff;
+}
+
+ol,
+ul {
+  padding-left: 1.5rem;
+}
+
+li::marker {
+  color: #666;
+}
+
+@media (max-width: 600px) {
+  body {
+    padding: 1rem 1rem 1.5rem 3rem;
+  }
+
+  dl {
+    grid-template-columns: 1fr;
+  }
+
+  dt::after {
+    content: "";
+  }
+
+  dd {
+    margin-bottom: 1rem;
+  }
+}

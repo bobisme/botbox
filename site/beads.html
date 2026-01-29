@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>beads</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>beads</h1>
+      <p>Work tracking ledger with agent-friendly views.</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>key commands</h2>
+        <ul>
+          <li><code>br init</code></li>
+          <li><code>br create --title="..." --description="..."</code></li>
+          <li><code>br update &lt;id&gt; --status=in_progress</code></li>
+          <li><code>br close &lt;id&gt;</code></li>
+          <li><code>bv --robot-triage</code></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>notes</h2>
+        <ul>
+          <li>Do not edit <code>.beads/issues.jsonl</code> by hand.</li>
+          <li>Use bv robot commands for planning and priority.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <nav><a href="index.html">back to botbox</a></nav>
+    </footer>
+  </body>
+</html>

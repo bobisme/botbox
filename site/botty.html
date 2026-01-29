@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>botty</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header>
+      <h1>botty</h1>
+      <p>Spawn and monitor agent runtimes.</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>key commands</h2>
+        <ul>
+          <li><code>botty spawn --name agent-1 -- claude -p</code></li>
+          <li><code>botty wait agent-1 --contains "DONE"</code></li>
+          <li><code>botty snapshot agent-1</code></li>
+          <li><code>botty kill -9 agent-1</code></li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>notes</h2>
+        <ul>
+          <li>Prefer <code>wait</code> + <code>snapshot</code> for clean output.</li>
+          <li>Use <code>--name</code> for readable agent ids.</li>
+        </ul>
+      </section>
+    </main>
+
+    <footer>
+      <nav><a href="index.html">back to botbox</a></nav>
+    </footer>
+  </body>
+</html>
