@@ -47,6 +47,7 @@ const DOC_DESCRIPTIONS = {
   "review-loop.md": "Reviewer agent loop",
   "merge-check.md": "Verify approval before merge",
   "preflight.md": "Validate toolchain health",
+  "report-issue.md": "Report bugs/features to other projects",
 }
 
 /**
@@ -109,6 +110,17 @@ br ready
 - Use \`crit\` to open and request reviews.
 - If a reviewer is not online, claim \`agent://reviewer-<role>\` and spawn them.
 - Reviewer agents loop until no pending reviews remain (see review-loop doc).
+
+### Cross-Project Feedback
+
+When you encounter issues with tools from other projects:
+
+1. Query the \`#projects\` registry: \`botbus inbox --agent $AGENT --channels projects --all\`
+2. Find the project entry (format: \`project:<name> repo:<path> lead:<agent> tools:<tool1>,<tool2>\`)
+3. Navigate to the repo, create beads with \`br create\`
+4. Post to the project channel: \`botbus send <project> "Filed beads: <ids>. <summary> @<lead>" -L feedback\`
+
+See [report-issue.md](.agents/botbox/report-issue.md) for details.
 
 ### Stack Reference
 

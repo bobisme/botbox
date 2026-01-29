@@ -12,6 +12,10 @@ Find exactly one actionable bead, or determine there is no work available.
 2. Check inbox for new messages:
    - `botbus inbox --agent $AGENT --all --mark-read`
    - For each message that requests work (task request, bug report, feature ask), create a bead: `br create --title="..." --description="..." --type=task --priority=2`
+   - For messages with `-L feedback` (reports from other agents):
+     - Review the mentioned bead IDs with `br show <bead-id>`
+     - Triage the beads (accept, adjust priority, close if duplicate/out-of-scope)
+     - Respond on botbus: `botbus send --agent $AGENT <channel> "Triaged N beads: <summary> @<reporter-agent>" -L mesh -L triage-reply`
    - For messages that are questions or status checks, reply inline: `botbus send --agent $AGENT <channel> "<response>" -L mesh -L triage-reply`
 3. Check for ready beads: `br ready`
    - If no ready beads exist and no inbox messages created new beads, output `NO_WORK_AVAILABLE` and stop.

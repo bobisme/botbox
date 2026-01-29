@@ -66,6 +66,7 @@ Workflow docs live in `packages/cli/docs/` and are bundled with the npm package.
 | [review-loop.md](packages/cli/docs/review-loop.md) | Reviewer agent loop until no pending reviews |
 | [merge-check.md](packages/cli/docs/merge-check.md) | Verify approval before merging |
 | [preflight.md](packages/cli/docs/preflight.md) | Validate toolchain health before starting work |
+| [report-issue.md](packages/cli/docs/report-issue.md) | Report bugs/features to other projects via #projects registry |
 
 ### When to update docs
 

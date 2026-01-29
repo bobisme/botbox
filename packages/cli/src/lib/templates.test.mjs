@@ -150,6 +150,19 @@ describe("renderAgentsMd", () => {
     expect(result).toContain("crit")
     expect(result).toContain("agent://reviewer-")
   })
+
+  test("managed section contains cross-project feedback", () => {
+    let result = renderAgentsMd({
+      name: "test",
+      type: "api",
+      tools: [],
+      reviewers: [],
+    })
+    expect(result).toContain("### Cross-Project Feedback")
+    expect(result).toContain("#projects")
+    expect(result).toContain("report-issue.md")
+    expect(result).toContain("-L feedback")
+  })
 })
 
 describe("updateManagedSection", () => {
