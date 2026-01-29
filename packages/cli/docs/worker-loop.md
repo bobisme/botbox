@@ -6,7 +6,7 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 
 ## Loop
 
-### 1. Triage — find exactly one small task
+### 1. Triage — find exactly one small task (always run this, even if you already know what to work on)
 
 - Check inbox: `botbus inbox --agent $AGENT --all --mark-read`
 - For messages that request work, create beads: `br create --title="..." --description="..." --type=task --priority=2`
@@ -21,7 +21,8 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 
 - `br update <bead-id> --status=in_progress`
 - `botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
-- `maw ws create $AGENT` and work inside the workspace.
+- `maw ws create $AGENT` — note the workspace path (`.workspaces/$AGENT`).
+- **All file edits and commands must run from `.workspaces/$AGENT/`** (e.g., `cd .workspaces/$AGENT && <command>`). Changes outside this path land in the wrong workspace.
 - `botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$AGENT" -m "<bead-id>"`
 - `botbus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>" -L mesh -L task-claim`
 
