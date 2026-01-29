@@ -21,9 +21,9 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 
 - `br update <bead-id> --status=in_progress`
 - `botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
-- `maw ws create $AGENT` — note the workspace path (`.workspaces/$AGENT`).
-- **All file edits and commands must run from `.workspaces/$AGENT/`** (e.g., `cd .workspaces/$AGENT && <command>`). Changes outside this path land in the wrong workspace.
-- `botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$AGENT" -m "<bead-id>"`
+- `WS=$(maw ws create --random)` — capture the workspace name from the output (e.g., `frost-castle`). The path is `.workspaces/$WS`.
+- **All file edits and commands must run from `.workspaces/$WS/`** (e.g., `cd .workspaces/$WS && <command>`). Changes outside this path land in the wrong workspace.
+- `botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
 - `botbus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>" -L mesh -L task-claim`
 
 ### 3. Work — implement the task
@@ -49,7 +49,7 @@ If stuck:
 
 - `br comments add <bead-id> "Completed by $AGENT"`
 - `br close <bead-id> --reason="Completed" --suggest-next`
-- `maw ws merge $AGENT --destroy -f` (if merge conflict, preserve workspace and announce)
+- `maw ws merge $WS --destroy -f` (if merge conflict, preserve workspace and announce)
 - `botbus release --agent $AGENT --all`
 - `br sync --flush-only`
 - `botbus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>" -L mesh -L task-done`
