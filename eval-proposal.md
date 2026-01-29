@@ -16,25 +16,27 @@ Building on the basic UX test (comprehension check), here are approaches for beh
 
 ### Setup
 
+**Reproducible Task Harness** (reduces variance):
+
 ```bash
-# Create eval environment
+# Create eval environment from template
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
 botbox init --name eval-project --type api --tools beads,maw,crit,botbus,botty --no-interactive
 
-# Seed with work
+# Use deterministic seed for bead IDs
+export BR_TEST_SEED=12345
+
+# Create minimal reproducible task
 br create --title="Add hello world endpoint" \
   --description="Create a /hello endpoint that returns {\"message\": \"hello world\"}. Use whatever web framework makes sense." \
   --type=task --priority=2
 
-br create --title="Add tests for hello endpoint" \
-  --description="Write tests verifying the /hello endpoint works correctly." \
-  --type=task --priority=2 --depends-on=bd-<first-bead-id>
-
-# Optional: seed botbus with a fake "bug report" message
-botbus send --agent eval-seeder eval-project \
-  "Found issue: endpoint returns 500 on invalid input" -L mesh -L task-request
+# Note: Use fixed template repo (not random code generation) to reduce variance
+# Template repo could have: package.json, basic server stub, test framework setup
 ```
+
+**Note on dependencies:** `br create` does not have `--depends-on` flag. Use `br dep add <child> <parent>` after creating both beads.
 
 ### Execution
 
@@ -45,25 +47,39 @@ Let them run for N turns or until they say "done."
 
 ### Evaluation Criteria
 
-**Protocol Compliance:**
-- [ ] Generated agent identity (`botbus generate-name`)
-- [ ] Ran triage workflow (`br ready`, picked a bead)
-- [ ] Used start workflow (`br update --status=in_progress`, claimed on botbus)
-- [ ] Created workspace if using maw
-- [ ] Posted updates during work
-- [ ] Ran finish workflow when complete
+**Protocol Compliance (70% weight):**
+
+*Critical steps (must pass):*
+- [ ] Claimed work on botbus (`botbus claim`)
+- [ ] Updated bead to in_progress (`br update --status=in_progress`)
+- [ ] Finished workflow (`br update --status=closed` or `br close`)
+- [ ] Released claims (`botbus release --all`)
 - [ ] Synced beads (`br sync --flush-only`)
 
-**Work Quality:**
+*Optional steps (bonus points):*
+- [ ] Generated agent identity (`botbus generate-name`)
+- [ ] Ran triage workflow (`br ready`, picked a bead)
+- [ ] Created workspace if using maw
+- [ ] Posted updates during work
+- [ ] Announced on botbus (`-L mesh`)
+
+**Work Quality (20% weight):**
 - [ ] Actually completed the task (endpoint exists, works)
 - [ ] Tests pass
 - [ ] Code is reasonable quality
 
-**Error Handling:**
+**Error Handling (10% weight):**
 - [ ] If stuck, did they post a progress update?
 - [ ] If they found a tool bug, did they use report-issue workflow?
 
-**Scoring**: Weight protocol compliance heavily (70%), quality (20%), error handling (10%).
+**Scoring Rubric:**
+- Critical steps: 10 points each (50 points total)
+- Optional steps: 2 points each (12 points available)
+- Work quality: 20 points
+- Error handling: 10 points
+- **Total**: 92 points possible
+- **Pass threshold**: ≥70 points (76%)
+- **Excellent**: ≥85 points (92%)
 
 ### Challenges
 
@@ -81,9 +97,9 @@ Let them run for N turns or until they say "done."
 ### Variants
 
 - **Variant A**: Current AGENTS.md with managed section + workflow docs
-- **Variant B**: Single monolithic doc (no links)
-- **Variant C**: Skills-based (for comparison)
-- **Variant D**: Minimal (just Quick Start, no detailed workflows)
+- **Variant B**: Minimal (just Quick Start, no detailed workflows)
+
+*(Reduced from 4 to 2 variants per codex/gemini feedback to reduce run cost)*
 
 ### Method
 
@@ -251,7 +267,7 @@ Agent runs worker-loop continuously (or on schedule). Observe over 10+ iteration
    - Rationale: Reduces runs needed, focuses on value validation
    - Other comparisons (model versions, no-docs) can come later
 
-5. **Pass/Fail Threshold**: What's acceptable?
-   - 100% protocol compliance? (unrealistic)
-   - 80%? 90%? (need to calibrate)
-   - Which violations are critical vs nice-to-have?
+5. **Pass/Fail Threshold**: ~~What's acceptable?~~
+   - **Decision**: ≥70 points (76%) to pass (per scoring rubric above)
+   - Rationale: All critical protocol steps required, optional steps provide buffer
+   - Excellent: ≥85 points (92%) — critical + most optional + good work quality
