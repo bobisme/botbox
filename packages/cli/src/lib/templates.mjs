@@ -98,7 +98,8 @@ br ready
 ### Mesh Protocol
 
 - Include \`-L mesh\` on botbus messages.
-- Claim before edit: \`botbus claim --agent $AGENT "file://$BOTBOX_PROJECT/path/**" -m "<bead-id>: task summary"\`.
+- Claim bead: \`botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"\`.
+- Claim workspace: \`botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$AGENT" -m "<bead-id>"\`.
 - Claim agents before spawning: \`botbus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
 - Release claims when done: \`botbus release --agent $AGENT --all\`.
 

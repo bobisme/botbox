@@ -22,6 +22,7 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 - `br update <bead-id> --status=in_progress`
 - `botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
 - `maw ws create $AGENT` and work inside the workspace.
+- `botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$AGENT" -m "<bead-id>"`
 - `botbus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>" -L mesh -L task-claim`
 
 ### 3. Work — implement the task
