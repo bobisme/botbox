@@ -81,7 +81,8 @@ You are worker agent "$AGENT" for project "$PROJECT".
 
 IMPORTANT: Use --agent $AGENT on ALL botbus and crit commands. Set BOTBOX_PROJECT=$PROJECT.
 
-Execute ONE cycle of the worker loop:
+Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
+then STOP. Do not start a second task — the outer loop handles iteration.
 
 1. TRIAGE: Check inbox (botbus inbox --agent $AGENT --all --mark-read). Create beads for work
    requests. Check br ready. If nothing, say "NO_WORK_AVAILABLE" and stop.
@@ -93,8 +94,9 @@ Execute ONE cycle of the worker loop:
 
 2. START: br update <id> --status=in_progress.
    botbus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>".
-   Create workspace: WS=\$(maw ws create --random) — capture the workspace name.
-   IMPORTANT: All files you create or edit must be under .workspaces/\$WS/.
+   Create workspace: run maw ws create --random. Note the workspace name from the output
+   (e.g., "frost-castle"). Use this name as WS for all subsequent commands.
+   IMPORTANT: All files you create or edit must be under .workspaces/WS/.
    For bash commands: cd .workspaces/\$WS && <command>.
    botbus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>".
    Announce: botbus send --agent $AGENT $PROJECT "Working on <id>" -L mesh -L task-claim.
@@ -122,7 +124,8 @@ Key rules:
 - Always finish or release before stopping.
 - If claim denied, pick something else.
 - All botbus and crit commands use --agent $AGENT.
-- All file operations in .workspaces/\$WS/, never in the project root.
+- All file operations in .workspaces/WS/, never in the project root.
+- STOP after completing one task or determining no work. Do not loop.
 EOF
 	)"
 
