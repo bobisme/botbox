@@ -8,13 +8,13 @@ If spawned by `agent-loop.sh`, your identity is provided as `$AGENT` (a random n
 
 Your project channel is `$BOTBOX_PROJECT`. All botbus commands must include `--agent $AGENT`. All announcements go to `$BOTBOX_PROJECT` with `-L mesh`.
 
-**Important:** Run all `br` commands (`br update`, `br close`, `br comments`, `br sync`) from the **project root**, not from inside `.workspaces/$WS/`. Only file edits and implementation commands run inside the workspace. This prevents merge conflicts in the beads database.
+**Important:** Run all `br` commands (`br update`, `br close`, `br comments`, `br sync`) from the **project root**, not from inside `.workspaces/$WS/`. This prevents merge conflicts in the beads database. Use absolute paths for file operations in the workspace — **do not `cd` into the workspace and stay there**, as this breaks cleanup when the workspace is destroyed.
 
 ## Loop
 
 ### 1. Triage — find and groom work, then pick one small task (always run this, even if you already know what to work on)
 
-- Check inbox: `botbus inbox --agent $AGENT --all --mark-read`
+- Check inbox: `botbus inbox --agent $AGENT --channels $BOTBOX_PROJECT --mark-read`
 - For messages that request work, create beads: `br create --title="..." --description="..." --type=task --priority=2`
 - For questions or status checks, reply directly: `botbus send --agent $AGENT <channel> "<reply>" -L mesh -L triage-reply`
 - Check ready beads: `br ready`
@@ -29,8 +29,8 @@ Your project channel is `$BOTBOX_PROJECT`. All botbus commands must include `--a
 
 - `br update <bead-id> --status=in_progress`
 - `botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
-- `WS=$(maw ws create --random)` — capture the workspace name from the output (e.g., `frost-castle`). The path is `.workspaces/$WS`.
-- **All file edits and commands must run from `.workspaces/$WS/`** (e.g., `cd .workspaces/$WS && <command>`). Changes outside this path land in the wrong workspace.
+- `maw ws create --random` — note the workspace name (e.g., `frost-castle`) and the **absolute path** from the output. Store as `$WS` (name) and `$WS_PATH` (absolute path).
+- **All file operations must use the absolute workspace path** from `maw ws create` output. Use absolute paths for Read, Write, and Edit. For bash: `cd $WS_PATH && <command>`. For jj: `maw ws jj $WS <args>`. **Do not `cd` into the workspace and stay there** — the workspace will be destroyed during finish, breaking your shell session.
 - `botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
 - `botbus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>" -L mesh -L task-claim`
 

@@ -92,46 +92,7 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `eval-loop.md` — Agent-loop.sh specific eval plan
 - `eval-results/` — Individual run reports
 
-### Current State (2026-01-30)
-
-**8 eval runs completed** (Level 2 + Agent Loop):
-
-| Run | Type | Model | Beads | Score | Key Finding |
-|-----|------|-------|-------|-------|-------------|
-| L2-1 | Single session | Opus | 1 | 92/92 (100%) | Baseline: perfect protocol compliance |
-| L2-2 | Single session | Sonnet | 1 | 81/92 (88%) | Missing optional steps (triage, progress, cleanup) |
-| L2-3 | Single session | Sonnet | 1 | 88/92 (96%) | Progress comment docs helped (+7) |
-| L2-4 | Single session | Sonnet | 1 | 83/92 (90%) | Workspace destroy docs helped (+2) |
-| L2-5 | Single session | Sonnet | 3 | 89/96 (93%) | Multi-bead unlocked triage + grooming |
-| L2-6 | Single session | Sonnet | 2 | 92/96 (96%) | maw output fix confirmed workspace path usage |
-| Loop-1 | agent-loop.sh | Sonnet | 2 | 28/30 shell | Sandbox blocked file writes; found has_work() bugs |
-| Loop-2 | agent-loop.sh | Sonnet | 2 | 211/218 (97%) | Happy path works! Both beads completed across iterations |
-
-**Key learnings:**
-- Multi-bead evals are strictly better (force observable triage/grooming)
-- Every doc/tooling improvement produced measurable score gains
-- Workspace path usage requires maw's "IMPORTANT" output line (fixed in maw v0.6.0+)
-- Merge issue fixed in maw v0.8.0
-- `workspace://<project>/<workspace>` is the claim URI format for workspaces
-- `claude -p` needs `--dangerously-skip-permissions` for autonomous file operations
-- `has_work()` had two JSON parser bugs (br ready returns array, botbus inbox --count-only returns int)
-- Agent's own botbus messages fixed upstream: botbus v0.3.8 filters self-messages from inbox
-- Single-workspace merge fixed: maw v0.9.0 supports merging when only 1 workspace exists
-- Run `br` commands from project root, not inside `.workspaces/$WS/` (prevents beads merge conflicts)
-- Agent naming convention: `<project>-dev` for interactive, random names for agent-loop.sh
-
-**Upstream tool versions (as of 2026-01-30):**
-- botbus v0.3.8: self-message filtering, `claims --since`, `#channel` syntax
-- maw v0.10.0: single-workspace merge, agent-oriented error output with recovery commands
-- All workflow docs updated with eval learnings (identity, br-from-root, tool-issue reporting, progress comments, blocked bead re-evaluation)
-
-### Scoring Rubric (96 points, multi-bead)
-
-- Critical steps: 50 pts (claim, start, finish, release, sync)
-- Optional steps: 16 pts (identity, triage, groom, workspace create/path/destroy, progress, announce)
-- Work quality: 20 pts (task complete, tests pass, code quality)
-- Error handling: 10 pts (progress updates, bug reporting)
-- Pass: ≥70 pts (73%) | Excellent: ≥85 pts (89%)
+10 eval runs completed (6 Level 2 single-session + 4 agent-loop.sh). Latest: Loop-4 scored 213/218 (98%). See [eval-results/README.md](eval-results/README.md) for all runs, scoring rubrics, and key learnings.
 
 ## Beads
 

@@ -50,7 +50,7 @@ fi
 has_work() {
 	local inbox_count ready_count
 
-	inbox_count=$(botbus inbox --agent "$AGENT" --channels "$PROJECT" --all --count-only --format json 2>/dev/null \
+	inbox_count=$(botbus inbox --agent "$AGENT" --channels "$PROJECT" --count-only --format json 2>/dev/null \
 		| "$PYTHON_BIN" -c \
 			'import json,sys; d=json.load(sys.stdin); print(d.get("total_unread",0) if isinstance(d,dict) else d)' \
 		2>/dev/null || echo "0")
@@ -87,34 +87,46 @@ IMPORTANT: Use --agent $AGENT on ALL botbus and crit commands. Set BOTBOX_PROJEC
 Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
 then STOP. Do not start a second task — the outer loop handles iteration.
 
-1. TRIAGE: Check inbox (botbus inbox --agent $AGENT --all --mark-read). Create beads for work
-   requests. Check br ready. If nothing, say "NO_WORK_AVAILABLE" and stop.
+1. INBOX (do this FIRST, every cycle):
+   Run: botbus inbox --agent $AGENT --channels $PROJECT --mark-read
+   For each message:
+   - Task request (-L task-request or asks for work): create a bead with br create.
+   - Status check or question: reply on botbus, do NOT create a bead.
+   - Feedback (-L feedback): review referenced beads, reply with triage result.
+   - Announcements from other agents ("Working on...", "Completed...", "online"): ignore, no action.
+   - Duplicate of existing bead: do NOT create another bead, note it covers the request.
+
+2. TRIAGE: Check br ready. If no ready beads and inbox created none, say "NO_WORK_AVAILABLE" and stop.
    GROOM each ready bead (br show <id>): ensure clear title, description with acceptance criteria
    and testing strategy, appropriate priority. Fix anything missing, comment what you changed.
    Use bv --robot-next to pick exactly one small task. If the task is large, break it down with
    br create + br dep add, then bv --robot-next again. If a bead is claimed
    (botbus check-claim --agent $AGENT "bead://$PROJECT/<id>"), skip it.
 
-2. START: br update <id> --status=in_progress.
+3. START: br update <id> --status=in_progress.
    botbus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>".
-   Create workspace: run maw ws create --random. Note the workspace name from the output
-   (e.g., "frost-castle"). Use this name as WS for all subsequent commands.
-   IMPORTANT: All files you create or edit must be under .workspaces/WS/.
-   For bash commands: cd .workspaces/\$WS && <command>.
+   Create workspace: run maw ws create --random. Note the workspace name AND absolute path
+   from the output (e.g., name "frost-castle", path "/abs/path/.workspaces/frost-castle").
+   Store the name as WS and the absolute path as WS_PATH.
+   IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
+   For bash commands: cd \$WS_PATH && <command>. For jj commands: maw ws jj \$WS <args>.
+   Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
    botbus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>".
    Announce: botbus send --agent $AGENT $PROJECT "Working on <id>" -L mesh -L task-claim.
 
-3. WORK: br show <id>, then implement the task in the workspace.
+4. WORK: br show <id>, then implement the task in the workspace.
    Add at least one progress comment: br comments add <id> "Progress: ...".
 
-4. STUCK CHECK: If same approach tried twice, info missing, or tool fails repeatedly — you are
+5. STUCK CHECK: If same approach tried twice, info missing, or tool fails repeatedly — you are
    stuck. br comments add <id> "Blocked: <details>".
    botbus send --agent $AGENT $PROJECT "Stuck on <id>: <reason>" -L mesh -L task-blocked.
    br update <id> --status=blocked.
    Release: botbus release --agent $AGENT "bead://$PROJECT/<id>".
    Stop this cycle.
 
-5. FINISH (mandatory, never skip):
+6. FINISH (mandatory, never skip):
+   IMPORTANT: Run ALL finish commands from the project root, not from inside the workspace.
+   If your shell is cd'd into .workspaces/, cd back to the project root first.
    br comments add <id> "Completed by $AGENT".
    br close <id> --reason="Completed" --suggest-next.
    maw ws merge \$WS --destroy -f (if conflict, preserve and announce).
@@ -127,7 +139,7 @@ Key rules:
 - Always finish or release before stopping.
 - If claim denied, pick something else.
 - All botbus and crit commands use --agent $AGENT.
-- All file operations in .workspaces/WS/, never in the project root.
+- All file operations use the absolute workspace path from maw ws create output. Do NOT cd into the workspace and stay there.
 - Run br commands (br update, br close, br comments, br sync) from the project root, NOT from .workspaces/WS/.
 - If a tool behaves unexpectedly, report it: botbus send --agent $AGENT $PROJECT "Tool issue: <details>" -L mesh -L tool-issue.
 - STOP after completing one task or determining no work. Do not loop.

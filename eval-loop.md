@@ -2,6 +2,14 @@
 
 End-to-end evaluation of `scripts/agent-loop.sh`. Tests both the shell script mechanics and the agent's per-iteration protocol compliance.
 
+## Versions
+
+| Version | Focus | Runs |
+|---------|-------|------|
+| v1 | Basic agent-loop mechanics | Loop-1, Loop-2 |
+| v2 | Fixed CWD guidance (absolute paths) | Loop-3, Loop-4 |
+| v3 | Inbox triage + noisy channel handling | — |
+
 ## What's Different from Level 2 Evals
 
 Level 2 evals spawn a single agent session and let it run freely. The agent-loop eval tests the **shell script** that drives iteration:
@@ -14,12 +22,20 @@ Level 2 evals spawn a single agent session and let it run freely. The agent-loop
 | Cleanup on failure | Agent's responsibility | `trap cleanup EXIT` |
 | Agent lease | Not tested | `botbus claim agent://$AGENT` |
 
-## Setup
+---
+
+## Setup (v2 — baseline)
 
 ```bash
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
-botbox init --name eval-project --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name botbox-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+
+# Scaffold the project so agents don't waste time on boilerplate.
+# Pick ONE based on the language you want to test:
+cargo init --name botbox-eval   # Rust — also adds /target to .gitignore
+# npm init -y                   # Node — also add node_modules to .gitignore
+# uv init                      # Python
 
 # Seed 2 beads of varying quality
 br create --title="Add status endpoint" \
@@ -31,13 +47,57 @@ br create --title="add rate limiting or something" \
   --type=task --priority=3
 ```
 
-## Execution
+## Setup (v3 — inbox triage)
 
-### Option A: Run the actual script
+Extends v2 setup with seeded botbus messages. The agent must triage these during its first iteration.
+
+```bash
+# ... v2 setup above ...
+
+# Seed botbus messages from a different agent identity.
+# These simulate a lead/coordinator giving the agent work and asking questions.
+
+# Task request — agent should create a bead for this
+botbus send --agent eval-lead botbox-eval \
+  "Please add a health check endpoint that returns uptime and memory usage" \
+  -L mesh -L task-request
+
+# Status check — agent should reply, NOT create a bead
+botbus send --agent eval-lead botbox-eval \
+  "What's the current state of the API? Any endpoints implemented yet?" \
+  -L mesh -L status-check
+
+# Feedback from another project — agent should triage the referenced bead
+botbus send --agent widget-dev botbox-eval \
+  "Filed bd-xxx in widget project: your /status endpoint returns wrong content-type. @botbox-eval" \
+  -L feedback
+
+# Duplicate of an existing bead — agent should recognize this and NOT create another
+botbus send --agent eval-lead botbox-eval \
+  "We need rate limiting on the API, requests are getting out of hand" \
+  -L mesh -L task-request
+```
+
+### Noisy Channel Challenge
+
+If using `#botbox-eval` across multiple eval runs, the channel accumulates old messages from previous agents (frost-owl, ivory-pine, etc.). A new agent sees all of these as unread. This is a realistic scenario — production channels have history.
+
+The agent should:
+- Read all messages (`--all --mark-read`)
+- Recognize that "Working on bd-xxx" / "Completed bd-xxx" messages from other agents are informational, not task requests
+- Not create beads for old status announcements
+- Only act on messages that request work or ask questions
+
+To control for this, you can either:
+1. **Use the shared channel** — tests real-world noisy inbox handling (recommended for v3)
+2. **Use a fresh channel** — `botbox-eval-$(date +%s)` for isolated scoring
+
+## Execution
 
 ```bash
 cd "$EVAL_DIR"
-MAX_LOOPS=5 LOOP_PAUSE=2 bash /path/to/botbox/scripts/agent-loop.sh eval-project
+MAX_LOOPS=5 LOOP_PAUSE=2 CLAUDE_MODEL=sonnet \
+  bash /path/to/botbox/scripts/agent-loop.sh botbox-eval
 ```
 
 Observe:
@@ -47,23 +107,12 @@ Observe:
 - Does `has_work()` return false after both beads are closed?
 - Does the cleanup trap fire on exit?
 
-### Option B: Simulate per-iteration behavior
-
-If running the full script is impractical (cost, time), simulate its behavior by spawning the agent with the same prompt agent-loop.sh uses, once per bead:
-
-```bash
-# Iteration 1
-claude -p "<agent-loop prompt with AGENT=test-agent PROJECT=eval-project>"
-
-# Verify: exactly 1 bead closed, agent exited
-br ready  # should show 1 remaining
-
-# Iteration 2
-claude -p "<same prompt>"
-
-# Verify: second bead closed, agent exited
-br ready  # should show 0 remaining
-```
+v3 additions:
+- Does the agent check inbox during triage?
+- Does it create a bead for the task request (health check)?
+- Does it reply to the status check without creating a bead?
+- Does it recognize the rate limiting message as a duplicate of the existing bead?
+- Does it handle old messages from previous agents without creating spurious beads?
 
 ## Scoring
 
@@ -87,13 +136,13 @@ br ready  # should show 0 remaining
 - Release claims
 - Sync beads
 
-**Optional Steps (2 points each, 16 total per iteration):**
-- Generate identity (N/A — provided by script)
+**Optional Steps (2 points each, 14 total per iteration):**
+- ~~Generate identity~~ (N/A — provided by script)
 - Run triage (`br ready`, `bv --robot-next`)
 - Groom beads (fix titles, descriptions, acceptance criteria)
 - Create workspace (`maw ws create --random`)
-- Work from workspace path (`.workspaces/$WS/`)
-- Post progress updates (at least one)
+- Work from workspace path (absolute path)
+- Post progress updates (at least one; -1 if missing on fast tasks)
 - Announce on botbus (`-L mesh`)
 - Destroy workspace (`maw ws merge --destroy`)
 
@@ -106,20 +155,43 @@ br ready  # should show 0 remaining
 - Progress updates during work (5)
 - Bug reporting if applicable (5)
 
+### Inbox Triage (v3 only, 30 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Checked inbox during triage | 5 | Agent ran `botbus inbox --agent $AGENT --all --mark-read` |
+| Created bead from task request | 5 | New bead exists for "health check endpoint" |
+| Replied to status check | 5 | botbus message replying to eval-lead, no bead created |
+| Did not duplicate rate limiting bead | 5 | No new bead for rate limiting (existing bead covers it) |
+| Handled old messages gracefully | 5 | No beads created for "Working on" / "Completed" announcements |
+| Triaged feedback message | 5 | Agent acknowledged the cross-project feedback (comment or reply) |
+
 ### Total Score
 
+**v2 (baseline):**
 ```
 Shell mechanics:           30 points
-Iteration 1 protocol:     96 points  (50 critical + 16 optional + 20 quality + 10 error)
-Iteration 2 protocol:     96 points
+Iteration 1 protocol:     94 points  (identity N/A)
+Iteration 2 protocol:     94 points
                           ───────────
-Total:                    222 points possible
+Total:                    218 points possible
 
 Pass threshold:           ≥170 points (77%)
 Excellent:                ≥200 points (90%)
 ```
 
-Note: Identity generation is scored as N/A (2 points removed per iteration) since agent-loop.sh provides the agent name. Adjusted totals: 218 points possible.
+**v3 (inbox triage):**
+```
+Shell mechanics:           30 points
+Inbox triage:              30 points
+Iteration 1 protocol:     94 points
+Iteration 2 protocol:     94 points
+                          ───────────
+Total:                    248 points possible
+
+Pass threshold:           ≥193 points (77%)
+Excellent:                ≥223 points (90%)
+```
 
 ## Verification Methods
 
@@ -133,7 +205,7 @@ botbus claims --agent $AGENT --since 1h | grep "agent://"
 botbus claims --agent $AGENT --since 1h  # should be empty
 
 # Botbus announcements
-botbus inbox --agent eval-checker --channels eval-project --all | grep -E "online|signing off|shutting down"
+botbus inbox --agent eval-checker --channels botbox-eval --all | grep -E "online|signing off|shutting down"
 
 # Beads synced
 stat -c "%Y" .beads/issues.jsonl  # should be recent
@@ -141,30 +213,45 @@ stat -c "%Y" .beads/issues.jsonl  # should be recent
 
 ### Per-iteration checks
 
-Same as Level 2 eval verification:
 ```bash
 br show <bead-id>                     # status, comments
-botbus inbox --channels eval-project  # Working/Completed messages
+botbus inbox --channels botbox-eval   # Working/Completed messages
 maw ws list                           # workspace cleanup
 sqlite3 .beads/beads.db "SELECT id, status, closed_at FROM issues;"
+```
+
+### Inbox triage checks (v3)
+
+```bash
+# New bead created for health check?
+br ready | grep -i "health"
+
+# No duplicate bead for rate limiting?
+sqlite3 .beads/beads.db "SELECT COUNT(*) FROM issues WHERE title LIKE '%rate%';"
+# Expected: 1 (the original, not 2)
+
+# Reply to status check?
+botbus inbox --agent eval-lead --channels botbox-eval --all | grep -i "status\|endpoint\|state"
+
+# No beads created for old announcements?
+sqlite3 .beads/beads.db "SELECT COUNT(*) FROM issues;"
+# Expected: 3 (2 seeded + 1 health check), not 10+
 ```
 
 ### One-bead-per-iteration check
 
 After iteration 1:
 ```bash
-# Exactly 1 bead should be closed
 sqlite3 .beads/beads.db "SELECT COUNT(*) FROM issues WHERE status='closed';"
 # Expected: 1
 
-# Exactly 1 bead should still be open
 br ready
-# Expected: 1 remaining bead
+# Expected: 2 remaining (1 seeded + 1 from inbox) or 1 if agent picks inbox bead
 ```
 
 ## Expected Behavior
 
-### Happy path (2 beads)
+### v2 happy path (2 beads)
 
 ```
 --- Loop 1/5 ---
@@ -181,17 +268,36 @@ Cleanup: lease released, claims released, beads synced
 agent-shutdown announcement
 ```
 
-### Failure modes to watch for
+### v3 happy path (2 seeded beads + inbox messages)
 
-1. **Agent completes both beads in iteration 1** — Means the "stop after one" instruction didn't work. Shell loop becomes a no-op.
+```
+--- Loop 1/5 ---
+  has_work() → true (2 ready beads + inbox messages)
+  claude -p "..." →
+    Triage: reads inbox, creates health check bead, replies to status check,
+    recognizes rate limiting duplicate, ignores old announcements.
+    Grooms all 3 ready beads. Picks one via bv --robot-next. Completes it, stops.
+--- Loop 2/5 ---
+  has_work() → true (2 remaining beads)
+  claude -p "..." → picks next bead, completes it, stops
+--- Loop 3/5 ---
+  has_work() → true (1 remaining bead)
+  claude -p "..." → picks last bead, completes it, stops
+--- Loop 4/5 ---
+  has_work() → false
+  agent-idle announcement
+Cleanup + agent-shutdown
+```
+
+## Failure Modes
+
+1. **Agent completes both beads in iteration 1** — "stop after one" instruction didn't work.
 2. **Agent doesn't exit after finish** — claude -p hangs, blocking the loop.
 3. **has_work() false positive** — Inbox has messages but no actionable beads.
 4. **has_work() false negative** — Beads exist but JSON parsing fails silently.
 5. **Cleanup doesn't fire** — Agent lease leaked after crash or error.
 6. **Workspace left behind** — maw ws merge didn't clean up.
-
-## Open Questions
-
-1. **Cost**: Each iteration spawns a fresh claude session. 2 iterations minimum. Consider using Haiku for cost-efficient loop testing.
-2. **Timing**: `LOOP_PAUSE=2` between iterations. Enough for beads to sync?
-3. **Model flag**: agent-loop.sh doesn't pass `--model` to claude. Should it? Default model may not be ideal for all deployments.
+7. **(v3) Bead spam from inbox** — Agent creates beads for every old message in the channel.
+8. **(v3) Duplicate bead** — Agent creates a rate limiting bead despite one already existing.
+9. **(v3) No inbox check** — Agent skips inbox entirely and goes straight to `br ready`.
+10. **(v3) Creates bead for status check** — Agent misclassifies a question as a task request.

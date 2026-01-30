@@ -10,7 +10,7 @@ Find exactly one actionable bead, or determine there is no work available. Groom
 
 1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user.
 2. Check inbox for new messages:
-   - `botbus inbox --agent $AGENT --all --mark-read`
+   - `botbus inbox --agent $AGENT --channels $BOTBOX_PROJECT --mark-read`
    - For each message that requests work (task request, bug report, feature ask), create a bead: `br create --title="..." --description="..." --type=task --priority=2`
    - For messages with `-L feedback` (reports from other agents):
      - Review the mentioned bead IDs with `br show <bead-id>`
