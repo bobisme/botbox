@@ -54,6 +54,24 @@ Extends v2 setup with seeded botbus messages. The agent must triage these during
 ```bash
 # ... v2 setup above ...
 
+# Generate the agent name upfront so we can pre-mark the channel.
+AGENT=$(botbus generate-name)
+
+# Mark all existing channel messages as read for this agent.
+# This prevents old seeded messages and replies from previous runs
+# from bleeding into the new eval. Without this, the agent sees
+# duplicate work requests and previous agents' replies, which
+# causes false failures (e.g., Loop-7 created a duplicate bead
+# because it saw Run 6's identical "rate limiting" request).
+botbus mark-read --agent "$AGENT" botbox-eval
+
+# Optionally seed fake channel noise (announcements from old agents).
+# These test that the agent ignores informational messages.
+botbus send --agent old-fox botbox-eval "Agent old-fox online, starting worker loop" -L mesh -L spawn-ack
+botbus send --agent old-fox botbox-eval "Working on bd-abc" -L mesh -L task-claim
+botbus send --agent old-fox botbox-eval "Completed bd-abc" -L mesh -L task-done
+botbus send --agent old-fox botbox-eval "No work remaining. Agent old-fox signing off." -L mesh -L agent-idle
+
 # Seed botbus messages from a different agent identity.
 # These simulate a lead/coordinator giving the agent work and asking questions.
 
@@ -78,26 +96,18 @@ botbus send --agent eval-lead botbox-eval \
   -L mesh -L task-request
 ```
 
-### Noisy Channel Challenge
+### Channel Isolation
 
-If using `#botbox-eval` across multiple eval runs, the channel accumulates old messages from previous agents (frost-owl, ivory-pine, etc.). A new agent sees all of these as unread. This is a realistic scenario — production channels have history.
+The `#botbox-eval` channel accumulates messages across runs. Previous eval runs seed identical work requests and agents reply to them, so a new agent sees duplicate "Please add health check" messages and previous agents' "bd-aik covers this" replies. This caused false failures in Loop-7 (duplicate bead created because the agent couldn't distinguish new requests from old ones).
 
-The agent should:
-- Read all messages (`--all --mark-read`)
-- Recognize that "Working on bd-xxx" / "Completed bd-xxx" messages from other agents are informational, not task requests
-- Not create beads for old status announcements
-- Only act on messages that request work or ask questions
-
-To control for this, you can either:
-1. **Use the shared channel** — tests real-world noisy inbox handling (recommended for v3)
-2. **Use a fresh channel** — `botbox-eval-$(date +%s)` for isolated scoring
+**Solution:** Pre-mark the channel as read for the new agent before seeding messages. The agent only sees messages sent after the mark-read call. Fake noise (old-fox announcements) is seeded explicitly for controlled testing.
 
 ## Execution
 
 ```bash
 cd "$EVAL_DIR"
-MAX_LOOPS=5 LOOP_PAUSE=2 CLAUDE_MODEL=sonnet \
-  bash /path/to/botbox/scripts/agent-loop.sh botbox-eval
+MAX_LOOPS=6 LOOP_PAUSE=2 CLAUDE_MODEL=sonnet \
+  bash /path/to/botbox/scripts/agent-loop.sh botbox-eval "$AGENT"
 ```
 
 Observe:

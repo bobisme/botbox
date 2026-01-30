@@ -146,11 +146,15 @@ Key rules:
 EOF
 	)"
 
+	# Full sync between iterations so has_work() sees bead closures
+	# from the previous claude session (which only does --flush-only).
+	br sync 2>/dev/null || true
+
 	sleep "$LOOP_PAUSE"
 done
 
 # --- Final sync and shutdown ---
-br sync --flush-only 2>/dev/null || true
+br sync 2>/dev/null || true
 botbus send --agent "$AGENT" "$PROJECT" \
 	"Agent $AGENT shutting down after $((i - 1)) loops." \
 	-L mesh -L agent-shutdown

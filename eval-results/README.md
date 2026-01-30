@@ -18,6 +18,9 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | Loop-4 | agent-loop.sh v2 | Sonnet | 2 | 215/218 (99%) | CWD fix validated — absolute paths resolve finish breakage |
 | Loop-5 | agent-loop.sh v3 | Sonnet | 2 | 215/248 (87%) | Inbox triage completely skipped (0/30) — prompt too dense |
 | Loop-6 | agent-loop.sh v3 | Sonnet | 2 | 245/248 (99%) | Inbox perfect (30/30) after splitting INBOX as separate step |
+| Loop-7 | agent-loop.sh v3 | Sonnet | 2 | 232/248 (94%) | Duplicate bead from inbox; 4 iterations instead of 3 |
+| Loop-8 | agent-loop.sh v3 | Haiku | 2 | 205/248 (83%) | First haiku run: no inbox replies, duplicate bead, stale br ready |
+| Loop-9 | agent-loop.sh v3 | Haiku | 2 | 65/248 (26%) | **FAIL**: bead spam from inbox, phantom close, timeout |
 
 ## Key Learnings
 
@@ -33,7 +36,8 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - Run `br` commands from project root, not inside `.workspaces/$WS/` (prevents beads merge conflicts)
 - Agent naming convention: `<project>-dev` for interactive, random names for agent-loop.sh
 - **Do not `cd` into workspace and stay there** — use absolute paths for file ops, `maw ws jj` for jj commands. Workspace destroy deletes the directory and breaks the shell session (Loop-3 regression, Loop-4 fix)
-- `br ready` may show stale state after workspace merge — agent can waste an iteration re-doing closed work (Loop-4 observation)
+- `br ready` may show stale state after workspace merge — agent can waste an iteration re-doing closed work (Loop-4, Loop-7 observation)
+- **Duplicate bead detection from inbox is inconsistent** — agent sometimes creates a new bead from inbox task-request instead of recognizing an existing bead covers it (Loop-7). Prompt says "do NOT create another bead" but this isn't always followed.
 
 ## Upstream Tool Versions (as of 2026-01-30)
 
@@ -69,3 +73,6 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [Loop-4](2026-01-30-agent-loop-run4-sonnet.md)
 - [Loop-5](2026-01-30-agent-loop-run5-sonnet-v3.md)
 - [Loop-6](2026-01-30-agent-loop-run6-sonnet-v3.md)
+- [Loop-7](2026-01-30-agent-loop-run7-sonnet-v3.md)
+- [Loop-8](2026-01-30-agent-loop-run8-haiku-v3.md)
+- [Loop-9](2026-01-30-agent-loop-run9-haiku-v3.md)
