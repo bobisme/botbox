@@ -16,6 +16,8 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | Loop-2 | agent-loop.sh v1 | Sonnet | 2 | 211/218 (97%) | Happy path works! Both beads completed across iterations |
 | Loop-3 | agent-loop.sh v2 | Sonnet | 2 | 117/218 (54%) | CWD deletion broke all finish steps |
 | Loop-4 | agent-loop.sh v2 | Sonnet | 2 | 215/218 (99%) | CWD fix validated — absolute paths resolve finish breakage |
+| Loop-5 | agent-loop.sh v3 | Sonnet | 2 | 215/248 (87%) | Inbox triage completely skipped (0/30) — prompt too dense |
+| Loop-6 | agent-loop.sh v3 | Sonnet | 2 | 245/248 (99%) | Inbox perfect (30/30) after splitting INBOX as separate step |
 
 ## Key Learnings
 
@@ -65,3 +67,5 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [Loop-2](2026-01-30-agent-loop-run2-sonnet.md)
 - [Loop-3](2026-01-30-agent-loop-run3-sonnet.md)
 - [Loop-4](2026-01-30-agent-loop-run4-sonnet.md)
+- [Loop-5](2026-01-30-agent-loop-run5-sonnet-v3.md)
+- [Loop-6](2026-01-30-agent-loop-run6-sonnet-v3.md)
