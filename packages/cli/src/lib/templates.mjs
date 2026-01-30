@@ -70,7 +70,8 @@ This project uses the botbox multi-agent workflow.
 ### Identity
 
 Every command that touches botbus or crit requires \`--agent <name>\`.
-Generate one with \`botbus generate-name\` or accept one from the caller.
+Use \`<project>-dev\` as your name (e.g., \`terseid-dev\`). Agents spawned by \`agent-loop.sh\` receive a random name automatically.
+Run \`botbus whoami --agent $AGENT\` to confirm your identity.
 
 ### Lifecycle
 
@@ -83,7 +84,7 @@ ${lifecycleLinks}
 ### Quick Start
 
 \`\`\`bash
-AGENT=$(botbus generate-name)
+AGENT=<project>-dev   # or: AGENT=$(botbus generate-name)
 botbus whoami --agent $AGENT
 br ready
 \`\`\`
@@ -99,7 +100,7 @@ br ready
 
 - Include \`-L mesh\` on botbus messages.
 - Claim bead: \`botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"\`.
-- Claim workspace: \`botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$AGENT" -m "<bead-id>"\`.
+- Claim workspace: \`botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"\`.
 - Claim agents before spawning: \`botbus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
 - Release claims when done: \`botbus release --agent $AGENT --all\`.
 

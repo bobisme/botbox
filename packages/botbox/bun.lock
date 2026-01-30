@@ -1,0 +1,15 @@
+{
+  "lockfileVersion": 1,
+  "configVersion": 1,
+  "workspaces": {
+    "": {
+      "name": "botbox",
+      "dependencies": {
+        "@botbox/cli": "0.0.1",
+      },
+    },
+  },
+  "packages": {
+    "@botbox/cli": ["@botbox/cli@0.0.1", "", { "bin": { "botbox": "index.js" } }, "sha512-uY3zdzb5ZAMdyOQe3NHlz9pYrWqnx7jUGl8UhWUE+2EevF00sB64JitvNl9nctpYxcO/yN7XwelMHfHEAsm6iQ=="],
+  }
+}

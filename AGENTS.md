@@ -115,7 +115,15 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `workspace://<project>/<workspace>` is the claim URI format for workspaces
 - `claude -p` needs `--dangerously-skip-permissions` for autonomous file operations
 - `has_work()` had two JSON parser bugs (br ready returns array, botbus inbox --count-only returns int)
-- Agent's own botbus messages cause one wasted iteration (has_work() false positive)
+- Agent's own botbus messages fixed upstream: botbus v0.3.8 filters self-messages from inbox
+- Single-workspace merge fixed: maw v0.9.0 supports merging when only 1 workspace exists
+- Run `br` commands from project root, not inside `.workspaces/$WS/` (prevents beads merge conflicts)
+- Agent naming convention: `<project>-dev` for interactive, random names for agent-loop.sh
+
+**Upstream tool versions (as of 2026-01-30):**
+- botbus v0.3.8: self-message filtering, `claims --since`, `#channel` syntax
+- maw v0.10.0: single-workspace merge, agent-oriented error output with recovery commands
+- All workflow docs updated with eval learnings (identity, br-from-root, tool-issue reporting, progress comments, blocked bead re-evaluation)
 
 ### Scoring Rubric (96 points, multi-bead)
 
