@@ -13,6 +13,9 @@ echo "Agent:     $AGENT"
 echo "Project:   $PROJECT"
 echo "Max loops: $MAX_LOOPS"
 
+# --- Confirm identity ---
+botbus whoami --agent "$AGENT"
+
 # --- Claim the agent lease ---
 if ! botbus claim --agent "$AGENT" "agent://$AGENT" -m "worker-loop for $PROJECT"; then
 	echo "Claim denied. Agent $AGENT is already running."
@@ -47,14 +50,14 @@ fi
 has_work() {
 	local inbox_count ready_count
 
-	inbox_count=$(botbus inbox --agent "$AGENT" --all --count-only --format json 2>/dev/null \
+	inbox_count=$(botbus inbox --agent "$AGENT" --channels "$PROJECT" --all --count-only --format json 2>/dev/null \
 		| "$PYTHON_BIN" -c \
-			'import json,sys; d=json.load(sys.stdin); print(sum(c.get("unread",0) for c in d.get("channels",[])))' \
+			'import json,sys; d=json.load(sys.stdin); print(d.get("total_unread",0) if isinstance(d,dict) else d)' \
 		2>/dev/null || echo "0")
 
 	ready_count=$(br ready --json 2>/dev/null \
 		| "$PYTHON_BIN" -c \
-			'import json,sys; d=json.load(sys.stdin); print(len(d.get("issues",d.get("beads",[]))))' \
+			'import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else len(d.get("issues",d.get("beads",[]))))' \
 		2>/dev/null || echo "0")
 
 	if [[ "$inbox_count" -gt 0 ]] || [[ "$ready_count" -gt 0 ]]; then
@@ -75,7 +78,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		break
 	fi
 
-	claude -p "$(
+	claude ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
 		cat <<EOF
 You are worker agent "$AGENT" for project "$PROJECT".
 
@@ -125,6 +128,8 @@ Key rules:
 - If claim denied, pick something else.
 - All botbus and crit commands use --agent $AGENT.
 - All file operations in .workspaces/WS/, never in the project root.
+- Run br commands (br update, br close, br comments, br sync) from the project root, NOT from .workspaces/WS/.
+- If a tool behaves unexpectedly, report it: botbus send --agent $AGENT $PROJECT "Tool issue: <details>" -L mesh -L tool-issue.
 - STOP after completing one task or determining no work. Do not loop.
 EOF
 	)"
@@ -135,6 +140,6 @@ done
 # --- Final sync and shutdown ---
 br sync --flush-only 2>/dev/null || true
 botbus send --agent "$AGENT" "$PROJECT" \
-	"Agent $AGENT shutting down after $i loops." \
+	"Agent $AGENT shutting down after $((i - 1)) loops." \
 	-L mesh -L agent-shutdown
 echo "Agent $AGENT finished."

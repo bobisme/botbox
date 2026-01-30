@@ -2,7 +2,13 @@
 
 Full worker lifecycle — triage, start, work, finish, repeat. This is the "colleague" agent: it shows up, finds work, does it, cleans up, and repeats until there is nothing left.
 
-Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus commands must include `--agent $AGENT`. All announcements go to `$BOTBOX_PROJECT` with `-L mesh`.
+## Identity
+
+If spawned by `agent-loop.sh`, your identity is provided as `$AGENT` (a random name like `storm-raven`). Otherwise, adopt `<project>-dev` as your name (e.g., `botbox-dev`). Run `botbus whoami --agent $AGENT` to confirm — it will generate a name if one isn't set.
+
+Your project channel is `$BOTBOX_PROJECT`. All botbus commands must include `--agent $AGENT`. All announcements go to `$BOTBOX_PROJECT` with `-L mesh`.
+
+**Important:** Run all `br` commands (`br update`, `br close`, `br comments`, `br sync`) from the **project root**, not from inside `.workspaces/$WS/`. Only file edits and implementation commands run inside the workspace. This prevents merge conflicts in the beads database.
 
 ## Loop
 
@@ -13,6 +19,7 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 - For questions or status checks, reply directly: `botbus send --agent $AGENT <channel> "<reply>" -L mesh -L triage-reply`
 - Check ready beads: `br ready`
 - If no ready beads and no new beads from inbox, stop with message "No work available."
+- **Check blocked beads** for resolved blockers: if a bead was blocked pending information or an upstream fix that has since landed, unblock it with `br update <id> --status=open` and a comment noting why.
 - **Groom each ready bead** (`br show <id>`): ensure it has a clear title, description with acceptance criteria and testing strategy, appropriate priority, and labels. Fix anything missing and comment what you changed.
 - Pick one task: `bv --robot-next` — parse the JSON to get the bead ID.
 - If the task is large (epic or multi-step), break it into smaller beads with `br create` + `br dep add`, then run `bv --robot-next` again. Repeat until you have exactly one small, atomic task.
@@ -31,8 +38,9 @@ Your identity is `$AGENT`. Your project channel is `$BOTBOX_PROJECT`. All botbus
 
 - Read the bead details: `br show <bead-id>`
 - Do the work using the tools available in the workspace.
-- **Add at least one progress comment** during work: `br comments add <bead-id> "Progress: ..."`
+- **You must add at least one progress comment** during work: `br comments add <bead-id> "Progress: ..."`
   - Post when you've made meaningful progress or hit a milestone
+  - This is required before you can close the bead — do not skip it
   - Essential for visibility and debugging if something goes wrong
 
 ### 4. Stuck check — recognize when you are stuck
@@ -42,6 +50,7 @@ You are stuck if: you attempted the same approach twice without progress, you ca
 If stuck:
 - Add a detailed comment with what you tried and where you got blocked: `br comments add <bead-id> "Blocked: ..."`
 - Post in the project channel: `botbus send --agent $AGENT $BOTBOX_PROJECT "Stuck on <bead-id>: <summary>" -L mesh -L task-blocked`
+- If a tool behaved unexpectedly (e.g., command succeeded but had no effect), also report it: `botbus send --agent $AGENT $BOTBOX_PROJECT "Tool issue: <tool> <what happened>" -L mesh -L tool-issue`
 - `br update <bead-id> --status=blocked`
 - Release the bead claim: `botbus release --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
 - Move on to triage again (go to step 1).

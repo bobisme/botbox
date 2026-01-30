@@ -13,7 +13,7 @@ Start a bead using the standard botbox flow: claim the work, set up a workspace,
 2. `br update <bead-id> --status=in_progress`
 3. `botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
 4. Create a workspace: `maw ws create --random` — note the workspace name and path from the output (e.g., `.workspaces/frost-castle`). Store the workspace name as `$WS`.
-5. **All file edits and commands must run from the workspace path** (e.g., `cd .workspaces/$WS && <command>`). Changes made outside this path land in the wrong workspace.
+5. **All file edits and implementation commands must run from the workspace path** (e.g., `cd .workspaces/$WS && <command>`). Changes made outside this path land in the wrong workspace. However, run `br` commands from the **project root** — not inside the workspace — to prevent beads database merge conflicts.
 6. `botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
 7. Announce: `botbus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>" -L mesh -L task-claim`
 

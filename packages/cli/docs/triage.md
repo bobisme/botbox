@@ -19,7 +19,8 @@ Find exactly one actionable bead, or determine there is no work available. Groom
    - For messages that are questions or status checks, reply inline: `botbus send --agent $AGENT <channel> "<response>" -L mesh -L triage-reply`
 3. Check for ready beads: `br ready`
    - If no ready beads exist and no inbox messages created new beads, output `NO_WORK_AVAILABLE` and stop.
-4. **Groom the ready beads.** For each bead from `br ready`, run `br show <bead-id>` and fix anything missing:
+4. **Check blocked beads** for resolved blockers. If a bead was blocked pending information, an upstream fix, or a tool issue that has since been resolved, unblock it: `br update <bead-id> --status=open` with a comment explaining why it's unblocked.
+5. **Groom the ready beads.** For each bead from `br ready`, run `br show <bead-id>` and fix anything missing:
    - **Title**: Should be clear and actionable (imperative form, e.g., "Add /health endpoint"). If vague, update: `br update <bead-id> --title="..."`
    - **Description**: Should explain what and why. If missing or vague, add context: `br update <bead-id> --description="..."`
    - **Priority**: Should reflect relative importance. Adjust if wrong: `br update <bead-id> --priority=<1-4>`
@@ -27,17 +28,17 @@ Find exactly one actionable bead, or determine there is no work available. Groom
    - **Acceptance criteria**: Description should include what "done" looks like. If missing, append criteria to the description.
    - **Testing strategy**: Description should mention how to verify the work (e.g., "run tests", "manual check", "curl endpoint"). If missing, append a brief testing note.
    - Add a comment noting what you groomed: `br comments add <bead-id> "Groomed by $AGENT: <what changed>"`
-5. Use bv to pick exactly one task: `bv --robot-next`
+6. Use bv to pick exactly one task: `bv --robot-next`
    - Parse the JSON output to get the recommended bead ID.
-6. Check the bead size: `br show <bead-id>`
+7. Check the bead size: `br show <bead-id>`
    - If the bead is large (epic, or description suggests multiple distinct changes), break it down:
      - Create smaller child beads with `br create` and `br dep add <child> <parent>`.
      - Then run `bv --robot-next` again to pick one of the children.
    - Repeat until you have exactly one small, atomic task.
-7. Verify the bead is not claimed by another agent: `botbus check-claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
+8. Verify the bead is not claimed by another agent: `botbus check-claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
    - If claimed by someone else, back off and run `bv --robot-next` again excluding that bead.
    - If all candidates are claimed, output `NO_WORK_AVAILABLE` and stop.
-8. Output the single bead ID as the result.
+9. Output the single bead ID as the result.
 
 ## Assumptions
 

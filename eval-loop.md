@@ -126,11 +126,11 @@ Note: Identity generation is scored as N/A (2 points removed per iteration) sinc
 ### Shell-level checks
 
 ```bash
-# During run — agent lease exists
-botbus claims --agent $AGENT | grep "agent://"
+# During run — agent lease exists (filter to recent claims)
+botbus claims --agent $AGENT --since 1h | grep "agent://"
 
 # After run — lease released
-botbus claims --agent $AGENT  # should be empty
+botbus claims --agent $AGENT --since 1h  # should be empty
 
 # Botbus announcements
 botbus inbox --agent eval-checker --channels eval-project --all | grep -E "online|signing off|shutting down"
