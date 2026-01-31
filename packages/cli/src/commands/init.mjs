@@ -1,6 +1,7 @@
-import { checkbox, confirm, input, select } from "@inquirer/prompts"
+import { checkbox, confirm, input } from "@inquirer/prompts"
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
 import { renderAgentsMd } from "../lib/templates.mjs"
 
@@ -22,24 +23,29 @@ export async function init(opts) {
   const interactive = opts.interactive !== false
   const projectDir = process.cwd()
 
-  const name =
-    opts.name ??
-    (interactive
-      ? await input({ message: "Project name:" })
-      : missingFlag("--name"))
+  try {
+    const name =
+      opts.name ??
+      (interactive
+        ? await input({ message: "Project name:" })
+        : missingFlag("--name"))
 
   const type =
     opts.type ??
     (interactive
-      ? await select({
-          message: "Project type:",
+      ? await checkbox({
+          message: "Project type (select one or more):",
           choices: PROJECT_TYPES.map((t) => ({ value: t })),
+          validate: (answer) =>
+            answer.length > 0 ? true : "Select at least one project type",
         })
       : missingFlag("--type"))
 
-  if (!PROJECT_TYPES.includes(type)) {
+  const types = Array.isArray(type) ? type : [type]
+  const invalid = types.filter((t) => !PROJECT_TYPES.includes(t))
+  if (invalid.length > 0) {
     throw new Error(
-      `Unknown project type: ${type}. Valid: ${PROJECT_TYPES.join(", ")}`,
+      `Unknown project type: ${invalid.join(", ")}. Valid: ${PROJECT_TYPES.join(", ")}`,
     )
   }
 
@@ -99,7 +105,7 @@ export async function init(opts) {
       "AGENTS.md already exists. Use --force to overwrite, or run `botbox sync` to update.",
     )
   } else {
-    const content = renderAgentsMd({ name, type, tools, reviewers })
+    const content = renderAgentsMd({ name, type: types, tools, reviewers })
     writeFileSync(agentsMdPath, content)
     console.log("Generated AGENTS.md")
   }
@@ -124,7 +130,13 @@ export async function init(opts) {
     }
   }
 
-  console.log("Done.")
+    console.log("Done.")
+  } catch (err) {
+    if (err.message?.includes("User force closed the prompt")) {
+      throw new ExitError("Initialization cancelled")
+    }
+    throw err
+  }
 }
 
 /**
