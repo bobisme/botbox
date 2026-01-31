@@ -44,6 +44,7 @@ const DOC_DESCRIPTIONS = {
   "finish.md": "Close bead, merge workspace, release claims, sync",
   "worker-loop.md": "Full triage-work-finish lifecycle",
   "review-request.md": "Request a review",
+  "review-response.md": "Handle reviewer feedback (fix/address/defer)",
   "review-loop.md": "Reviewer agent loop",
   "merge-check.md": "Verify approval before merge",
   "preflight.md": "Validate toolchain health",

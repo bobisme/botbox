@@ -1,0 +1,56 @@
+# Review Response
+
+Handle reviewer feedback on a blocked or commented review. For each thread, decide whether to fix, address, or defer.
+
+Your identity is `$AGENT`. All crit and botbus commands must include `--agent $AGENT`.
+
+## Arguments
+
+- `$AGENT` = agent identity (required)
+- `<review-id>` = review to respond to (required)
+
+## When to Use
+
+Run this when:
+- `crit inbox --agent $AGENT` shows threads with new comments on your review
+- `botbus inbox` contains a `review-done` message indicating your review was blocked
+- You previously requested review and are checking back for feedback
+
+## Steps
+
+1. Read the review and all threads: `crit review <review-id>`
+2. For each thread with reviewer feedback, categorize by severity and decide:
+
+   **Fix** (CRITICAL or HIGH severity — must resolve before merge):
+   - Make the code change in the workspace
+   - Reply on the thread: `crit reply <thread-id> --agent $AGENT "Fixed: <description>"`
+
+   **Address** (reviewer concern is valid but current approach is correct):
+   - Reply explaining why: `crit reply <thread-id> --agent $AGENT "Won't fix: <rationale>"`
+   - Be specific — reference docs, compiler output, or design intent
+
+   **Defer** (good idea, but out of scope for this change):
+   - Create a tracking bead: `br create "<title>" --label deferred`
+   - Reply: `crit reply <thread-id> --agent $AGENT "Deferred to <bead-id> for follow-up"`
+
+3. After handling all threads:
+   a. Verify fixes compile: `cargo check` (or equivalent for the project)
+   b. Describe the change: `jj describe -m "fix: address review feedback on <review-id>"`
+   c. Re-request review: `crit reviews request <review-id> --agent $AGENT --reviewers <reviewer>`
+   d. Announce: `botbus send --agent $AGENT $BOTBOX_PROJECT "Review feedback addressed: <review-id>" -L mesh -L review-response`
+
+## After LGTM
+
+When the reviewer approves:
+
+1. Verify approval: `crit review <review-id>` — confirm LGTM vote, no blocks
+2. Squash fix into original change: `jj squash` (folds current change into parent)
+3. Describe the merged result: `jj describe -m "<original commit message>"`
+4. Mark review as merged: `crit reviews merge <review-id> --agent $AGENT`
+5. Continue with [finish](finish.md) to close the bead and merge the workspace
+
+## Assumptions
+
+- `BOTBOX_PROJECT` env var contains the project channel name.
+- You are the author of the review (the agent that created it or requested it).
+- The workspace is still active — fixes are made in the workspace, not the main branch.

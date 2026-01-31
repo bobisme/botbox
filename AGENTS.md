@@ -64,6 +64,7 @@ Workflow docs live in `packages/cli/docs/` and are bundled with the npm package.
 | [finish.md](packages/cli/docs/finish.md) | Close bead, merge workspace, release claims, sync |
 | [worker-loop.md](packages/cli/docs/worker-loop.md) | Full triage-start-work-finish lifecycle |
 | [review-request.md](packages/cli/docs/review-request.md) | Request a code review via crit |
+| [review-response.md](packages/cli/docs/review-response.md) | Handle reviewer feedback (fix/address/defer) and merge after LGTM |
 | [review-loop.md](packages/cli/docs/review-loop.md) | Reviewer agent loop until no pending reviews |
 | [merge-check.md](packages/cli/docs/merge-check.md) | Verify approval before merging |
 | [preflight.md](packages/cli/docs/preflight.md) | Validate toolchain health before starting work |
