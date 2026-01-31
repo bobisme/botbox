@@ -14,7 +14,7 @@ echo "REVIEWER=$REVIEWER"
 echo "EVAL_DIR=$EVAL_DIR"
 
 # Find the review ID from crit state
-REVIEW_ID=$(crit reviews list --json 2>/dev/null | python3 -c 'import json,sys; reviews=json.load(sys.stdin); print(reviews[0]["review_id"])' 2>/dev/null || echo "UNKNOWN")
+REVIEW_ID=$(crit reviews list --format json 2>/dev/null | python3 -c 'import json,sys; reviews=json.load(sys.stdin); print(reviews[0]["review_id"])' 2>/dev/null || echo "UNKNOWN")
 # Find workspace name (non-default workspace)
 jj workspace update-stale 2>/dev/null || true
 WS_NAME=$(maw ws list 2>/dev/null | grep -v "^Workspaces" | grep -v "^\*" | grep -v "^$" | head -1 | sed 's/^ *//' | cut -d: -f1)

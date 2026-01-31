@@ -12,9 +12,12 @@ echo "DEV_AGENT=$DEV_AGENT"
 echo "EVAL_DIR=$EVAL_DIR"
 
 # Find the review ID and workspace name from crit and maw state
-REVIEW_ID=$(crit reviews list --json 2>/dev/null | python3 -c 'import json,sys; reviews=json.load(sys.stdin); print(reviews[0]["id"])' 2>/dev/null || echo "UNKNOWN")
-WS_NAME=$(maw ws list --json 2>/dev/null | python3 -c 'import json,sys; ws=json.load(sys.stdin); print(ws[0]["name"])' 2>/dev/null || echo "UNKNOWN")
-BEAD_ID=$(br list --status in_progress --json 2>/dev/null | python3 -c 'import json,sys; beads=json.load(sys.stdin); print(beads[0]["id"])' 2>/dev/null || echo "UNKNOWN")
+REVIEW_ID=$(crit reviews list --format json 2>/dev/null | python3 -c 'import json,sys; reviews=json.load(sys.stdin); print(reviews[0]["review_id"])' 2>/dev/null || echo "UNKNOWN")
+WS_NAME=$(maw ws list --format json 2>/dev/null | python3 -c 'import json,sys; ws=json.load(sys.stdin); print(ws[0]["name"])' 2>/dev/null || echo "UNKNOWN")
+if [ "$WS_NAME" = "UNKNOWN" ]; then
+  WS_NAME=$(ls "${EVAL_DIR}/.workspaces/" 2>/dev/null | head -1 || echo "UNKNOWN")
+fi
+BEAD_ID=$(br list --status in_progress --format json 2>/dev/null | python3 -c 'import json,sys; beads=json.load(sys.stdin); print(beads[0]["id"])' 2>/dev/null || echo "UNKNOWN")
 
 echo "REVIEW_ID=$REVIEW_ID"
 echo "WS_NAME=$WS_NAME"
