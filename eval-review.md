@@ -182,9 +182,10 @@ botbus history review-eval --limit 10 | grep "$REVIEWER"
 Design at least 2 fixture sets so the eval isn't memorizable:
 
 **Fixture A — Path Traversal**:
-- Bug: `GET /files/:name` reads files using user input in path without sanitization (`format!("data/{}", name)` — allows `../etc/passwd`)
-- Quality: Error handler returns raw error string to client (leaks internals)
-- Clean: Uses `unsafe` for a zero-copy buffer optimization with a correct safety comment
+- Bug: `GET /files/:name` reads files using user input in path without sanitization (`format!("{}/{}", data_dir, name)` — allows `../etc/passwd`)
+- Quality: Error handler returns raw error string to client (leaks internals); uninformative `format!("failed")` error message
+- Clean: Role-based email visibility using explicit match arms with wildcard defaulting to least privilege (looks over-engineered but is deliberate defense-in-depth)
+- Note: Original fixture used `static mut` with a safety comment as the clean code trap. This was flawed — `static mut` is genuinely problematic (clippy warns, deprecated pattern, unsound under tokio multi-threaded runtime). Replaced with `OnceLock` and the role-based match. **Eval fixtures must be genuinely correct.**
 
 **Fixture B — Panic on Input**:
 - Bug: `.unwrap()` on user-supplied JSON field that may be null (panics on missing field, crashes the server)
