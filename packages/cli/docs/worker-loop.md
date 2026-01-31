@@ -59,7 +59,7 @@ If stuck:
 
 - `br comments add <bead-id> "Completed by $AGENT"`
 - `br close <bead-id> --reason="Completed" --suggest-next`
-- `maw ws merge $WS --destroy -f` (if merge conflict, preserve workspace and announce)
+- `maw ws merge $WS --destroy` (if merge conflict, preserve workspace and announce)
 - `botbus release --agent $AGENT --all`
 - `br sync --flush-only`
 - `botbus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>" -L mesh -L task-done`
