@@ -28,6 +28,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R2-1 | Author Response | Sonnet | — | 65/65 (100%) | All 3 threads fixed correctly; canonicalize+starts_with for path traversal |
 | R3-1 | Full Review Loop | Sonnet | — | 60/65 (92%) | Re-review LGTM + merge; first merge attempt timed out (wrong crit command) |
 | R4-1 | Integration (Full Lifecycle) | Sonnet | 1 | 89/95 (94%) | End-to-end triage→merge works; re-review needed prompt fix for workspace visibility |
+| R4-2 | Integration (Full Lifecycle) | Sonnet | 1 | 95/95 (100%) | crit v0.9.1 vote override fix confirmed; perfect score with workspace path hint |
 
 ## Key Learnings
 
@@ -56,6 +57,8 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **Full review loop works with sequential `claude -p` invocations** — each agent reads shared state (crit + botbus), acts, updates state for next agent. No explicit agent-to-agent communication needed.
 - **`crit reviews merge` not `crit reviews close`** — agent timed out trying to find a "close" command. Precise command names in prompts prevent this.
 - **Reviewer re-review was thorough** — read actual code, ran clippy, verified each fix against original issue. Didn't rubber-stamp based on author's thread replies alone.
+- **crit v0.9.1 vote override fix confirmed** — R4-2 LGTM properly overrides block in SQLite index. The 6-point Phase 4 improvement (4/10 → 10/10) is entirely attributable to this fix + workspace path hint.
+- **R4 results are reproducible** — R4-1 and R4-2 with different agents, same protocol, same outcomes (modulo the fixed bug). Validates the eval framework produces consistent measurements.
 
 ## Upstream Tool Versions (as of 2026-01-31)
 
@@ -118,3 +121,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R2-1](2026-01-31-review-r2-run1-sonnet.md)
 - [R3-1](2026-01-31-review-r3-run1-sonnet.md)
 - [R4-1](2026-01-31-review-r4-run1-sonnet.md)
+- [R4-2](2026-01-31-review-r4-run2-sonnet.md)

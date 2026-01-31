@@ -594,6 +594,7 @@ Excellent: ≥81 (85%)
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
 | R4-1 | Sonnet | 89/95 (94%) | Full lifecycle works; Phase 4 needed prompt fix for workspace visibility + crit index bug |
+| R4-2 | Sonnet | 95/95 (100%) | crit v0.9.1 vote override fix confirmed; perfect score. Phase 4: 10/10 (was 4/10) |
 
 ---
 
