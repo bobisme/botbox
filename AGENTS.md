@@ -97,4 +97,4 @@ This project has a behavioral evaluation framework for testing whether agents fo
 
 ## Beads
 
-This project tracks work with beads. Run `br ready` to find actionable work, `br show <id>` for details.
+This project tracks ALL work with beads. Before starting any non-trivial task, check if a bead exists or create one. Run `br ready` to find actionable work, `br show <id>` for details. Use `br create` for new tasks, `br epic status` for epic progress, and `br close <id>` when done.
