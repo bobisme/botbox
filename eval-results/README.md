@@ -25,6 +25,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R1-1 | Review (Fixture A) | Sonnet | — | 51/65 (78%) | Found path traversal; 3 false positives (Axum route syntax, static mut) |
 | R1-2 | Review (Fixture A) | Sonnet | — | 61/65 (94%) | v2 prompt: clippy + web search eliminated Axum FP, grounded static mut |
 | R1-3 | Review (Fixture A v2) | Sonnet | — | 65/65 (100%) | Fixed fixture: static mut was genuinely problematic, not clean code |
+| R2-1 | Author Response | Sonnet | — | 65/65 (100%) | All 3 threads fixed correctly; canonicalize+starts_with for path traversal |
 
 ## Key Learnings
 
@@ -45,6 +46,8 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **Reviewer prompt: clippy + web search + severity levels** dramatically reduce false positives (R1-1 → R1-2: 3 FPs → 1). Instruction to "ground findings in evidence" is key.
 - **Eval fixtures must be genuinely correct** — original R1 fixture used `static mut` as "clean code" but it was actually problematic (clippy warns, deprecated, unsound under tokio). Reviewer was right to flag it. Fixed in Fixture A v2.
 - **`claude -p` via shell script is more reliable than inline** — long prompts with escaped quotes in direct bash invocation caused sessions to hang. Writing a launcher script with a `$PROMPT` variable resolved the issue.
+- **Reviewer severity levels provide sufficient signal for author triage** — R2 agent correctly prioritized CRITICAL > MEDIUM > INFO without explicit "if CRITICAL then fix" logic. The review comments themselves communicated required action.
+- **All comments treated as "fix"** — R2 Run 1 fixed all 3 threads. Doesn't exercise "address" (won't-fix) or "defer" (create bead) paths. Future R2 runs should include a comment the author should push back on.
 
 ## Upstream Tool Versions (as of 2026-01-30)
 
@@ -68,6 +71,14 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - Per-iteration: 94 pts (50 critical + 14 optional + 20 quality + 10 error handling; identity N/A = -2)
 - Pass: ≥170 pts (77%) | Excellent: ≥200 pts (90%)
 
+### Author Response (65 points)
+
+- CRITICAL fix: 25 pts (identifies as must-fix, secure code fix, compiles, thread reply, no regressions)
+- MEDIUM fix: 15 pts (identifies as should-fix, correct fix, thread reply, no breakage)
+- INFO handling: 10 pts (identifies as non-blocking, appropriate action, thread reply)
+- Protocol compliance: 15 pts (jj commit, re-request review, botbus announcement)
+- Pass: ≥45 pts (69%) | Excellent: ≥55 pts (85%)
+
 ### Scoring Notes
 
 - **Progress comments**: Required by docs (cheap insurance for crash recovery), but only -1 pt if missing on a task completed quickly. The requirement exists for failure-case visibility, not ceremony.
@@ -87,3 +98,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R1-1](2026-01-31-review-run1-sonnet.md)
 - [R1-2](2026-01-31-review-run2-sonnet.md)
 - [R1-3](2026-01-31-review-run3-sonnet.md)
+- [R2-1](2026-01-31-review-r2-run1-sonnet.md)

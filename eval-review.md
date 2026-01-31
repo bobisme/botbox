@@ -206,21 +206,129 @@ Based on worker loop eval patterns:
 
 ---
 
-## Future Levels
+## R2: Author Response
 
-### R2: Author Response
+### Concept
 
-**Prerequisite**: R1 validates that reviewers produce useful feedback.
-
-The dev agent sees reviewer comments on its next loop iteration and must handle each one:
+The dev agent sees reviewer comments on a blocked review and must handle each one:
 
 - **Fix**: Make a code change, commit, reply "Fixed in <change>"
 - **Address**: Reply explaining why the current approach is correct (won't-fix)
 - **Defer**: Create a bead, reply "Filed <bead-id> for follow-up"
 
-**Setup**: Seed a crit review with pre-written reviewer comments (from an R1 run or manually authored). Run the dev agent's loop. Score whether it correctly categorizes each comment and takes the right action.
+**Key question**: Can the agent distinguish "must fix before merge" from "should fix" from "nice to have"?
 
-**Key question**: Can the agent distinguish "must fix before merge" from "acknowledged, won't fix" from "good idea, but not now"?
+### Setup
+
+Reuse the R1 eval environment. The review cr-5c3z is already blocked with 3 threads from R1 Run 3.
+
+```bash
+# Verify environment
+cd /tmp/tmp.5ipWn3wgtK
+crit review cr-5c3z
+
+# Create a new jj change for the fixes (don't amend the reviewed change)
+jj new -m "fix: address review feedback on cr-5c3z"
+```
+
+### Execution
+
+```bash
+AUTHOR="eval-author"
+
+PROMPT="You are dev agent \"${AUTHOR}\" for project \"review-eval\".
+Use --agent ${AUTHOR} on ALL crit and botbus commands.
+
+Your code review cr-5c3z has been BLOCKED by a reviewer. You need to handle the feedback.
+
+Workflow:
+1. Check botbus inbox: botbus inbox --agent ${AUTHOR} --channels review-eval --mark-read
+2. Read the review: crit review cr-5c3z
+3. Read all threads: crit threads list cr-5c3z
+4. For each thread, read the comment and decide:
+   - CRITICAL/HIGH severity → MUST FIX before merge. Fix the code, then reply:
+     crit comment cr-5c3z \"Fixed: <description of fix>\" --file src/main.rs --line <line> --thread <thread-id>
+   - MEDIUM severity → SHOULD FIX. Fix the code or explain why not, then reply on the thread.
+   - LOW/INFO severity → OPTIONAL. Fix if trivial, otherwise acknowledge or defer.
+5. After handling all comments:
+   a. Verify fixes compile: cargo check
+   b. Describe the change: jj describe -m \"fix: address review feedback on cr-5c3z\"
+   c. Re-request review: crit reviews request cr-5c3z --agent ${AUTHOR} --reviewers radiant-eagle
+   d. Announce: botbus send --agent ${AUTHOR} review-eval \"Review feedback addressed: cr-5c3z\" -L mesh -L review-response
+
+Read the full source files before making changes. Verify your fixes compile with cargo check.
+Do NOT use git. Use jj for all version control operations."
+
+claude --model sonnet \
+  --dangerously-skip-permissions --allow-dangerously-skip-permissions \
+  -p "$PROMPT"
+```
+
+### Scoring (65 points)
+
+#### CRITICAL Fix — Path Traversal (25 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|--------------|
+| Identifies as must-fix | 3 | Agent's reasoning references severity |
+| Fix is secure (canonicalize + starts_with, ServeDir, etc.) | 10 | Read fixed code; string-only checks get 3/10 |
+| Code compiles after fix | 5 | `cargo check` succeeds |
+| Reply on thread references fix | 5 | `crit threads list cr-5c3z` shows reply on th-se3v |
+| No regressions | 2 | Code inspection |
+
+#### MEDIUM Fix — Info Disclosure (15 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|--------------|
+| Identifies as should-fix | 3 | Agent treats as actionable |
+| Fix replaces raw error with generic message | 5 | Line 94 no longer exposes io::Error |
+| Reply on thread | 5 | Thread th-yu1l has author reply |
+| Fix doesn't break error handling | 2 | Proper StatusCode preserved |
+
+#### INFO Handling — Clippy Warning (10 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|--------------|
+| Identifies as non-blocking | 3 | Not treated as urgent |
+| Appropriate action | 4 | Fix, acknowledge, or defer — all acceptable |
+| Reply on thread | 3 | Thread th-fvfx has author reply |
+
+#### Protocol Compliance (15 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|--------------|
+| Proper jj commit with descriptive message | 5 | `jj log` shows new change |
+| Re-requests review | 5 | `crit review cr-5c3z` shows re-request |
+| Botbus announcement | 5 | `botbus history review-eval` shows message |
+
+```
+CRITICAL fix:          25 points
+MEDIUM fix:            15 points
+INFO handling:         10 points
+Protocol compliance:   15 points
+                      ───────────
+Total:                 65 points
+
+Pass: ≥45 (69%)
+Excellent: ≥55 (85%)
+```
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| R2-1 | Sonnet | 65/65 (100%) | All 3 threads fixed correctly; canonicalize+starts_with for path traversal |
+
+### Limitations of Current R2
+
+R2-1 only tested the "fix" action path. All three reviewer comments had clear, correct fixes. Future runs should include:
+
+- A comment where the author should push back ("address" path) — e.g., a reviewer misunderstanding about the framework
+- A comment that's a good idea but out of scope ("defer" path) — e.g., a feature suggestion for later
+
+---
+
+## Future Levels
 
 ### R3: Full Review Loop
 

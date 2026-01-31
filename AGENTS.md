@@ -95,7 +95,7 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `docs/dev-agent-architecture.md` — Target multi-agent architecture
 - `eval-results/` — Individual run reports
 
-16 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1). Best scores: Sonnet 99% (worker loop v3), Haiku 94% (worker loop v2.1), Sonnet 100% (reviewer R1). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+17 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2). Best scores: Sonnet 99% (worker loop v3), Haiku 94% (worker loop v2.1), Sonnet 100% (reviewer R1, author R2). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
 
 ## Beads
 
