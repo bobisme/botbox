@@ -26,6 +26,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R1-2 | Review (Fixture A) | Sonnet | — | 61/65 (94%) | v2 prompt: clippy + web search eliminated Axum FP, grounded static mut |
 | R1-3 | Review (Fixture A v2) | Sonnet | — | 65/65 (100%) | Fixed fixture: static mut was genuinely problematic, not clean code |
 | R2-1 | Author Response | Sonnet | — | 65/65 (100%) | All 3 threads fixed correctly; canonicalize+starts_with for path traversal |
+| R3-1 | Full Review Loop | Sonnet | — | 60/65 (92%) | Re-review LGTM + merge; first merge attempt timed out (wrong crit command) |
 
 ## Key Learnings
 
@@ -48,6 +49,9 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **`claude -p` via shell script is more reliable than inline** — long prompts with escaped quotes in direct bash invocation caused sessions to hang. Writing a launcher script with a `$PROMPT` variable resolved the issue.
 - **Reviewer severity levels provide sufficient signal for author triage** — R2 agent correctly prioritized CRITICAL > MEDIUM > INFO without explicit "if CRITICAL then fix" logic. The review comments themselves communicated required action.
 - **All comments treated as "fix"** — R2 Run 1 fixed all 3 threads. Doesn't exercise "address" (won't-fix) or "defer" (create bead) paths. Future R2 runs should include a comment the author should push back on.
+- **Full review loop works with sequential `claude -p` invocations** — each agent reads shared state (crit + botbus), acts, updates state for next agent. No explicit agent-to-agent communication needed.
+- **`crit reviews merge` not `crit reviews close`** — agent timed out trying to find a "close" command. Precise command names in prompts prevent this.
+- **Reviewer re-review was thorough** — read actual code, ran clippy, verified each fix against original issue. Didn't rubber-stamp based on author's thread replies alone.
 
 ## Upstream Tool Versions (as of 2026-01-30)
 
@@ -99,3 +103,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R1-2](2026-01-31-review-run2-sonnet.md)
 - [R1-3](2026-01-31-review-run3-sonnet.md)
 - [R2-1](2026-01-31-review-r2-run1-sonnet.md)
+- [R3-1](2026-01-31-review-r3-run1-sonnet.md)

@@ -328,23 +328,126 @@ R2-1 only tested the "fix" action path. All three reviewer comments had clear, c
 
 ---
 
+## R3: Full Review Loop
+
+### Concept
+
+Two agents coordinating across sequential `claude -p` invocations:
+
+1. ~~Dev agent finishes work, creates crit review, announces on botbus~~ (R1 setup)
+2. ~~Reviewer agent picks up review, comments, blocks~~ (R1)
+3. ~~Dev agent sees block, fixes the issue, re-requests review~~ (R2)
+4. **Reviewer verifies fix, LGTMs** (R3 Phase 1)
+5. **Dev agent merges** (R3 Phase 2)
+
+R3 builds on the R1+R2 environment. The review already has fixes and a re-request.
+
+### Execution
+
+**Phase 1: Re-review** — reviewer reads fixed code, verifies each fix, LGTMs or re-blocks.
+
+```bash
+REVIEWER="radiant-eagle"
+PROMPT="You are security reviewer agent \"${REVIEWER}\" for project \"review-eval\".
+Use --agent ${REVIEWER} on ALL crit and botbus commands.
+
+You previously BLOCKED review cr-5c3z. The author has addressed your feedback.
+
+Re-review workflow:
+1. botbus inbox --agent ${REVIEWER} --channels review-eval --mark-read
+2. crit inbox --agent ${REVIEWER}
+3. crit review cr-5c3z — read all threads and author replies
+4. Read the CURRENT source (cat src/main.rs) — verify each fix
+5. Run cargo clippy to confirm clean
+6. If all issues resolved:
+   crit lgtm cr-5c3z --agent ${REVIEWER} --reason \"All issues resolved: <summary>\"
+   botbus send --agent ${REVIEWER} review-eval \"Re-review: cr-5c3z — LGTM\" -L mesh -L review-done
+7. If issues remain: reply on thread, keep block
+
+Be thorough. Read actual code, don't just trust replies."
+```
+
+**Phase 2: Merge** — author sees LGTM, squashes fix, marks review merged.
+
+```bash
+AUTHOR="eval-author"
+PROMPT="You are dev agent \"${AUTHOR}\" for project \"review-eval\".
+Use --agent ${AUTHOR} on ALL crit and botbus commands.
+
+Check if cr-5c3z is approved and merge.
+
+Steps:
+1. botbus inbox --agent ${AUTHOR} --channels review-eval --mark-read
+2. crit review cr-5c3z — check for LGTM vote
+3. If LGTM (no blocks):
+   a. jj squash — squash fix into parent change
+   b. jj describe -m \"feat: add user lookup and file serving endpoints\"
+   c. crit reviews merge cr-5c3z --agent ${AUTHOR}
+   d. botbus send --agent ${AUTHOR} review-eval \"Merged: cr-5c3z\" -L mesh -L merge
+4. If still blocked: read feedback and address it
+
+Use jj, not git."
+```
+
+### Scoring (65 points)
+
+#### Re-Review Phase (35 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|--------------|
+| Read current source code (not just replies) | 5 | Agent reads src/main.rs |
+| Verified CRITICAL fix is secure | 10 | Confirms canonicalize + starts_with pattern |
+| Verified MEDIUM fix is correct | 5 | Confirms generic error messages |
+| Correctly LGTMed (not re-blocked) | 10 | `crit review cr-5c3z` shows LGTM |
+| Botbus announcement | 5 | `botbus history` shows review-done |
+
+#### Merge Phase (30 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|--------------|
+| Checked for LGTM before merging | 5 | Agent reads review before acting |
+| Squashed fix into original change | 5 | `jj log` shows single clean commit |
+| Review marked as merged in crit | 5 | `crit reviews list --json` shows merged |
+| Botbus merge announcement | 5 | `botbus history` shows merge message |
+| Code still compiles | 5 | `cargo check` clean |
+| Clean execution (no retries) | 5 | First attempt succeeds |
+
+```
+Re-review phase:    35 points
+Merge phase:        30 points
+                   ───────────
+Total:              65 points
+
+Pass: ≥45 (69%)
+Excellent: ≥55 (85%)
+```
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| R3-1 | Sonnet | 60/65 (92%) | Re-review thorough (read code, ran clippy); merge timed out on first attempt (wrong crit command) |
+
+### Full Loop Combined Score
+
+| Phase | Run | Score |
+|-------|-----|-------|
+| R1 (Review) | R1-3 | 65/65 (100%) |
+| R2 (Author Response) | R2-1 | 65/65 (100%) |
+| R3 (Re-review + Merge) | R3-1 | 60/65 (92%) |
+| **Combined** | | **190/195 (97%)** |
+
+### Key Learnings
+
+- Sequential `claude -p` invocations coordinate naturally via crit + botbus shared state
+- Reviewer verification was thorough: read actual code, ran clippy, didn't rubber-stamp
+- `crit reviews merge` (not `close`) — precise command names in prompts prevent timeouts
+- Agent self-approve before merge was unnecessary but harmless
+- Botbus inbox may be stale if mark-read was used in a previous phase — agents should fall through to checking crit directly
+
+---
+
 ## Future Levels
-
-### R3: Full Review Loop
-
-**Prerequisite**: R1 + R2 validated independently.
-
-Two agents, coordinating across iterations:
-
-1. Dev agent finishes work, creates crit review, announces on botbus
-2. Reviewer agent picks up review, comments, blocks
-3. Dev agent sees block, fixes the issue, re-requests review
-4. Reviewer verifies fix, LGTMs
-5. Dev agent merges
-
-This tests the full back-and-forth. The scoring combines R1 (reviewer quality) and R2 (author response) plus coordination mechanics (did the re-request work? did the reviewer re-check?).
-
-**Execution**: Either two concurrent `claude -p` sessions coordinating via botbus/crit, or sequential (dev → reviewer → dev → reviewer) with state persisted in crit between runs.
 
 ### R4: Integration
 
