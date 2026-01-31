@@ -69,6 +69,7 @@ Workflow docs live in `packages/cli/docs/` and are bundled with the npm package.
 | [merge-check.md](packages/cli/docs/merge-check.md) | Verify approval before merging |
 | [preflight.md](packages/cli/docs/preflight.md) | Validate toolchain health before starting work |
 | [report-issue.md](packages/cli/docs/report-issue.md) | Report bugs/features to other projects via #projects registry |
+| [groom.md](packages/cli/docs/groom.md) | Groom ready beads: fix titles, descriptions, priorities, break down large tasks |
 
 ### When to update docs
 
@@ -96,7 +97,16 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `docs/dev-agent-architecture.md` — Target multi-agent architecture
 - `eval-results/` — Individual run reports
 
-19 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3). Combined R1+R2+R3: 190/195 (97%). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+20 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 1 integration (R4). R4-1: 89/95 (94%). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+
+### Running R4 evals
+
+Launcher scripts are in `scratchpad/r4-{setup,phase1,phase2,phase3,phase4,phase5}.sh`. Run setup first, then phases sequentially. Phase 3+4 are only needed if Phase 2 blocks. The eval environment path, agent names, and review/workspace IDs are auto-discovered by each script. See `eval-review.md` R4 section for the full rubric.
+
+Key learnings from R4-1:
+- Phase 4 (re-review) prompt must include workspace path — reviewer reads from `.workspaces/$WS/`, not project root
+- crit v0.9.1 fixed a vote index bug where LGTM didn't override block (jj workspace reconciliation could restore stale events.jsonl)
+- `crit reviews merge` not `close`; `maw ws merge --destroy` without `-f`
 
 ## Beads
 
