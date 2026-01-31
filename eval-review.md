@@ -11,7 +11,7 @@ This is the next step toward the full dev-agent architecture described in `docs/
 | R1 | Reviewer agent: find bugs, comment, vote | 1 (reviewer) | Planned |
 | R2 | Author response: handle comments, fix, re-request | 1 (dev agent) | Future |
 | R3 | Full loop: author requests → reviewer reviews → author responds → merge | 2 (dev + reviewer) | Future |
-| R4 | Integration: worker loop + review + merge | 2+ (dev + workers + reviewer) | Future |
+| R4 | Integration: worker loop + review + merge | 2 (dev + reviewer) | ✅ Done |
 
 ## R1: Reviewer Eval
 
@@ -444,25 +444,158 @@ Excellent: ≥55 (85%)
 - `crit reviews merge` (not `close`) — precise command names in prompts prevent timeouts
 - Agent self-approve before merge was unnecessary but harmless
 - Botbus inbox may be stale if mark-read was used in a previous phase — agents should fall through to checking crit directly
+- **R4 addendum**: Reviewer re-review prompts must include workspace path — fixes live in `.workspaces/$WS/` until merge, not on main branch. R4-1 Phase 4 failed its first attempt because the reviewer read main branch code.
 
 ---
 
-## Future Levels
+## R4: Integration Eval — Full Worker Loop + Review Lifecycle
 
-### R4: Integration
+### Concept
+
+Test the full dev-agent architecture end-to-end: triage → start → work → request review → handle feedback → merge. Sequential `claude -p` invocations coordinated via crit + botbus. Bug seeded via task description (path traversal likely), with flexible scoring for both blocked and LGTM paths.
 
 **Prerequisite**: R3 + worker loop evals.
 
-Full dev-agent architecture running end-to-end:
+### Setup
 
-1. Dev agent triages inbox and beads
-2. Dispatches work (sequential or parallel via worker agents)
-3. Workers complete tasks
-4. Dev agent creates crit reviews for completed work
-5. Reviewer agent reviews, dev agent handles feedback
-6. Dev agent merges approved work
+```bash
+EVAL_DIR=$(mktemp -d) && cd "$EVAL_DIR"
+jj git init
+botbox init --name r4-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+cargo init --name r4-eval
+crit init && maw init
 
-This is the target described in `docs/dev-agent-architecture.md`. Scoring combines worker loop (248 pts), review (65 pts), and coordination mechanics (dispatch, tracking, merge).
+DEV_AGENT=$(botbus generate-name)
+REVIEWER=$(botbus generate-name)
+botbus mark-read --agent "$DEV_AGENT" r4-eval
+botbus mark-read --agent "$REVIEWER" r4-eval
+
+br create --title="Add file serving endpoint at GET /files/:name" \
+  --description="Create a GET /files/:name endpoint that reads files from ./data and returns contents. Return 404 if not found, 500 on read errors." \
+  --type=task --priority=2
+
+mkdir -p data && echo "Hello from test file" > data/test.txt
+jj describe -m "initial project setup" && jj new
+
+cat > .eval-env << EOF
+export EVAL_DIR="$EVAL_DIR"
+export DEV_AGENT="$DEV_AGENT"
+export REVIEWER="$REVIEWER"
+EOF
+```
+
+### Phases (5 sequential `claude -p` invocations)
+
+**Phase 1: Dev Agent — Work + Review Request**
+- Triage bead, create workspace, implement endpoint
+- Create crit review, request reviewer
+- Do NOT close bead or merge workspace — stop after review request
+- Verify: bead in_progress, workspace exists, review created, code compiles
+
+**Phase 2: Reviewer — Review**
+- Proven R1 v2 prompt (clippy, web search, severity levels, evidence-grounding)
+- Discovers review via `crit inbox`
+- Block or LGTM
+- **Decision point**: if LGTM → skip Phase 3+4, go to Phase 5 (auto-award 25 pts)
+
+**Phase 3: Dev Agent — Handle Feedback** (if blocked)
+- Read feedback, fix issues in workspace using `maw ws jj`
+- Reply on threads with `crit reply`
+- Re-request review
+- Verify fixes compile
+
+**Phase 4: Reviewer — Re-review** (if blocked)
+- Verify fixes in actual code (not just replies)
+- Run clippy
+- LGTM or re-block
+
+**Phase 5: Dev Agent — Merge + Finish**
+- Verify LGTM: `crit review <id>`
+- Mark review merged: `crit reviews merge <id>` (NOT `close`)
+- Merge workspace: `maw ws merge $WS --destroy` (no `-f`)
+- Close bead: `br close <id>`
+- Release claims: `botbus release --agent $DEV --all`
+- Sync: `br sync --flush-only`
+- Announce: `botbus send ... -L task-done`
+
+### Scoring (95 points)
+
+#### Phase 1: Work + Review Request (40 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Triage: found bead, groomed, claimed | 10 | `br show` shows in_progress, `botbus claims` shows claim |
+| Start: workspace created, announced | 5 | `maw ws list` shows workspace, botbus history shows task-claim |
+| Implementation: endpoint works | 10 | `cargo check` clean in workspace |
+| Review created and requested | 10 | `crit reviews list` shows review, requested reviewer |
+| Deferred finish: bead still open, workspace intact | 5 | `br show` still in_progress, `maw ws list` still shows workspace |
+
+#### Phase 2: Reviewer (20 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Bug/quality assessment | 10 | Comments address real issues (path traversal if present) |
+| Correct vote (block if CRITICAL/HIGH, LGTM otherwise) | 5 | `crit review <id>` shows appropriate vote |
+| Protocol: crit comments + botbus announcement | 5 | Comments have --file/--line, botbus shows review-done |
+
+#### Phase 3: Handle Feedback (15 points) — auto-award if Phase 2 was LGTM
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Read and categorized feedback | 3 | Agent processes thread severity |
+| Fixed CRITICAL/HIGH issues | 5 | Code change addresses the bug |
+| Replied on threads | 3 | `crit threads list` shows author replies |
+| Fixes compile + re-requested review | 4 | `cargo check` clean, `crit review` shows re-request |
+
+#### Phase 4: Re-review (10 points) — auto-award if Phase 2 was LGTM
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Read actual code (not just replies) | 3 | Agent reads source files |
+| Verified fixes, LGTMed | 5 | `crit review` shows LGTM |
+| Botbus announcement | 2 | botbus history shows review-done |
+
+#### Phase 5: Merge + Finish (10 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Verified LGTM before merge | 2 | Agent reads review first |
+| `crit reviews merge` (not close) | 2 | `crit reviews list` shows merged |
+| `maw ws merge --destroy` (no -f) | 2 | Workspace removed, code on main |
+| `br close` + `botbus release --all` | 2 | Bead closed, no active claims |
+| `br sync --flush-only` + announce | 2 | Botbus history shows task-done |
+
+```
+Phase 1 (Work + Review):   40 points
+Phase 2 (Reviewer):        20 points
+Phase 3 (Handle Feedback): 15 points
+Phase 4 (Re-review):       10 points
+Phase 5 (Merge + Finish):  10 points
+                           ───────────
+Total:                      95 points
+
+Pass: ≥66 (69%)
+Excellent: ≥81 (85%)
+```
+
+### Key Learnings Embedded
+
+- Shell script launcher pattern (avoids `claude -p` quoting hang)
+- `crit reviews merge` not `close` (R3-1 timeout fix)
+- `maw ws merge --destroy` without `-f` (maw v0.15.0)
+- `maw ws jj $WS` for jj commands in workspace
+- Run `br` from project root, not inside workspace
+- All commands use `--agent`
+- Do NOT cd into workspace permanently
+- Phase 3/4 auto-award if reviewer LGTMs on first pass (code may be clean)
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| R4-1 | Sonnet | 89/95 (94%) | Full lifecycle works; Phase 4 needed prompt fix for workspace visibility + crit index bug |
+
+---
 
 ### Beyond R4
 

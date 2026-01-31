@@ -27,6 +27,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R1-3 | Review (Fixture A v2) | Sonnet | — | 65/65 (100%) | Fixed fixture: static mut was genuinely problematic, not clean code |
 | R2-1 | Author Response | Sonnet | — | 65/65 (100%) | All 3 threads fixed correctly; canonicalize+starts_with for path traversal |
 | R3-1 | Full Review Loop | Sonnet | — | 60/65 (92%) | Re-review LGTM + merge; first merge attempt timed out (wrong crit command) |
+| R4-1 | Integration (Full Lifecycle) | Sonnet | 1 | 89/95 (94%) | End-to-end triage→merge works; re-review needed prompt fix for workspace visibility |
 
 ## Key Learnings
 
@@ -49,14 +50,17 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **`claude -p` via shell script is more reliable than inline** — long prompts with escaped quotes in direct bash invocation caused sessions to hang. Writing a launcher script with a `$PROMPT` variable resolved the issue.
 - **Reviewer severity levels provide sufficient signal for author triage** — R2 agent correctly prioritized CRITICAL > MEDIUM > INFO without explicit "if CRITICAL then fix" logic. The review comments themselves communicated required action.
 - **All comments treated as "fix"** — R2 Run 1 fixed all 3 threads. Doesn't exercise "address" (won't-fix) or "defer" (create bead) paths. Future R2 runs should include a comment the author should push back on.
+- **Workspace visibility is critical for re-review** — When the reviewer re-reviews after author fixes, they must read code from the workspace (`.workspaces/$WS/`), not the main branch. The main branch still has the pre-fix code until merge. Re-review prompts must include the workspace path explicitly.
+- **Crit index doesn't update votes on override** — When a reviewer casts LGTM after previously blocking, the SQLite index retains the old block vote. The event log is correct. Workaround: `rm .crit/index.db` to force rebuild.
+- **Full dev-agent lifecycle works end-to-end** — R4 validates triage→start→work→review→feedback→merge with 5 sequential `claude -p` invocations, 2 agents, coordinated via crit+botbus+beads. Score: 89/95 (94%).
 - **Full review loop works with sequential `claude -p` invocations** — each agent reads shared state (crit + botbus), acts, updates state for next agent. No explicit agent-to-agent communication needed.
 - **`crit reviews merge` not `crit reviews close`** — agent timed out trying to find a "close" command. Precise command names in prompts prevent this.
 - **Reviewer re-review was thorough** — read actual code, ran clippy, verified each fix against original issue. Didn't rubber-stamp based on author's thread replies alone.
 
-## Upstream Tool Versions (as of 2026-01-30)
+## Upstream Tool Versions (as of 2026-01-31)
 
 - botbus v0.3.8: self-message filtering, `claims --since`, `#channel` syntax
-- maw v0.12.0: single-workspace merge, agent-oriented error output, absolute path guidance in help text, jj concept explanations
+- maw v0.15.0: `maw ws merge --destroy` default (no `-f`), single-workspace merge, agent-oriented error output, absolute path guidance in help text, jj concept explanations
 - All workflow docs updated with eval learnings (identity, br-from-root, tool-issue reporting, progress comments, blocked bead re-evaluation, absolute workspace paths)
 
 ## Scoring Rubric
@@ -83,6 +87,15 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - Protocol compliance: 15 pts (jj commit, re-request review, botbus announcement)
 - Pass: ≥45 pts (69%) | Excellent: ≥55 pts (85%)
 
+### Integration / R4 (95 points)
+
+- Phase 1 (Work + Review Request): 40 pts (triage 10, start 5, implementation 10, review request 10, deferred finish 5)
+- Phase 2 (Reviewer): 20 pts (bug/quality assessment 10, correct vote 5, protocol 5)
+- Phase 3 (Handle Feedback): 15 pts (categorize 3, fix issues 5, thread replies 3, compile+re-request 4) — auto-award if Phase 2 LGTM
+- Phase 4 (Re-review): 10 pts (read code 3, verify+LGTM 5, announcement 2) — auto-award if Phase 2 LGTM
+- Phase 5 (Merge + Finish): 10 pts (verify LGTM 2, crit merge 2, maw merge 2, close+release 2, sync+announce 2)
+- Pass: ≥66 pts (69%) | Excellent: ≥81 pts (85%)
+
 ### Scoring Notes
 
 - **Progress comments**: Required by docs (cheap insurance for crash recovery), but only -1 pt if missing on a task completed quickly. The requirement exists for failure-case visibility, not ceremony.
@@ -104,3 +117,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R1-3](2026-01-31-review-run3-sonnet.md)
 - [R2-1](2026-01-31-review-r2-run1-sonnet.md)
 - [R3-1](2026-01-31-review-r3-run1-sonnet.md)
+- [R4-1](2026-01-31-review-r4-run1-sonnet.md)
