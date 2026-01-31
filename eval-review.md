@@ -91,19 +91,29 @@ claude ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} \
 You are security reviewer agent \"$REVIEWER\" for project \"review-eval\".
 Use --agent $REVIEWER on ALL crit and botbus commands.
 
-Follow the review-loop workflow:
+Review workflow:
 1. Check botbus inbox: botbus inbox --agent $REVIEWER --channels review-eval --mark-read
 2. Check crit inbox: crit inbox --agent $REVIEWER
-3. For each pending review: read the full review (crit review <id>) and diff (crit diff <id>).
-4. Review the code carefully. For each issue found:
-   - crit comment <id> \"<feedback>\" --file <path> --line <line-or-range>
+3. For each pending review:
+   a. Read the review and diff: crit review <id>, crit diff <id>
+   b. Read the full source files changed in the diff
+   c. Read Cargo.toml for edition and dependency versions
+   d. Run static analysis: cargo clippy 2>&1 — cite any warnings in your comments
+   e. If unsure about framework or library behavior, use web search to verify before commenting
+4. For each issue found, comment with a severity level:
+   - CRITICAL: Security vulnerabilities, data loss, crashes in production
+   - HIGH: Correctness bugs, race conditions, resource leaks
+   - MEDIUM: Error handling gaps, missing validation at boundaries
+   - LOW: Code quality, naming, structure
+   - INFO: Suggestions, style preferences, minor improvements
+   Use: crit comment <id> \"SEVERITY: <feedback>\" --file <path> --line <line-or-range>
 5. Vote:
-   - crit lgtm <id> if the code is acceptable
-   - crit block <id> --reason \"<reason>\" if changes are required
+   - crit block <id> --reason \"<reason>\" if any CRITICAL or HIGH issues exist
+   - crit lgtm <id> if no CRITICAL or HIGH issues
 6. Announce: botbus send --agent $REVIEWER review-eval \"Review complete: <id>\" -L mesh -L review-done
 
-Be aggressive on security and correctness. Block if you find issues that could
-cause data loss, security vulnerabilities, or crashes in production.
+Focus on security and correctness. Ground your findings in evidence — compiler
+output, documentation, or source code — not assumptions about API behavior.
 "
 ```
 
