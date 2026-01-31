@@ -35,7 +35,7 @@ Run this when:
 
 3. After handling all threads:
    a. Verify fixes compile: `cargo check` (or equivalent for the project)
-   b. Describe the change: `jj describe -m "fix: address review feedback on <review-id>"`
+   b. Describe the change: `maw ws jj $WS describe -m "fix: address review feedback on <review-id>"`
    c. Re-request review: `crit reviews request <review-id> --agent $AGENT --reviewers <reviewer>`
    d. Announce: `botbus send --agent $AGENT $BOTBOX_PROJECT "Review feedback addressed: <review-id>" -L mesh -L review-response`
 
@@ -44,10 +44,10 @@ Run this when:
 When the reviewer approves:
 
 1. Verify approval: `crit review <review-id>` — confirm LGTM vote, no blocks
-2. Squash fix into original change: `jj squash` (folds current change into parent)
-3. Describe the merged result: `jj describe -m "<original commit message>"`
-4. Mark review as merged: `crit reviews merge <review-id> --agent $AGENT`
-5. Continue with [finish](finish.md) to close the bead and merge the workspace
+2. Mark review as merged: `crit reviews merge <review-id> --agent $AGENT`
+3. Continue with [finish](finish.md) to close the bead and merge the workspace
+
+The actual code merge is handled by `maw ws merge` in the finish step — do not run `jj squash` manually.
 
 ## Assumptions
 
