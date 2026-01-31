@@ -42,6 +42,7 @@ Key modules:
 
 ## Conventions
 
+- **Version control: jj** (not git). Use `jj describe -m "message"` to set commit messages and `jj new` to finalize. Never use `git commit`. Run `maw jj-intro` for a git-to-jj quick reference.
 - `let` for all variables, `const` only for true constants (module-level, unchanging values)
 - No build step — `.mjs` + JSDoc everywhere
 - Tests use `bun:test` — colocated as `*.test.mjs` next to source
