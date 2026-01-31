@@ -89,11 +89,13 @@ Do **not** update docs for project-specific conventions — those belong in the 
 
 This project has a behavioral evaluation framework for testing whether agents follow the botbox protocol. Key docs:
 
-- `eval-proposal.md` — 5-level eval framework (Level 2 is current focus)
+- `eval-proposal.md` — 5-level eval framework
 - `eval-loop.md` — Agent-loop.sh specific eval plan
+- `eval-review.md` — Review eval plan (R1-R4), tracked by epic bd-110
+- `docs/dev-agent-architecture.md` — Target multi-agent architecture
 - `eval-results/` — Individual run reports
 
-10 eval runs completed (6 Level 2 single-session + 4 agent-loop.sh). Latest: Loop-4 scored 213/218 (98%). See [eval-results/README.md](eval-results/README.md) for all runs, scoring rubrics, and key learnings.
+16 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1). Best scores: Sonnet 99% (worker loop v3), Haiku 94% (worker loop v2.1), Sonnet 100% (reviewer R1). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
 
 ## Beads
 

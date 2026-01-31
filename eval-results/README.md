@@ -22,6 +22,9 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | Loop-8 | agent-loop.sh v3 | Haiku | 2 | 205/248 (83%) | First haiku run: no inbox replies, duplicate bead, stale br ready |
 | Loop-9 | agent-loop.sh v3 | Haiku | 2 | 65/248 (26%) | **FAIL**: bead spam from inbox, phantom close, timeout |
 | Loop-10 | agent-loop.sh v2.1 | Haiku | 2 | 206/218 (94%) | Clean run — excellent grooming, tests, br sync fix confirmed |
+| R1-1 | Review (Fixture A) | Sonnet | — | 51/65 (78%) | Found path traversal; 3 false positives (Axum route syntax, static mut) |
+| R1-2 | Review (Fixture A) | Sonnet | — | 61/65 (94%) | v2 prompt: clippy + web search eliminated Axum FP, grounded static mut |
+| R1-3 | Review (Fixture A v2) | Sonnet | — | 65/65 (100%) | Fixed fixture: static mut was genuinely problematic, not clean code |
 
 ## Key Learnings
 
@@ -39,6 +42,9 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **Do not `cd` into workspace and stay there** — use absolute paths for file ops, `maw ws jj` for jj commands. Workspace destroy deletes the directory and breaks the shell session (Loop-3 regression, Loop-4 fix)
 - `br ready` may show stale state after workspace merge — agent can waste an iteration re-doing closed work (Loop-4, Loop-7 observation)
 - **Duplicate bead detection from inbox is inconsistent** — agent sometimes creates a new bead from inbox task-request instead of recognizing an existing bead covers it (Loop-7). Prompt says "do NOT create another bead" but this isn't always followed.
+- **Reviewer prompt: clippy + web search + severity levels** dramatically reduce false positives (R1-1 → R1-2: 3 FPs → 1). Instruction to "ground findings in evidence" is key.
+- **Eval fixtures must be genuinely correct** — original R1 fixture used `static mut` as "clean code" but it was actually problematic (clippy warns, deprecated, unsound under tokio). Reviewer was right to flag it. Fixed in Fixture A v2.
+- **`claude -p` via shell script is more reliable than inline** — long prompts with escaped quotes in direct bash invocation caused sessions to hang. Writing a launcher script with a `$PROMPT` variable resolved the issue.
 
 ## Upstream Tool Versions (as of 2026-01-30)
 
@@ -78,3 +84,6 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [Loop-8](2026-01-30-agent-loop-run8-haiku-v3.md)
 - [Loop-9](2026-01-30-agent-loop-run9-haiku-v3.md)
 - [Loop-10](2026-01-30-agent-loop-run10-haiku-v2.1.md)
+- [R1-1](2026-01-31-review-run1-sonnet.md)
+- [R1-2](2026-01-31-review-run2-sonnet.md)
+- [R1-3](2026-01-31-review-run3-sonnet.md)
