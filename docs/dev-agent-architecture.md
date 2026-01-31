@@ -6,9 +6,15 @@ The target architecture for a project-level dev agent (e.g., `terseid-dev`). Thi
 
 | Agent | Role | Model | Lifecycle |
 |-------|------|-------|-----------|
-| `<project>-dev` | Lead developer. Triages, grooms, dispatches, reviews, merges. | Sonnet | Long-running loop |
-| `<random-name>` | Worker. Claims one bead, implements, finishes. | Haiku or Sonnet | Spawned per-task, exits when done |
-| `security-reviewer` | Reviews code for security issues via crit. | Sonnet | Spawned on demand via botty |
+| `<project>-dev` | Lead developer. Triages, grooms, dispatches, reviews, merges. | Opus or Sonnet | Long-running loop |
+| `<random-name>` | Worker. Claims one bead, implements, finishes. | Haiku (routine), Sonnet (moderate), Opus (complex) | Spawned per-task, exits when done |
+| `security-reviewer` | Reviews code for security issues via crit. | Opus | Spawned on demand via botty |
+
+### Model Selection
+
+- **Opus**: Planning, design, architecture decisions, code review, complex implementation. The lead dev agent uses Opus for triage/grooming and any task requiring judgment across the codebase.
+- **Sonnet**: General implementation, moderate complexity tasks, lead dev fallback when Opus budget is a concern.
+- **Haiku**: Routine, well-specified tasks with clear acceptance criteria. Best for pre-groomed beads where the work is straightforward (94% eval score on v2.1).
 
 ## Main Loop
 
