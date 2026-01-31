@@ -5,7 +5,7 @@ import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
 import { renderAgentsMd } from "../lib/templates.mjs"
 
-export const PROJECT_TYPES = ["api", "frontend", "library", "monorepo"]
+export const PROJECT_TYPES = ["api", "cli", "frontend", "library", "monorepo", "tui"]
 export const AVAILABLE_TOOLS = ["beads", "maw", "crit", "botbus", "botty"]
 export const REVIEWER_ROLES = ["security", "correctness"]
 
