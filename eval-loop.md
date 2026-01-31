@@ -8,7 +8,8 @@ End-to-end evaluation of `scripts/agent-loop.sh`. Tests both the shell script me
 |---------|-------|------|
 | v1 | Basic agent-loop mechanics | Loop-1, Loop-2 |
 | v2 | Fixed CWD guidance (absolute paths) | Loop-3, Loop-4 |
-| v3 | Inbox triage + noisy channel handling | — |
+| v2.1 | v2 + br sync between iterations, channel pre-mark | Loop-10 |
+| v3 | Inbox triage + noisy channel handling | Loop-5, Loop-6, Loop-7, Loop-8, Loop-9 |
 
 ## What's Different from Level 2 Evals
 

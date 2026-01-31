@@ -2,9 +2,22 @@
 
 Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps projects and keeps workflow docs in sync.
 
+## Eval Results
+
+16 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the botbox protocol (triage, claim, start, work, finish, release) when driven by `scripts/agent-loop.sh`.
+
+| Model | Best Score | Eval Version | Key Result |
+|-------|-----------|--------------|------------|
+| Opus | 100% | L2 (single session) | Perfect protocol compliance |
+| Sonnet | 99% | v3 (inbox triage) | Handles full inbox + beads lifecycle |
+| Haiku | 94% | v2.1 (beads only) | Excellent on pre-groomed tasks; struggles with inbox triage |
+
+**Takeaway**: Sonnet handles the full protocol including inbox triage. Haiku matches Sonnet on core task execution (94% vs 94-99%) but fails on message classification — use it for pre-triaged work. See [eval-results/](eval-results/README.md) for all 16 runs, scoring rubrics, and detailed findings.
+
 ## What is botbox?
 
 `botbox` is an npm CLI that:
+
 1. **Initializes projects** for multi-agent collaboration (interactive or via flags)
 2. **Syncs workflow docs** from a canonical source to `.agents/botbox/`
 3. **Validates health** via `doctor` command
@@ -40,6 +53,7 @@ botbox doctor
 ## What gets created?
 
 After `botbox init`:
+
 ```
 .agents/botbox/          # Workflow docs (triage, start, finish, etc.)
   triage.md
@@ -60,6 +74,7 @@ CLAUDE.md -> AGENTS.md   # Symlink
 ## Workflow docs
 
 The workflow docs in `.agents/botbox/` define the protocol:
+
 - **triage.md**: Find work from inbox and beads
 - **start.md**: Claim bead, create workspace, announce
 - **update.md**: Post progress updates
@@ -73,38 +88,29 @@ The workflow docs in `.agents/botbox/` define the protocol:
 
 These are the source of truth. When botbox updates, run `botbox sync` to pull changes.
 
-## Stack
+## Agent loop
 
-| Tool | Purpose | Key commands |
-|------|---------|-------------|
-| **botbus** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` |
-| **maw** | Isolated jj workspaces | `ws create`, `ws merge`, `ws destroy` |
-| **br/bv** | Work tracking + triage | `ready`, `create`, `close`, `--robot-next` |
-| **crit** | Code review | `review`, `comment`, `lgtm`, `block` |
-| **botty** | Agent runtime | `spawn`, `kill`, `tail`, `snapshot` |
-
-## Development
+`scripts/agent-loop.sh` drives autonomous agent workers:
 
 ```bash
-cd packages/cli
-bun install
-bun link              # Make botbox available globally
-just lint             # oxlint
-just fmt              # oxfmt --write
-just check            # tsc -p jsconfig.json
-bun test              # 50 tests
+# Run a Sonnet worker (full protocol including inbox)
+CLAUDE_MODEL=sonnet bash scripts/agent-loop.sh my-project
+
+# Run a Haiku worker (best for pre-groomed beads)
+CLAUDE_MODEL=haiku bash scripts/agent-loop.sh my-project
 ```
 
-Runtime: **bun** (not node)
-Tooling: **oxlint** (lint), **oxfmt** (format), **tsc** (type check via jsconfig.json)
-No build step: `.mjs` + JSDoc types
+The script handles agent leases, work detection (`has_work()`), one-bead-per-iteration discipline, and cleanup on exit. Each iteration spawns a `claude -p` session that executes one triage-start-work-finish cycle.
 
-## Testing
+## Stack
 
-- **Unit tests**: `bun test` (50 tests in packages/cli/)
-- **E2E tests**: See `testing.md` (8 scenarios, all passing)
-- **UX test**: See `ux-test.md` and `ux-test-report.md` (comprehension validated)
-- **Behavioral eval**: See `eval-proposal.md` and `eval-results/` (Level 2 run 1: 92/92 perfect score)
+| Tool       | Purpose                         | Key commands                                  |
+| ---------- | ------------------------------- | --------------------------------------------- |
+| **botbus** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` |
+| **maw**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         |
+| **br/bv**  | Work tracking + triage          | `ready`, `create`, `close`, `--robot-next`    |
+| **crit**   | Code review                     | `review`, `comment`, `lgtm`, `block`          |
+| **botty**  | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           |
 
 ## Cross-project feedback
 
@@ -121,19 +127,3 @@ botbus send botty "Filed bd-xyz: description @botty-dev" -L feedback
 ```
 
 See `packages/cli/docs/report-issue.md` for full workflow.
-
-## Status
-
-**Production-ready** as of 2026-01-29:
-- ✅ CLI implemented (init, sync, doctor)
-- ✅ 50 unit tests passing
-- ✅ 8 e2e tests passing
-- ✅ UX test validated (agent comprehension: 8/8 questions correct)
-- ✅ Behavioral eval validated (Level 2: 92/92 perfect score)
-- ✅ Cross-project feedback workflow documented
-
-## Contributing
-
-All commits include: `Co-Authored-By: Claude <noreply@anthropic.com>` when Claude contributes.
-
-See `AGENTS.md` for conventions and workflow.

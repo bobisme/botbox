@@ -21,6 +21,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | Loop-7 | agent-loop.sh v3 | Sonnet | 2 | 232/248 (94%) | Duplicate bead from inbox; 4 iterations instead of 3 |
 | Loop-8 | agent-loop.sh v3 | Haiku | 2 | 205/248 (83%) | First haiku run: no inbox replies, duplicate bead, stale br ready |
 | Loop-9 | agent-loop.sh v3 | Haiku | 2 | 65/248 (26%) | **FAIL**: bead spam from inbox, phantom close, timeout |
+| Loop-10 | agent-loop.sh v2.1 | Haiku | 2 | 206/218 (94%) | Clean run — excellent grooming, tests, br sync fix confirmed |
 
 ## Key Learnings
 
@@ -76,3 +77,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [Loop-7](2026-01-30-agent-loop-run7-sonnet-v3.md)
 - [Loop-8](2026-01-30-agent-loop-run8-haiku-v3.md)
 - [Loop-9](2026-01-30-agent-loop-run9-haiku-v3.md)
+- [Loop-10](2026-01-30-agent-loop-run10-haiku-v2.1.md)
