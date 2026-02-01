@@ -13,7 +13,7 @@ Groom a set of ready beads to improve backlog quality. Use this when you need to
    - **Title**: Should be clear and actionable (imperative form, e.g., "Add /health endpoint"). If vague, update: `br update <bead-id> --title="..."`
    - **Description**: Should explain what and why. If missing or vague, add context: `br update <bead-id> --description="..."`
    - **Priority**: Should reflect relative importance. Adjust if wrong: `br update <bead-id> --priority=<1-4>`
-   - **Labels**: Add labels if the bead fits a category (see Label Conventions below). Create labels with `br label create <name>`, apply with `br label add <bead-id> <label>`.
+   - **Labels**: Add labels if the bead fits a category (see Label Conventions below). Apply with `br label add -l <label> <bead-id>` (creates label if it doesn't exist).
    - **Acceptance criteria**: Description should include what "done" looks like. If missing, append criteria to the description.
    - **Testing strategy**: Description should mention how to verify the work (e.g., "run tests", "manual check", "curl endpoint"). If missing, append a brief testing note.
    - Add a comment noting what you groomed: `br comments add <bead-id> "Groomed by $AGENT: <what changed>"`
@@ -76,7 +76,7 @@ Before creating a new label:
 1. Check existing labels: `br label list`
 2. Reuse an existing label if it fits (prefer consistency over perfect naming)
 3. Only create a new label if you expect to use it for multiple beads
-4. Create with `br label create <name>` (no description needed — the name should be self-explanatory)
+4. Apply with `br label add -l <name> <bead-id>` (creates label automatically if it doesn't exist — no separate creation command needed)
 
 ### Project-Specific vs Cross-Project
 

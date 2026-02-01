@@ -30,6 +30,10 @@ program
     "--reviewers <roles>",
     "Reviewer roles (comma-separated: security,correctness)",
   )
+  .option(
+    "--language <language>",
+    "Language/framework (comma-separated: rust,python,node,go,typescript,java)",
+  )
   .option("--init-beads", "Initialize beads issue tracker")
   .option("--force", "Overwrite existing AGENTS.md")
   .option("--no-interactive", "Skip interactive prompts (use flags only)")

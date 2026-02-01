@@ -8,6 +8,7 @@ import { renderAgentsMd } from "../lib/templates.mjs"
 export const PROJECT_TYPES = ["api", "cli", "frontend", "library", "monorepo", "tui"]
 export const AVAILABLE_TOOLS = ["beads", "maw", "crit", "botbus", "botty"]
 export const REVIEWER_ROLES = ["security", "correctness"]
+export const LANGUAGES = ["rust", "python", "node", "go", "typescript", "java"]
 
 /**
  * @param {object} opts
@@ -15,6 +16,7 @@ export const REVIEWER_ROLES = ["security", "correctness"]
  * @param {string} [opts.type]
  * @param {string} [opts.tools]
  * @param {string} [opts.reviewers]
+ * @param {string} [opts.language]
  * @param {boolean} [opts.initBeads]
  * @param {boolean} [opts.force]
  * @param {boolean} [opts.interactive]
@@ -82,6 +84,23 @@ export async function init(opts) {
     })
   }
 
+  /** @type {string[]} */
+  let languages = []
+  if (opts.language) {
+    languages = opts.language.split(",").map((s) => s.trim())
+    let invalid = languages.filter((l) => !LANGUAGES.includes(l))
+    if (invalid.length > 0) {
+      throw new Error(
+        `Unknown languages: ${invalid.join(", ")}. Valid: ${LANGUAGES.join(", ")}`,
+      )
+    }
+  } else if (interactive) {
+    languages = await checkbox({
+      message: "Languages/frameworks (for .gitignore generation):",
+      choices: LANGUAGES.map((l) => ({ value: l })),
+    })
+  }
+
   const initBeads =
     opts.initBeads ??
     (interactive
@@ -130,6 +149,20 @@ export async function init(opts) {
     }
   }
 
+  // Generate .gitignore
+  const gitignorePath = join(projectDir, ".gitignore")
+  if (languages.length > 0 && !existsSync(gitignorePath)) {
+    try {
+      const gitignoreContent = await fetchGitignore(languages)
+      writeFileSync(gitignorePath, gitignoreContent)
+      console.log(`Generated .gitignore for: ${languages.join(", ")}`)
+    } catch (err) {
+      console.warn(`Warning: Failed to generate .gitignore: ${err.message}`)
+    }
+  } else if (languages.length > 0 && existsSync(gitignorePath)) {
+    console.log(".gitignore already exists, skipping generation")
+  }
+
     console.log("Done.")
   } catch (err) {
     if (err.message?.includes("User force closed the prompt")) {
@@ -145,4 +178,18 @@ export async function init(opts) {
  */
 function missingFlag(flag) {
   throw new Error(`${flag} is required in non-interactive mode`)
+}
+
+/**
+ * Fetch .gitignore templates from gitignore.io
+ * @param {string[]} languages - Languages/frameworks to include
+ * @returns {Promise<string>} .gitignore content
+ */
+async function fetchGitignore(languages) {
+  const url = `https://www.toptal.com/developers/gitignore/api/${languages.join(",")}`
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+  }
+  return await response.text()
 }
