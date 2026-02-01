@@ -2,7 +2,7 @@
 
 Handle reviewer feedback on a blocked or commented review. For each thread, decide whether to fix, address, or defer.
 
-Your identity is `$AGENT`. All crit and botbus commands must include `--agent $AGENT`.
+Your identity is `$AGENT`. All crit and bus commands must include `--agent $AGENT`. Run `bus whoami --agent $AGENT` first if you need to confirm the identity.
 
 ## Arguments
 
@@ -13,7 +13,7 @@ Your identity is `$AGENT`. All crit and botbus commands must include `--agent $A
 
 Run this when:
 - `crit inbox --agent $AGENT` shows threads with new comments on your review
-- `botbus inbox` contains a `review-done` message indicating your review was blocked
+- `bus inbox` contains a `review-done` message indicating your review was blocked
 - You previously requested review and are checking back for feedback
 
 ## Steps
@@ -38,7 +38,7 @@ Run this when:
    b. Describe the change: `maw ws jj $WS describe -m "fix: address review feedback on <review-id>"`
    c. Re-request review: `crit reviews request <review-id> --agent $AGENT --reviewers <reviewer>`
    d. Announce (include workspace path so the reviewer can find the fixed code):
-      `botbus send --agent $AGENT $BOTBOX_PROJECT "Review feedback addressed: <review-id>, fixes in workspace $WS ($WS_PATH)" -L mesh -L review-response`
+      `bus send --agent $AGENT $BOTBOX_PROJECT "Review feedback addressed: <review-id>, fixes in workspace $WS ($WS_PATH)" -L mesh -L review-response`
 
 ## After LGTM
 

@@ -22,7 +22,7 @@ Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps proj
 2. **Syncs workflow docs** from a canonical source to `.agents/botbox/`
 3. **Validates health** via `doctor` command
 
-It glues together 5 Rust tools (botbus, maw, br/bv, crit, botty) into a cohesive workflow.
+It glues together 5 Rust tools (bus, maw, br/bv, crit, botty) into a cohesive workflow.
 
 ## Install
 
@@ -38,7 +38,7 @@ npm install -g botbox
 botbox init
 
 # Bootstrap with flags (for agents)
-botbox init --name my-api --type api --tools beads,maw,crit,botbus --reviewers security --no-interactive
+botbox init --name my-api --type api --tools beads,maw,crit,bus --reviewers security --no-interactive
 
 # Sync workflow docs after botbox upgrades
 botbox sync
@@ -106,7 +106,7 @@ The script handles agent leases, work detection (`has_work()`), one-bead-per-ite
 
 | Tool       | Purpose                         | Key commands                                  |
 | ---------- | ------------------------------- | --------------------------------------------- |
-| **botbus** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` |
+| **bus** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` |
 | **maw**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         |
 | **br/bv**  | Work tracking + triage          | `ready`, `create`, `close`, `--robot-next`    |
 | **crit**   | Code review                     | `review`, `comment`, `lgtm`, `block`          |
@@ -118,12 +118,12 @@ The `#projects` registry on botbus tracks which tools belong to which projects:
 
 ```bash
 # Find who owns a tool
-botbus inbox --agent $AGENT --channels projects --all | grep "tools:.*botty"
+bus inbox --agent $AGENT --channels projects --all | grep "tools:.*botty"
 
 # File bugs in their repo
 cd ~/src/botty
 br create --title="Bug: ..." --type=bug --priority=2
-botbus send botty "Filed bd-xyz: description @botty-dev" -L feedback
+bus send botty "Filed bd-xyz: description @botty-dev" -L feedback
 ```
 
 See `packages/cli/docs/report-issue.md` for full workflow.

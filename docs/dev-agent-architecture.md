@@ -22,7 +22,7 @@ The target architecture for a project-level dev agent (e.g., `terseid-dev`). Thi
 
 ### 1. Inbox
 
-Check `botbus inbox --agent $AGENT --channels $PROJECT --mark-read`. Handle each message by type:
+Check `bus inbox --agent $AGENT --channels $PROJECT --mark-read`. Handle each message by type:
 - **Task requests**: Create beads or merge into existing.
 - **Status checks**: Reply on botbus.
 - **Review responses**: Handle reviewer comments (see Review Lifecycle below).
@@ -63,16 +63,16 @@ After work is complete (either by the dev agent or a worker), if review is enabl
 **Request review:**
 1. Create a crit review: `crit reviews create --title "..." --change <jj-change-id>`
 2. Request reviewer: `crit reviews request <review-id> --reviewers security-reviewer`
-3. Announce on botbus: `botbus send --agent $AGENT $PROJECT "Review requested: <review-id> @security-reviewer" -L mesh -L review-request`
+3. Announce on botbus: `bus send --agent $AGENT $PROJECT "Review requested: <review-id> @security-reviewer" -L mesh -L review-request`
 
 **Ensure reviewer is running:**
-1. Check if reviewer is active: `botbus check-claim --agent $AGENT "agent://security-reviewer"`
+1. Check if reviewer is active: `bus check-claim --agent $AGENT "agent://security-reviewer"`
 2. If not running, spawn it: `botty spawn --name security-reviewer -- <reviewer-script>`
 
 **Wait for review:**
 The dev agent doesn't block. It continues its loop. Options:
 - Sleep briefly and check next iteration (simplest)
-- Use `botbus wait --agent $AGENT -L review-done -t 120` for event-driven notification
+- Use `bus wait --agent $AGENT -L review-done -t 120` for event-driven notification
 - Check `crit inbox --agent $AGENT` each iteration for completed reviews
 
 **Handle review response:**
@@ -83,7 +83,7 @@ On the next iteration where a review response is visible:
    - **Fix**: Make the code change in a workspace, commit, comment "Fixed in <change>"
    - **Address**: Reply explaining why the current approach is correct (won't-fix with rationale)
    - **Defer**: Create a bead for future work, comment "Filed <bead-id> for follow-up"
-3. Re-request review: `botbus send --agent $AGENT $PROJECT "Re-review requested: <review-id> @security-reviewer" -L mesh -L review-request`
+3. Re-request review: `bus send --agent $AGENT $PROJECT "Re-review requested: <review-id> @security-reviewer" -L mesh -L review-request`
 4. Repeat until LGTM or all blockers resolved.
 
 **Merge:**
@@ -96,9 +96,9 @@ On the next iteration where a review response is visible:
 Same as the current agent-loop finish:
 - `br comments add <id> "Completed by $AGENT"`
 - `br close <id> --reason="Completed" --suggest-next`
-- `botbus release --agent $AGENT --all`
+- `bus release --agent $AGENT --all`
 - `br sync --flush-only`
-- `botbus send --agent $AGENT $PROJECT "Completed <id>" -L mesh -L task-done`
+- `bus send --agent $AGENT $PROJECT "Completed <id>" -L mesh -L task-done`
 
 ## Coordination Model
 
@@ -108,7 +108,7 @@ Agents coordinate through two channels:
 
 **beads + crit** — persistent state. Bead status (open/in_progress/closed), crit reviews (pending/approved/blocked), comments and threads. This is the source of truth; botbus messages are notifications.
 
-Claims (`botbus claim`) prevent conflicts:
+Claims (`bus claim`) prevent conflicts:
 - `agent://<name>` — agent lease (one instance at a time)
 - `bead://<project>/<id>` — bead ownership
 - `workspace://<project>/<ws>` — workspace ownership

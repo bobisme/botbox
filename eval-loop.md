@@ -21,7 +21,7 @@ Level 2 evals spawn a single agent session and let it run freely. The agent-loop
 | Beads per invocation | All (agent decides) | Exactly 1 (script enforces) |
 | Work check | Agent runs `br ready` | `has_work()` bash function |
 | Cleanup on failure | Agent's responsibility | `trap cleanup EXIT` |
-| Agent lease | Not tested | `botbus claim agent://$AGENT` |
+| Agent lease | Not tested | `bus claim agent://$AGENT` |
 
 ---
 
@@ -30,7 +30,7 @@ Level 2 evals spawn a single agent session and let it run freely. The agent-loop
 ```bash
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
-botbox init --name botbox-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name botbox-eval --type api --tools beads,maw,crit,bus,botty --init-beads --no-interactive
 
 # Scaffold the project so agents don't waste time on boilerplate.
 # Pick ONE based on the language you want to test:
@@ -56,7 +56,7 @@ Extends v2 setup with seeded botbus messages. The agent must triage these during
 # ... v2 setup above ...
 
 # Generate the agent name upfront so we can pre-mark the channel.
-AGENT=$(botbus generate-name)
+AGENT=$(bus generate-name)
 
 # Mark all existing channel messages as read for this agent.
 # This prevents old seeded messages and replies from previous runs
@@ -64,35 +64,35 @@ AGENT=$(botbus generate-name)
 # duplicate work requests and previous agents' replies, which
 # causes false failures (e.g., Loop-7 created a duplicate bead
 # because it saw Run 6's identical "rate limiting" request).
-botbus mark-read --agent "$AGENT" botbox-eval
+bus mark-read --agent "$AGENT" botbox-eval
 
 # Optionally seed fake channel noise (announcements from old agents).
 # These test that the agent ignores informational messages.
-botbus send --agent old-fox botbox-eval "Agent old-fox online, starting worker loop" -L mesh -L spawn-ack
-botbus send --agent old-fox botbox-eval "Working on bd-abc" -L mesh -L task-claim
-botbus send --agent old-fox botbox-eval "Completed bd-abc" -L mesh -L task-done
-botbus send --agent old-fox botbox-eval "No work remaining. Agent old-fox signing off." -L mesh -L agent-idle
+bus send --agent old-fox botbox-eval "Agent old-fox online, starting worker loop" -L mesh -L spawn-ack
+bus send --agent old-fox botbox-eval "Working on bd-abc" -L mesh -L task-claim
+bus send --agent old-fox botbox-eval "Completed bd-abc" -L mesh -L task-done
+bus send --agent old-fox botbox-eval "No work remaining. Agent old-fox signing off." -L mesh -L agent-idle
 
 # Seed botbus messages from a different agent identity.
 # These simulate a lead/coordinator giving the agent work and asking questions.
 
 # Task request — agent should create a bead for this
-botbus send --agent eval-lead botbox-eval \
+bus send --agent eval-lead botbox-eval \
   "Please add a health check endpoint that returns uptime and memory usage" \
   -L mesh -L task-request
 
 # Status check — agent should reply, NOT create a bead
-botbus send --agent eval-lead botbox-eval \
+bus send --agent eval-lead botbox-eval \
   "What's the current state of the API? Any endpoints implemented yet?" \
   -L mesh -L status-check
 
 # Feedback from another project — agent should triage the referenced bead
-botbus send --agent widget-dev botbox-eval \
+bus send --agent widget-dev botbox-eval \
   "Filed bd-xxx in widget project: your /status endpoint returns wrong content-type. @botbox-eval" \
   -L feedback
 
 # Duplicate of an existing bead — agent should recognize this and NOT create another
-botbus send --agent eval-lead botbox-eval \
+bus send --agent eval-lead botbox-eval \
   "We need rate limiting on the API, requests are getting out of hand" \
   -L mesh -L task-request
 ```
@@ -131,7 +131,7 @@ v3 additions:
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Agent lease claimed | 5 | `botbus claims --agent $AGENT` shows `agent://$AGENT` during run |
+| Agent lease claimed | 5 | `bus claims --agent $AGENT` shows `agent://$AGENT` during run |
 | Spawn announcement | 5 | botbus message with `-L spawn-ack` |
 | `has_work()` gates iteration | 5 | Script doesn't spawn claude when no beads remain |
 | One bead per iteration | 5 | Agent stops after completing one task |
@@ -170,7 +170,7 @@ v3 additions:
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Checked inbox during triage | 5 | Agent ran `botbus inbox --agent $AGENT --all --mark-read` |
+| Checked inbox during triage | 5 | Agent ran `bus inbox --agent $AGENT --all --mark-read` |
 | Created bead from task request | 5 | New bead exists for "health check endpoint" |
 | Replied to status check | 5 | botbus message replying to eval-lead, no bead created |
 | Did not duplicate rate limiting bead | 5 | No new bead for rate limiting (existing bead covers it) |
@@ -210,13 +210,13 @@ Excellent:                ≥223 points (90%)
 
 ```bash
 # During run — agent lease exists (filter to recent claims)
-botbus claims --agent $AGENT --since 1h | grep "agent://"
+bus claims --agent $AGENT --since 1h | grep "agent://"
 
 # After run — lease released
-botbus claims --agent $AGENT --since 1h  # should be empty
+bus claims --agent $AGENT --since 1h  # should be empty
 
 # Botbus announcements
-botbus inbox --agent eval-checker --channels botbox-eval --all | grep -E "online|signing off|shutting down"
+bus inbox --agent eval-checker --channels botbox-eval --all | grep -E "online|signing off|shutting down"
 
 # Beads synced
 stat -c "%Y" .beads/issues.jsonl  # should be recent
@@ -226,7 +226,7 @@ stat -c "%Y" .beads/issues.jsonl  # should be recent
 
 ```bash
 br show <bead-id>                     # status, comments
-botbus inbox --channels botbox-eval   # Working/Completed messages
+bus inbox --channels botbox-eval   # Working/Completed messages
 maw ws list                           # workspace cleanup
 sqlite3 .beads/beads.db "SELECT id, status, closed_at FROM issues;"
 ```
@@ -242,7 +242,7 @@ sqlite3 .beads/beads.db "SELECT COUNT(*) FROM issues WHERE title LIKE '%rate%';"
 # Expected: 1 (the original, not 2)
 
 # Reply to status check?
-botbus inbox --agent eval-lead --channels botbox-eval --all | grep -i "status\|endpoint\|state"
+bus inbox --agent eval-lead --channels botbox-eval --all | grep -i "status\|endpoint\|state"
 
 # No beads created for old announcements?
 sqlite3 .beads/beads.db "SELECT COUNT(*) FROM issues;"

@@ -12,7 +12,7 @@ Report a bug, feature request, or feedback to another project.
 
 1. **Identify the project** that owns the tool:
    ```bash
-   botbus inbox --agent $AGENT --channels projects --all | grep "tools:.*<toolname>"
+   bus inbox --agent $AGENT --channels projects --all | grep "tools:.*<toolname>"
    ```
    Parse the message to extract:
    - `repo:<path>` — repository path
@@ -37,11 +37,11 @@ Report a bug, feature request, or feedback to another project.
 
 4. **Post to the project channel** on botbus:
    ```bash
-   botbus send --agent $AGENT <project-name> "Filed N beads based on <context>: <bead-ids>. <summary> @<lead-agent>" -L mesh -L feedback
+   bus send --agent $AGENT <project-name> "Filed N beads based on <context>: <bead-ids>. <summary> @<lead-agent>" -L mesh -L feedback
    ```
    Example:
    ```bash
-   botbus send --agent worker-alpha botty "Filed 7 beads based on e2e testing with botbox: bd-2rx (named keys), bd-2lj (record/replay), bd-142 (combined wait), bd-3qu (snapshot diff), bd-l96 (kill handling), bd-202 (assertions), bd-13p (script mode). Top priorities: named key sequences and record/replay. @botty-dev" -L mesh -L feedback
+   bus send --agent worker-alpha botty "Filed 7 beads based on e2e testing with botbox: bd-2rx (named keys), bd-2lj (record/replay), bd-142 (combined wait), bd-3qu (snapshot diff), bd-l96 (kill handling), bd-202 (assertions), bd-13p (script mode). Top priorities: named key sequences and record/replay. @botty-dev" -L mesh -L feedback
    ```
 
 5. **Return to your work** — the lead agent will triage and respond.

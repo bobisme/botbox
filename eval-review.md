@@ -53,7 +53,7 @@ The code should be realistic — not a contrived CTF challenge. It should look l
 ```bash
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
-botbox init --name review-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name review-eval --type api --tools beads,maw,crit,bus,botty --init-beads --no-interactive
 cargo init --name review-eval
 crit init
 
@@ -71,7 +71,7 @@ jj new
 jj describe -m "feat: add user lookup endpoint"
 
 # Create the crit review.
-REVIEWER=$(botbus generate-name)
+REVIEWER=$(bus generate-name)
 crit reviews create --agent eval-author --title "feat: add user lookup endpoint" \
   --description "Adds GET /users/:id endpoint with database lookup"
 # Note the review ID from output, e.g., cr-xxxx
@@ -80,8 +80,8 @@ crit reviews create --agent eval-author --title "feat: add user lookup endpoint"
 crit reviews request <review-id> --agent eval-author --reviewers "$REVIEWER"
 
 # Announce on botbus.
-botbus mark-read --agent "$REVIEWER" review-eval
-botbus send --agent eval-author review-eval \
+bus mark-read --agent "$REVIEWER" review-eval
+bus send --agent eval-author review-eval \
   "Review requested: <review-id> @$REVIEWER" -L mesh -L review-request
 ```
 
@@ -91,10 +91,10 @@ botbus send --agent eval-author review-eval \
 claude ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} \
   --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "
 You are security reviewer agent \"$REVIEWER\" for project \"review-eval\".
-Use --agent $REVIEWER on ALL crit and botbus commands.
+Use --agent $REVIEWER on ALL crit and bus commands.
 
 Review workflow:
-1. Check botbus inbox: botbus inbox --agent $REVIEWER --channels review-eval --mark-read
+1. Check botbus inbox: bus inbox --agent $REVIEWER --channels review-eval --mark-read
 2. Check crit inbox: crit inbox --agent $REVIEWER
 3. For each pending review:
    a. Read the review and diff: crit review <id>, crit diff <id>
@@ -112,7 +112,7 @@ Review workflow:
 5. Vote:
    - crit block <id> --reason \"<reason>\" if any CRITICAL or HIGH issues exist
    - crit lgtm <id> if no CRITICAL or HIGH issues
-6. Announce: botbus send --agent $REVIEWER review-eval \"Review complete: <id>\" -L mesh -L review-done
+6. Announce: bus send --agent $REVIEWER review-eval \"Review complete: <id>\" -L mesh -L review-done
 
 Focus on security and correctness. Ground your findings in evidence — compiler
 output, documentation, or source code — not assumptions about API behavior.
@@ -176,7 +176,7 @@ crit status
 crit threads list <review-id>
 
 # Botbus announcement?
-botbus history review-eval --limit 10 | grep "$REVIEWER"
+bus history review-eval --limit 10 | grep "$REVIEWER"
 ```
 
 ### Test Fixtures
@@ -239,12 +239,12 @@ jj new -m "fix: address review feedback on cr-5c3z"
 AUTHOR="eval-author"
 
 PROMPT="You are dev agent \"${AUTHOR}\" for project \"review-eval\".
-Use --agent ${AUTHOR} on ALL crit and botbus commands.
+Use --agent ${AUTHOR} on ALL crit and bus commands.
 
 Your code review cr-5c3z has been BLOCKED by a reviewer. You need to handle the feedback.
 
 Workflow:
-1. Check botbus inbox: botbus inbox --agent ${AUTHOR} --channels review-eval --mark-read
+1. Check botbus inbox: bus inbox --agent ${AUTHOR} --channels review-eval --mark-read
 2. Read the review: crit review cr-5c3z
 3. Read all threads: crit threads list cr-5c3z
 4. For each thread, read the comment and decide:
@@ -256,7 +256,7 @@ Workflow:
    a. Verify fixes compile: cargo check
    b. Describe the change: jj describe -m \"fix: address review feedback on cr-5c3z\"
    c. Re-request review: crit reviews request cr-5c3z --agent ${AUTHOR} --reviewers radiant-eagle
-   d. Announce: botbus send --agent ${AUTHOR} review-eval \"Review feedback addressed: cr-5c3z\" -L mesh -L review-response
+   d. Announce: bus send --agent ${AUTHOR} review-eval \"Review feedback addressed: cr-5c3z\" -L mesh -L review-response
 
 Read the full source files before making changes. Verify your fixes compile with cargo check.
 Do NOT use git. Use jj for all version control operations."
@@ -301,7 +301,7 @@ claude --model sonnet \
 |-----------|--------|--------------|
 | Proper jj commit with descriptive message | 5 | `jj log` shows new change |
 | Re-requests review | 5 | `crit review cr-5c3z` shows re-request |
-| Botbus announcement | 5 | `botbus history review-eval` shows message |
+| Botbus announcement | 5 | `bus history review-eval` shows message |
 
 ```
 CRITICAL fix:          25 points
@@ -351,19 +351,19 @@ R3 builds on the R1+R2 environment. The review already has fixes and a re-reques
 ```bash
 REVIEWER="radiant-eagle"
 PROMPT="You are security reviewer agent \"${REVIEWER}\" for project \"review-eval\".
-Use --agent ${REVIEWER} on ALL crit and botbus commands.
+Use --agent ${REVIEWER} on ALL crit and bus commands.
 
 You previously BLOCKED review cr-5c3z. The author has addressed your feedback.
 
 Re-review workflow:
-1. botbus inbox --agent ${REVIEWER} --channels review-eval --mark-read
+1. bus inbox --agent ${REVIEWER} --channels review-eval --mark-read
 2. crit inbox --agent ${REVIEWER}
 3. crit review cr-5c3z — read all threads and author replies
 4. Read the CURRENT source (cat src/main.rs) — verify each fix
 5. Run cargo clippy to confirm clean
 6. If all issues resolved:
    crit lgtm cr-5c3z --agent ${REVIEWER} --reason \"All issues resolved: <summary>\"
-   botbus send --agent ${REVIEWER} review-eval \"Re-review: cr-5c3z — LGTM\" -L mesh -L review-done
+   bus send --agent ${REVIEWER} review-eval \"Re-review: cr-5c3z — LGTM\" -L mesh -L review-done
 7. If issues remain: reply on thread, keep block
 
 Be thorough. Read actual code, don't just trust replies."
@@ -374,18 +374,18 @@ Be thorough. Read actual code, don't just trust replies."
 ```bash
 AUTHOR="eval-author"
 PROMPT="You are dev agent \"${AUTHOR}\" for project \"review-eval\".
-Use --agent ${AUTHOR} on ALL crit and botbus commands.
+Use --agent ${AUTHOR} on ALL crit and bus commands.
 
 Check if cr-5c3z is approved and merge.
 
 Steps:
-1. botbus inbox --agent ${AUTHOR} --channels review-eval --mark-read
+1. bus inbox --agent ${AUTHOR} --channels review-eval --mark-read
 2. crit review cr-5c3z — check for LGTM vote
 3. If LGTM (no blocks):
    a. jj squash — squash fix into parent change
    b. jj describe -m \"feat: add user lookup and file serving endpoints\"
    c. crit reviews merge cr-5c3z --agent ${AUTHOR}
-   d. botbus send --agent ${AUTHOR} review-eval \"Merged: cr-5c3z\" -L mesh -L merge
+   d. bus send --agent ${AUTHOR} review-eval \"Merged: cr-5c3z\" -L mesh -L merge
 4. If still blocked: read feedback and address it
 
 Use jj, not git."
@@ -401,7 +401,7 @@ Use jj, not git."
 | Verified CRITICAL fix is secure | 10 | Confirms canonicalize + starts_with pattern |
 | Verified MEDIUM fix is correct | 5 | Confirms generic error messages |
 | Correctly LGTMed (not re-blocked) | 10 | `crit review cr-5c3z` shows LGTM |
-| Botbus announcement | 5 | `botbus history` shows review-done |
+| Botbus announcement | 5 | `bus history` shows review-done |
 
 #### Merge Phase (30 points)
 
@@ -410,7 +410,7 @@ Use jj, not git."
 | Checked for LGTM before merging | 5 | Agent reads review before acting |
 | Squashed fix into original change | 5 | `jj log` shows single clean commit |
 | Review marked as merged in crit | 5 | `crit reviews list --json` shows merged |
-| Botbus merge announcement | 5 | `botbus history` shows merge message |
+| Botbus merge announcement | 5 | `bus history` shows merge message |
 | Code still compiles | 5 | `cargo check` clean |
 | Clean execution (no retries) | 5 | First attempt succeeds |
 
@@ -463,14 +463,14 @@ Test the full dev-agent architecture end-to-end: triage → start → work → r
 ```bash
 EVAL_DIR=$(mktemp -d) && cd "$EVAL_DIR"
 jj git init
-botbox init --name r4-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name r4-eval --type api --tools beads,maw,crit,bus,botty --init-beads --no-interactive
 cargo init --name r4-eval
 crit init && maw init
 
-DEV_AGENT=$(botbus generate-name)
-REVIEWER=$(botbus generate-name)
-botbus mark-read --agent "$DEV_AGENT" r4-eval
-botbus mark-read --agent "$REVIEWER" r4-eval
+DEV_AGENT=$(bus generate-name)
+REVIEWER=$(bus generate-name)
+bus mark-read --agent "$DEV_AGENT" r4-eval
+bus mark-read --agent "$REVIEWER" r4-eval
 
 br create --title="Add file serving endpoint at GET /files/:name" \
   --description="Create a GET /files/:name endpoint that reads files from ./data and returns contents. Return 404 if not found, 500 on read errors." \
@@ -516,9 +516,9 @@ EOF
 - Mark review merged: `crit reviews merge <id>` (NOT `close`)
 - Merge workspace: `maw ws merge $WS --destroy` (no `-f`)
 - Close bead: `br close <id>`
-- Release claims: `botbus release --agent $DEV --all`
+- Release claims: `bus release --agent $DEV --all`
 - Sync: `br sync --flush-only`
-- Announce: `botbus send ... -L task-done`
+- Announce: `bus send ... -L task-done`
 
 ### Scoring (95 points)
 
@@ -526,8 +526,8 @@ EOF
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Triage: found bead, groomed, claimed | 10 | `br show` shows in_progress, `botbus claims` shows claim |
-| Start: workspace created, announced | 5 | `maw ws list` shows workspace, botbus history shows task-claim |
+| Triage: found bead, groomed, claimed | 10 | `br show` shows in_progress, `bus claims` shows claim |
+| Start: workspace created, announced | 5 | `maw ws list` shows workspace, bus history shows task-claim |
 | Implementation: endpoint works | 10 | `cargo check` clean in workspace |
 | Review created and requested | 10 | `crit reviews list` shows review, requested reviewer |
 | Deferred finish: bead still open, workspace intact | 5 | `br show` still in_progress, `maw ws list` still shows workspace |
@@ -538,7 +538,7 @@ EOF
 |-----------|--------|-------------|
 | Bug/quality assessment | 10 | Comments address real issues (path traversal if present) |
 | Correct vote (block if CRITICAL/HIGH, LGTM otherwise) | 5 | `crit review <id>` shows appropriate vote |
-| Protocol: crit comments + botbus announcement | 5 | Comments have --file/--line, botbus shows review-done |
+| Protocol: crit comments + botbus announcement | 5 | Comments have --file/--line, bus history shows review-done |
 
 #### Phase 3: Handle Feedback (15 points) — auto-award if Phase 2 was LGTM
 
@@ -555,7 +555,7 @@ EOF
 |-----------|--------|-------------|
 | Read actual code (not just replies) | 3 | Agent reads source files |
 | Verified fixes, LGTMed | 5 | `crit review` shows LGTM |
-| Botbus announcement | 2 | botbus history shows review-done |
+| Botbus announcement | 2 | bus history shows review-done |
 
 #### Phase 5: Merge + Finish (10 points)
 
@@ -564,8 +564,8 @@ EOF
 | Verified LGTM before merge | 2 | Agent reads review first |
 | `crit reviews merge` (not close) | 2 | `crit reviews list` shows merged |
 | `maw ws merge --destroy` (no -f) | 2 | Workspace removed, code on main |
-| `br close` + `botbus release --all` | 2 | Bead closed, no active claims |
-| `br sync --flush-only` + announce | 2 | Botbus history shows task-done |
+| `br close` + `bus release --all` | 2 | Bead closed, no active claims |
+| `br sync --flush-only` + announce | 2 | bus history shows task-done |
 
 ```
 Phase 1 (Work + Review):   40 points
@@ -665,7 +665,7 @@ bash scratchpad/r7-phase2.sh
 | Category | Criterion | Pts | Verification |
 |----------|-----------|-----|-------------|
 | **Loop** | Picks subtasks respecting dep order (never starts blocked bead) | 5 | `br list --format json` timestamps |
-| | Start protocol per subtask (in_progress, claim, workspace, announce) | 5 | `botbus history`, `maw ws list` |
+| | Start protocol per subtask (in_progress, claim, workspace, announce) | 5 | `bus history`, `maw ws list` |
 | | Progress comment per subtask | 5 | `br comments <id>` |
 | | Finish protocol per subtask (close, merge ws, release, sync, announce) | 5 | `br show` closed, no leaked workspaces |
 | | Completed ≥3 subtasks (partial: 2=15, 1=10, 0=0) | 5 | Count of closed children |
@@ -675,7 +675,7 @@ bash scratchpad/r7-phase2.sh
 | | Any test passes | 2 | `cargo test` |
 | **Coherence** | Later subtasks build on earlier (no reimplementation) | 4 | Code inspection |
 | | Parent bead closed after all children | 3 | `br show <parent>` |
-| | Final announcement references feature completion | 3 | `botbus history` |
+| | Final announcement references feature completion | 3 | `bus history` |
 
 ```
 Phase 1 — Decomposition:     45 pts
@@ -700,7 +700,7 @@ After Phase 1:
 br dep tree $PARENT_BEAD          # dependency graph
 br ready                          # first unblocked subtask(s)
 br comments $PARENT_BEAD          # decomposition plan + SQLite decision
-botbus history r7-eval --limit 10 # planning announcement
+bus history r7-eval --limit 10 # planning announcement
 ```
 
 After Phase 2:
@@ -709,8 +709,8 @@ br list --format json             # all beads with status
 br dep tree $PARENT_BEAD          # all should be closed
 cargo check && cargo test         # code quality
 maw ws list                       # no leaked workspaces
-botbus claims --agent $DEV_AGENT  # no active claims
-botbus history r7-eval --limit 50 # full timeline
+bus claims --agent $DEV_AGENT  # no active claims
+bus history r7-eval --limit 50 # full timeline
 ```
 
 ### Expected Results
@@ -871,7 +871,7 @@ Excellent: ≥55 (85%)
 ```bash
 crit review $REVIEW_ID
 crit threads list $REVIEW_ID
-botbus history r8-eval --limit 10
+bus history r8-eval --limit 10
 ```
 
 ### Results

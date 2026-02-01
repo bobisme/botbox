@@ -74,7 +74,7 @@ Workflow docs live in `packages/cli/docs/` and are bundled with the npm package.
 ### When to update docs
 
 These docs define the protocol that every agent follows. Update them when:
-- A botbus/maw/br/crit/botty CLI changes its flags or behavior
+- A bus/maw/br/crit/botty CLI changes its flags or behavior
 - You discover a missing step, ambiguity, or edge case during real agent runs
 - A new workflow is added (e.g., a new review strategy, a new teardown step)
 

@@ -2,13 +2,13 @@
 
 Review loop for reviewer agents. Process pending review requests and leave feedback.
 
-Your identity is `$AGENT`. All botbus commands must include `--agent $AGENT`.
+Your identity is `$AGENT`. All bus commands must include `--agent $AGENT`. Run `bus whoami --agent $AGENT` first if you need to confirm the identity.
 
 ## Loop
 
 1. Read new review requests:
-   - `botbus inbox --agent $AGENT --channel $BOTBOX_PROJECT -n 50`
-   - `botbus wait --agent $AGENT -L review-request -t 5` (optional)
+   - `bus inbox --agent $AGENT --channel $BOTBOX_PROJECT -n 50`
+   - `bus wait --agent $AGENT -L review-request -t 5` (optional)
 2. Use `crit inbox --agent $AGENT` to find reviews needing attention.
 3. For each review, gather context before commenting:
    a. Read the review and diff: `crit review <id>` and `crit diff <id>`
@@ -28,7 +28,7 @@ Your identity is `$AGENT`. All botbus commands must include `--agent $AGENT`.
 5. Vote:
    - `crit block <id> --reason "..."` if any CRITICAL or HIGH issues exist
    - `crit lgtm <id>` if no CRITICAL or HIGH issues
-6. Post a summary in the project channel and tag the author: `botbus send --agent $AGENT $BOTBOX_PROJECT "..." -L mesh -L review-done`
+6. Post a summary in the project channel and tag the author: `bus send --agent $AGENT $BOTBOX_PROJECT "..." -L mesh -L review-done`
 
 Focus on security and correctness. Ground findings in evidence — compiler output, documentation, or source code — not assumptions about API behavior.
 

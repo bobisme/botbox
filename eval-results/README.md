@@ -42,8 +42,8 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - Merge issue fixed in maw v0.8.0
 - `workspace://<project>/<workspace>` is the claim URI format for workspaces
 - `claude -p` needs `--dangerously-skip-permissions` for autonomous file operations
-- `has_work()` had two JSON parser bugs (br ready returns array, botbus inbox --count-only returns int)
-- Agent's own botbus messages fixed upstream: botbus v0.3.8 filters self-messages from inbox
+- `has_work()` had two JSON parser bugs (br ready returns array, bus inbox --count-only returns int)
+- Agent's own bus messages fixed upstream: bus v0.3.8 filters self-messages from inbox
 - Single-workspace merge fixed: maw v0.9.0 supports merging when only 1 workspace exists
 - Run `br` commands from project root, not inside `.workspaces/$WS/` (prevents beads merge conflicts)
 - Agent naming convention: `<project>-dev` for interactive, random names for agent-loop.sh
@@ -74,7 +74,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 
 ## Upstream Tool Versions (as of 2026-01-31)
 
-- botbus v0.3.8: self-message filtering, `claims --since`, `#channel` syntax
+- bus v0.3.8: self-message filtering, `claims --since`, `#channel` syntax
 - maw v0.15.0: `maw ws merge --destroy` default (no `-f`), single-workspace merge, agent-oriented error output, absolute path guidance in help text, jj concept explanations
 - All workflow docs updated with eval learnings (identity, br-from-root, tool-issue reporting, progress comments, blocked bead re-evaluation, absolute workspace paths)
 

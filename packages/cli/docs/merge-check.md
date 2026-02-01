@@ -10,7 +10,7 @@ Ensure review approval and clean claims before merge.
 
 ## Steps
 
-1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user.
+1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user. Run `bus whoami --agent $AGENT` first to confirm; if it returns a name, use it.
 2. `crit review <review-id>` and confirm approval (LGTM) or no blocks.
 3. If bead-id provided, ensure the bead is closed: `br show <bead-id>`.
-4. Ensure claims are released: `botbus claims --agent $AGENT` and `botbus release --agent $AGENT --all` if needed.
+4. Ensure claims are released: `bus claims --agent $AGENT` and `bus release --agent $AGENT --all` if needed.
