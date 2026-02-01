@@ -97,7 +97,7 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `docs/dev-agent-architecture.md` — Target multi-agent architecture
 - `eval-results/` — Individual run reports
 
-22 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 adversarial review (R8). R8-1: 54/65 (83%), all 3 adversarial bugs found. See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+24 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 3 adversarial review (R8). R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL) — multi-file split made TOCTOU much harder to find. See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
 
 ### Running R4 evals
 

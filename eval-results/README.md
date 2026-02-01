@@ -30,6 +30,8 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R4-1 | Integration (Full Lifecycle) | Sonnet | 1 | 89/95 (94%) | End-to-end triage→merge works; re-review needed prompt fix for workspace visibility |
 | R4-2 | Integration (Full Lifecycle) | Sonnet | 1 | 95/95 (100%) | crit v0.9.1 vote override fix confirmed; perfect score with workspace path hint |
 | R8-1 | Adversarial Review (v1) | Sonnet | — | 54/65 (83%) | v1 single-file: found all 3 bugs; 1 FP on permission check; over-severity on quality |
+| R8-2 | Adversarial Review (v2) | Opus | — | 49/65 (75%) | v2 multi-file: found race + TOCTOU but missed pagination; no cross-file reasoning |
+| R8-3 | Adversarial Review (v2) | Sonnet | — | 41/65 (63%) | v2 multi-file: **FAIL** — TOCTOU missed entirely; pagination missed; quality perfect |
 
 ## Key Learnings
 
@@ -63,6 +65,11 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **Clean code traps must be truly unambiguous** — R8-1 flagged the `mode & 0o444` permission check as LOW because the comment said "Standard Unix permission check" but the code only checks if bits are set, not actual process readability. The reviewer's argument has some merit. Future traps should be code that is both correct AND has accurate comments.
 - **Quality issue over-severity is the main calibration gap** — R8-1 rated the non-UTF-8 `.unwrap()` as HIGH ("DoS") rather than LOW. While a panic is impactful, the trigger (non-UTF-8 filename on disk) isn't attacker-controlled in normal upload flows. Severity calibration degrades with more complex code.
 - **R4 results are reproducible** — R4-1 and R4-2 with different agents, same protocol, same outcomes (modulo the fixed bug). Validates the eval framework produces consistent measurements.
+- **Multi-file split is a meaningful difficulty increase** — R8 v2 (7 files) dropped scores significantly vs v1 (1 file). Sonnet: 83% → 63% (FAIL). The TOCTOU bug went from trivially found (adjacent functions) to completely missed (separate files). Cross-file reasoning is genuinely harder than single-file scanning.
+- **Presence of correct-looking code creates false confidence** — In R8-3, Sonnet saw `canonicalize()` + `starts_with()` in delete.rs and concluded it was correct, without tracing which variable flows into subsequent operations. Explicitly stated "download and delete correctly use canonicalize" when delete doesn't.
+- **Both models missed pagination in the multi-file layout** — Neither Opus nor Sonnet found `(page - 1) * per_page` underflow when page=0 in list.rs. The "boring" list endpoint got less scrutiny when split into its own file. In v1, Sonnet found it.
+- **Cross-file reasoning doesn't emerge naturally** — Neither model explicitly compared download.rs (correct `&canonical`) vs delete.rs (buggy `&file_path`) when identifying the TOCTOU. Opus found the bug through single-file analysis; Sonnet missed it entirely. The cross-file reasoning rubric category measures something real.
+- **v2 FP rules are better calibrated** — LOW/MEDIUM comments on clean code traps are legitimate reviewer observations that authors can triage. Only penalizing HIGH+ or block citations avoids unfair deductions for valid low-severity nitpicks.
 
 ## Upstream Tool Versions (as of 2026-01-31)
 
@@ -137,3 +144,5 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R4-1](2026-01-31-review-r4-run1-sonnet.md)
 - [R4-2](2026-01-31-review-r4-run2-sonnet.md)
 - [R8-1](2026-02-01-review-r8-run1-sonnet.md)
+- [R8-2](2026-02-01-review-r8-run2-opus.md)
+- [R8-3](2026-02-01-review-r8-run3-sonnet.md)

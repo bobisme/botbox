@@ -749,6 +749,8 @@ botbus history r8-eval --limit 10
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
 | R8-1 | Sonnet | 54/65 (83%) | v1 single-file: found all 3 bugs; 1 FP on permission check; over-severity on quality issues |
+| R8-2 | Opus | 49/65 (75%) | v2 multi-file: found race + TOCTOU but missed pagination; no cross-file reasoning; FP clean |
+| R8-3 | Sonnet | 41/65 (63%) | v2 multi-file: **FAIL** — TOCTOU missed (believed delete was correct); pagination missed; quality 10/10 |
 
 ---
 
