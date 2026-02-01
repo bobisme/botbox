@@ -96,11 +96,12 @@ then STOP. Do not start a second task — the outer loop handles iteration.
 0. RESUME CHECK (do this FIRST):
    Run: bus claims --agent $AGENT --mine
    If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
-   - Check review status: crit inbox --agent $AGENT, then crit review <review-id>
+   - Find the review ID: run br comments <bead-id> to find the "Review requested: <review-id>" comment.
+   - Check review status: crit review <review-id>
    - If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
    - If BLOCKED (changes requested): follow .agents/botbox/review-response.md to fix issues
      in the workspace, re-request review, then STOP this iteration.
-   - If PENDING (no new review activity): STOP this iteration. Wait for the reviewer.
+   - If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
    If no active claims: proceed to step 1 (INBOX).
 
 1. INBOX (do this before triaging):
@@ -143,7 +144,6 @@ then STOP. Do not start a second task — the outer loop handles iteration.
 6. REVIEW REQUEST:
    Describe the change: maw ws jj \$WS describe -m "<id>: <summary>".
    Create review: crit reviews create --agent $AGENT --title "<title>" --description "<summary>".
-   Request review: crit reviews request <review-id> --agent $AGENT.
    Add bead comment: br comments add <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)".
    Announce: bus send --agent $AGENT $PROJECT "Review requested: <review-id> for <id>: <title>" -L mesh -L review-request.
    Do NOT close the bead. Do NOT merge the workspace. Do NOT release claims.

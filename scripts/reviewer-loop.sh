@@ -46,7 +46,7 @@ fi
 
 # --- Helper: check if there are reviews to process ---
 has_work() {
-	local inbox_count
+	local inbox_count review_count
 
 	# Check bus inbox for review-request or re-review messages
 	inbox_count=$(bus inbox --agent "$AGENT" --channels "$PROJECT" --count-only --format json 2>/dev/null \
@@ -54,7 +54,13 @@ has_work() {
 			'import json,sys; d=json.load(sys.stdin); print(d.get("total_unread",0) if isinstance(d,dict) else d)' \
 		2>/dev/null || echo "0")
 
-	if [[ "$inbox_count" -gt 0 ]]; then
+	# Check for open reviews in crit
+	review_count=$(crit reviews list --format json 2>/dev/null \
+		| "$PYTHON_BIN" -c \
+			'import json,sys; d=json.load(sys.stdin); r=d if isinstance(d,list) else d.get("reviews",[]); print(len([x for x in r if x.get("status")=="open"]))' \
+		2>/dev/null || echo "0")
+
+	if [[ "$inbox_count" -gt 0 ]] || [[ "$review_count" -gt 0 ]]; then
 		return 0
 	fi
 	return 1
@@ -85,8 +91,9 @@ Execute exactly ONE review cycle, then STOP. Do not process multiple reviews.
    Note any review-request or review-response messages. Ignore task-claim, task-done, spawn-ack, etc.
 
 2. FIND REVIEWS:
-   Run: crit inbox --agent $AGENT
-   Pick one review to process. If no reviews need attention, say "NO_REVIEWS_PENDING" and stop.
+   Run: crit reviews list --format json
+   Look for open reviews (status: "open"). Pick one to process.
+   If no open reviews exist, say "NO_REVIEWS_PENDING" and stop.
 
 3. REVIEW (follow .agents/botbox/review-loop.md):
    a. Read the review and diff: crit review <id> and crit diff <id>

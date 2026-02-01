@@ -18,8 +18,8 @@ Before triaging new work, check if you have an in-progress bead from a previous 
 
 - `bus claims --agent $AGENT` — look for `bead://` claims
 - If you hold a bead claim:
-  - Check for review activity: `crit inbox --agent $AGENT`
-  - Read the review: `crit review <review-id>`
+  - Find the review ID: `br comments <bead-id>` — look for the "Review requested: <review-id>" comment
+  - Check review status: `crit review <review-id>`
   - **LGTM (approved)**: Follow [merge-check](merge-check.md), then go to step 6 (Finish)
   - **Blocked (changes requested)**: Follow [review-response](review-response.md) to fix issues and re-request review. Then STOP this iteration.
   - **Pending (no new activity)**: STOP this iteration. The reviewer has not responded yet.
@@ -81,7 +81,6 @@ After completing the implementation:
 
 - Describe the change: `maw ws jj $WS describe -m "<bead-id>: <summary>"`
 - Create a crit review: `crit reviews create --agent $AGENT --title "<bead-title>" --description "<summary of changes>"`
-- Request review: `crit reviews request <review-id> --agent $AGENT`
 - Add a comment to the bead: `br comments add <bead-id> "Review requested: <review-id>, workspace: $WS ($WS_PATH)"`
 - Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>: <bead-title>" -L mesh -L review-request`
 - **STOP this iteration.** Do NOT close the bead, merge the workspace, or release claims. The reviewer will process the review, and you will resume in the next iteration via step 0.
