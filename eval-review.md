@@ -659,7 +659,8 @@ bash scratchpad/r8-setup.sh
 ```bash
 cd $EVAL_DIR && source .eval-env
 bash scratchpad/r8-run.sh
-# Identical R1 v2 prompt: clippy, web search, severity levels, evidence-grounding.
+# v3 prompt: references .agents/botbox/review-loop.md instead of embedding workflow.
+# review-loop.md now includes cross-file consistency and boundary check steps.
 ```
 
 ### Scoring (65 points, v2)

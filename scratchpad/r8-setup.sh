@@ -5,6 +5,9 @@ set -euo pipefail
 # Multi-file fixture (7 files). Cross-file reasoning required to find TOCTOU.
 # Single-reviewer eval testing the ceiling of review quality.
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR"
 echo "EVAL_DIR=$EVAL_DIR"
@@ -12,6 +15,9 @@ echo "EVAL_DIR=$EVAL_DIR"
 # --- Init repo and botbox ---
 jj git init
 botbox init --name r8-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+
+# --- Copy latest local workflow docs (installed package may be stale) ---
+cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/
 
 # --- Init Rust project ---
 cargo init --name r8-eval

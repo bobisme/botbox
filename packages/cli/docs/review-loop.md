@@ -16,6 +16,8 @@ Your identity is `$AGENT`. All botbus commands must include `--agent $AGENT`.
    c. Read project config (e.g., `Cargo.toml`) for edition and dependency versions
    d. Run static analysis (e.g., `cargo clippy 2>&1`) — cite warnings in your comments
    e. If unsure about framework or library behavior, use web search to verify before commenting
+   f. **Cross-file consistency**: Compare functions that follow similar patterns across files. Do all handlers that validate input use the validated result consistently? Are security checks (auth, path validation, sanitization) applied uniformly? If one function does it right and another doesn't, that's a bug.
+   g. **Boundary checks**: Trace each user-supplied value (query params, path params, headers, body fields) through to where it's used. Check arithmetic for edge cases: 0, 1, MAX, negative values, empty strings.
 4. For each issue found, comment with a severity level:
    - **CRITICAL**: Security vulnerabilities, data loss, crashes in production
    - **HIGH**: Correctness bugs, race conditions, resource leaks
