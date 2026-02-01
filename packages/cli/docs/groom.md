@@ -17,8 +17,9 @@ Groom a set of ready beads to improve backlog quality. Use this when you need to
    - **Acceptance criteria**: Description should include what "done" looks like. If missing, append criteria to the description.
    - **Testing strategy**: Description should mention how to verify the work (e.g., "run tests", "manual check", "curl endpoint"). If missing, append a brief testing note.
    - Add a comment noting what you groomed: `br comments add <bead-id> "Groomed by $AGENT: <what changed>"`
-3. Check bead size: if a bead is large (epic, or description suggests multiple distinct changes), break it down:
+3. Check bead size: each bead should be one resumable unit of work — if a session crashes after completing it, the next session knows exactly where to pick up. If a bead covers multiple distinct steps, break it down:
    - Create smaller child beads with `br create` and `br dep add <child> <parent>`.
+   - Add sibling dependencies where order matters: `br dep add <later> <earlier>` (e.g., "write report" blocked by "run eval").
    - Add a comment to the parent: `br comments add <parent-id> "Broken down into smaller tasks: <child-id>, ..."`
 4. Announce if you groomed multiple beads: `botbus send --agent $AGENT $BOTBOX_PROJECT "Groomed N beads: <summary>" -L mesh -L grooming`
 

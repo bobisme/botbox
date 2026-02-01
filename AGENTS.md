@@ -108,6 +108,32 @@ Key learnings from R4-1:
 - crit v0.9.1 fixed a vote index bug where LGTM didn't override block (jj workspace reconciliation could restore stale events.jsonl)
 - `crit reviews merge` not `close`; `maw ws merge --destroy` without `-f`
 
-## Beads
+## Beads (MANDATORY)
 
-This project tracks ALL work with beads. Before starting any non-trivial task, check if a bead exists or create one. Run `br ready` to find actionable work, `br show <id>` for details. Use `br create` for new tasks, `br epic status` for epic progress, and `br close <id>` when done.
+**Every non-trivial task MUST be tracked in a bead.** This is not optional — beads are how we resume after crashes, handoffs, and context loss. If the session dies mid-task, the bead + its comments are the only record of what was done and what remains.
+
+### Before starting work
+
+1. Check if a bead exists: `br ready`, `br show <id>`
+2. If no bead exists, create one: `br create --title="..." --description="..." --type=task --priority=<1-4>`
+3. **Break down multi-step work** into subtasks before starting. Each subtask should be one resumable unit — if the session crashes after completing it, the next session knows exactly where to pick up. Wire dependencies with `br dep add <child> <parent>` and between siblings where order matters.
+4. Mark it in_progress: `br update <id> --status=in_progress`
+
+### During work
+
+4. **Post progress comments** as you complete milestones: `br comments add <id> "what was done, what's next"`
+   - This is critical for crash recovery — if the session dies, the next session reads these comments to resume
+   - Include: files changed, decisions made, what remains
+
+### After work
+
+5. Close the bead: `br close <id>`
+6. Sync: `br sync --flush-only`
+
+### Bead quality (see [groom.md](packages/cli/docs/groom.md))
+
+- **Title**: Clear, actionable, imperative form ("Add X", "Fix Y")
+- **Description**: What, why, acceptance criteria, testing strategy
+- **Priority**: P0 (critical) through P4 (nice-to-have)
+- **Labels**: Categorize consistently (e.g., `eval`, `cli`, `docs`)
+- **Size**: One bead = one resumable unit of work. If a task has multiple steps that could be completed independently (e.g., "run eval with Opus" and "run eval with Sonnet"), each step gets its own bead. Use `br dep add <child> <parent>` for subtasks and sibling dependencies for ordering.

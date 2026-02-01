@@ -603,14 +603,29 @@ Excellent: ≥81 (85%)
 
 ### Concept
 
-Single-reviewer eval (same shape as R1) with harder bugs requiring execution-path reasoning, not pattern matching. Tests the ceiling of review quality. The fixture is a file management API (~120 lines, Rust/Axum) with upload, list, download, and delete endpoints.
+Single-reviewer eval (same shape as R1) with harder bugs requiring execution-path reasoning, not pattern matching. Tests the ceiling of review quality.
+
+**v1** (R8-1): Single-file fixture (`src/main.rs`, ~120 lines). All code in one file.
+**v2** (R8-2+): Multi-file fixture (7 files, ~180 lines total). Bugs and traps spread across modules. Cross-file reasoning required to find the TOCTOU.
+
+### Fixture Layout (v2)
+
+| File | Content | Bugs/Traps |
+|------|---------|------------|
+| `src/main.rs` | Router, AppState, mod declarations | None |
+| `src/config.rs` | AppConfig, OnceLock | Clean trap 1 |
+| `src/upload.rs` | upload_file handler | Bug 1 (race condition) |
+| `src/download.rs` | download_file handler | None (correct `&canonical`) |
+| `src/delete.rs` | delete_file handler | Bug 2 (TOCTOU: `&file_path`), Quality 2 (`.ok()`) |
+| `src/list.rs` | list_files handler | Bug 3 (pagination underflow), Quality 1 (unwrap) |
+| `src/health.rs` | health check | Clean trap 2 |
 
 ### Bug Design
 
 3 subtle bugs that require comparing execution paths, not just pattern matching:
 
 1. **Race condition in upload size limit (HIGH)** — `AtomicU64` check-then-act: `load()` then `fetch_add()` is not atomic. Two concurrent uploads both pass the limit check and exceed total.
-2. **TOCTOU in file delete (HIGH)** — `canonicalize()` + `starts_with()` check validates path, then `remove_file(&file_path)` uses the **original path**, not `&canonical`. Between check and delete, the file can be replaced with a symlink. Contrast: `download_file` correctly uses `&canonical`. Reviewer must compare the two functions to spot the discrepancy.
+2. **TOCTOU in file delete (HIGH)** — `canonicalize()` + `starts_with()` check validates path, then `remove_file(&file_path)` uses the **original path**, not `&canonical`. Between check and delete, the file can be replaced with a symlink. Contrast: `download_file` (in a separate file) correctly uses `&canonical`. Reviewer must cross-reference two files to spot the discrepancy.
 3. **Pagination usize underflow (MEDIUM)** — `(page - 1) * per_page` when `page=0` wraps to `usize::MAX`. DoS via query param.
 
 2 quality issues:
@@ -620,15 +635,16 @@ Single-reviewer eval (same shape as R1) with harder bugs requiring execution-pat
 
 2 clean code traps (must NOT flag):
 
-1. `OnceLock<AppConfig>` — correct lazy-init for runtime env vars
-2. `mode & 0o444` — standard Unix permission bit check, well-commented
+1. `OnceLock<AppConfig>` — correct lazy-init for runtime env vars (in `config.rs`)
+2. `mode & 0o444` — permission bit check with accurate comment: "Check if any read permission bits are set" (in `health.rs`)
 
 ### Key Design Decisions
 
-- Download has correct `&canonical` usage; delete has `&file_path` (the TOCTOU). Reviewer must compare the two functions.
+- Download (`download.rs`) has correct `&canonical` usage; delete (`delete.rs`) has `&file_path` (the TOCTOU). Reviewer must compare two separate files.
 - Upload has no path traversal protection — valid observation but NOT scored. Tests whether reviewer gets distracted by the obvious pattern-match bug and misses the subtle race.
 - Clippy won't catch the race condition or TOCTOU (semantic bugs, not syntactic). May catch `page - 1` underflow.
 - Both clean code traps are genuinely correct (learned from R1's static mut mistake).
+- v2 improved the `0o444` comment to be precise ("Check if any read permission bits are set") rather than the v1 wording ("Standard Unix permission check") which was arguably misleading.
 
 ### Setup
 
@@ -646,7 +662,7 @@ bash scratchpad/r8-run.sh
 # Identical R1 v2 prompt: clippy, web search, severity levels, evidence-grounding.
 ```
 
-### Scoring (65 points)
+### Scoring (65 points, v2)
 
 #### Bug Detection (30 points)
 
@@ -671,16 +687,26 @@ bash scratchpad/r8-run.sh
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Found unwrap on non-UTF-8 filename | 3 | crit comment on to_str().unwrap() |
-| Found silent error discard in delete | 3 | crit comment on .ok() |
+| Found unwrap on non-UTF-8 filename | 3 | crit comment on to_str().unwrap() in list.rs |
+| Found silent error discard in delete | 3 | crit comment on .ok() in delete.rs |
 | Comments are constructive (suggest fixes) | 4 | Not just "this is bad" |
 
-#### False Positive Resistance (10 points)
+#### Cross-File Reasoning (5 points, NEW in v2)
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Did not flag OnceLock as a bug | 5 | No thread on OnceLock, or acknowledges it's correct |
-| Did not flag `mode & 0o444` as a bug | 5 | No thread on permission check, or acknowledges it's correct |
+| Explicitly compared download.rs vs delete.rs | 5 | Comment references download.rs as correct implementation when identifying TOCTOU in delete.rs |
+
+Note: If reviewer finds Bug 2 (TOCTOU) without referencing download.rs as the correct pattern, they get Bug 2 points but NOT these 5 points. The category rewards the cross-file reasoning, not just the bug detection.
+
+#### False Positive Resistance (5 points, reduced from 10 in v2)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Did not flag OnceLock as HIGH+ or cite in block | 2.5 | No HIGH+ comment on OnceLock in config.rs, or not cited in block reason |
+| Did not flag `mode & 0o444` as HIGH+ or cite in block | 2.5 | No HIGH+ comment on permission check in health.rs, or not cited in block reason |
+
+**v2 FP change:** Only penalize if clean trap is flagged HIGH+ or cited in the block reason. LOW/INFO comments on clean code = no penalty (author can triage).
 
 #### Protocol Compliance (10 points)
 
@@ -693,7 +719,8 @@ bash scratchpad/r8-run.sh
 Bug detection:              30 points
 Blocking decision:           5 points
 Quality feedback:           10 points
-False positive resistance:  10 points
+Cross-file reasoning:        5 points
+FP resistance:               5 points
 Protocol compliance:        10 points
                            ───────────
 Total:                      65 points
@@ -721,7 +748,7 @@ botbus history r8-eval --limit 10
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| R8-1 | Sonnet | 54/65 (83%) | Found all 3 adversarial bugs; 1 FP on permission check trap; over-severity on quality issues |
+| R8-1 | Sonnet | 54/65 (83%) | v1 single-file: found all 3 bugs; 1 FP on permission check; over-severity on quality issues |
 
 ---
 

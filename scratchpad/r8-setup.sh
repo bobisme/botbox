@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# R8 Adversarial Review Eval — Setup
-# Single-reviewer eval with harder bugs requiring execution-path reasoning.
-# Tests the ceiling of review quality.
+# R8 Adversarial Review Eval v2 — Setup
+# Multi-file fixture (7 files). Cross-file reasoning required to find TOCTOU.
+# Single-reviewer eval testing the ceiling of review quality.
 
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR"
@@ -28,7 +28,7 @@ echo "REVIEWER=$REVIEWER"
 botbus send --agent eval-author r8-eval "R8 eval environment initialized" -L mesh -L setup
 botbus mark-read --agent "$REVIEWER" r8-eval
 
-# --- Write the fixture: File Management API (~120 lines) ---
+# --- Write Cargo.toml ---
 cat > Cargo.toml << 'CARGO_EOF'
 [package]
 name = "r8-eval"
@@ -42,26 +42,61 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 CARGO_EOF
 
+# --- Write src/main.rs (router + AppState + mod declarations) ---
 cat > src/main.rs << 'RUST_EOF'
+mod config;
+mod delete;
+mod download;
+mod health;
+mod list;
+mod upload;
+
 use axum::{
     Router,
-    extract::{Path, Query, State},
-    http::StatusCode,
-    response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete as delete_route, get, post},
 };
-use serde::Deserialize;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 use tokio::fs;
 
-// --- Configuration ---
+#[derive(Clone)]
+pub struct AppState {
+    pub total_bytes: Arc<AtomicU64>,
+}
 
-struct AppConfig {
-    upload_dir: PathBuf,
-    max_total_bytes: u64,
+#[tokio::main]
+async fn main() {
+    let cfg = config::config();
+    fs::create_dir_all(&cfg.upload_dir).await.expect("create upload dir");
+
+    let state = AppState {
+        total_bytes: Arc::new(AtomicU64::new(0)),
+    };
+
+    let app = Router::new()
+        .route("/files/{name}", post(upload::upload_file))
+        .route("/files", get(list::list_files))
+        .route("/files/{name}", get(download::download_file))
+        .route("/files/{name}", delete_route(delete::delete_file))
+        .route("/health", get(health::health))
+        .with_state(state);
+
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
+        .await
+        .expect("bind");
+    println!("Listening on :3000");
+    axum::serve(listener, app).await.expect("serve");
+}
+RUST_EOF
+
+# --- Write src/config.rs (AppConfig + OnceLock — clean trap 1) ---
+cat > src/config.rs << 'RUST_EOF'
+use std::path::PathBuf;
+use std::sync::OnceLock;
+
+pub struct AppConfig {
+    pub upload_dir: PathBuf,
+    pub max_total_bytes: u64,
 }
 
 // OnceLock for runtime config — env vars aren't available at compile time,
@@ -69,7 +104,7 @@ struct AppConfig {
 // lazy initialization of runtime configuration in Rust.
 static CONFIG: OnceLock<AppConfig> = OnceLock::new();
 
-fn config() -> &'static AppConfig {
+pub fn config() -> &'static AppConfig {
     CONFIG.get_or_init(|| AppConfig {
         upload_dir: PathBuf::from(
             std::env::var("UPLOAD_DIR").unwrap_or_else(|_| "./uploads".into()),
@@ -80,26 +115,23 @@ fn config() -> &'static AppConfig {
             .unwrap_or(100 * 1024 * 1024), // 100 MB default
     })
 }
+RUST_EOF
 
-// --- Shared state ---
+# --- Write src/upload.rs (Bug 1: race condition in size limit) ---
+cat > src/upload.rs << 'RUST_EOF'
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use std::sync::atomic::Ordering;
+use tokio::fs;
 
-#[derive(Clone)]
-struct AppState {
-    total_bytes: Arc<AtomicU64>,
-}
-
-// --- Query params ---
-
-#[derive(Deserialize)]
-struct ListParams {
-    page: Option<usize>,
-    per_page: Option<usize>,
-}
-
-// --- Handlers ---
+use crate::AppState;
+use crate::config::config;
 
 /// Upload a file. Enforces a global size limit across all stored files.
-async fn upload_file(
+pub async fn upload_file(
     State(state): State<AppState>,
     Path(name): Path<String>,
     body: axum::body::Bytes,
@@ -124,31 +156,21 @@ async fn upload_file(
         }
     }
 }
+RUST_EOF
 
-/// List files with pagination.
-async fn list_files(Query(params): Query<ListParams>) -> impl IntoResponse {
-    let cfg = config();
-    let per_page = params.per_page.unwrap_or(20);
-    let page = params.page.unwrap_or(1);
+# --- Write src/download.rs (correct path validation — uses &canonical) ---
+cat > src/download.rs << 'RUST_EOF'
+use axum::{
+    extract::Path,
+    http::StatusCode,
+    response::IntoResponse,
+};
+use tokio::fs;
 
-    let mut entries = Vec::new();
-    let mut dir = match fs::read_dir(&cfg.upload_dir).await {
-        Ok(d) => d,
-        Err(_) => return (StatusCode::OK, "[]".to_string()),
-    };
-
-    while let Ok(Some(entry)) = dir.next_entry().await {
-        entries.push(entry.file_name().to_str().unwrap().to_string());
-    }
-    entries.sort();
-
-    let start = (page - 1) * per_page;
-    let page_entries: Vec<_> = entries.into_iter().skip(start).take(per_page).collect();
-    (StatusCode::OK, serde_json::to_string(&page_entries).unwrap())
-}
+use crate::config::config;
 
 /// Download a file. Validates the path stays within the upload directory.
-async fn download_file(
+pub async fn download_file(
     Path(name): Path<String>,
 ) -> impl IntoResponse {
     let cfg = config();
@@ -173,9 +195,23 @@ async fn download_file(
         Err(_) => (StatusCode::NOT_FOUND, "File not found".to_string()),
     }
 }
+RUST_EOF
+
+# --- Write src/delete.rs (Bug 2: TOCTOU — uses &file_path not &canonical; Quality 2: .ok()) ---
+cat > src/delete.rs << 'RUST_EOF'
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+};
+use std::sync::atomic::Ordering;
+use tokio::fs;
+
+use crate::AppState;
+use crate::config::config;
 
 /// Delete a file. Validates the path stays within the upload directory.
-async fn delete_file(
+pub async fn delete_file(
     State(state): State<AppState>,
     Path(name): Path<String>,
 ) -> impl IntoResponse {
@@ -205,13 +241,66 @@ async fn delete_file(
 
     (StatusCode::OK, format!("Deleted {name}"))
 }
+RUST_EOF
+
+# --- Write src/list.rs (Bug 3: pagination underflow; Quality 1: unwrap) ---
+cat > src/list.rs << 'RUST_EOF'
+use axum::{
+    extract::Query,
+    http::StatusCode,
+    response::IntoResponse,
+};
+use serde::Deserialize;
+use tokio::fs;
+
+use crate::config::config;
+
+#[derive(Deserialize)]
+pub struct ListParams {
+    page: Option<usize>,
+    per_page: Option<usize>,
+}
+
+/// List files with pagination.
+pub async fn list_files(Query(params): Query<ListParams>) -> impl IntoResponse {
+    let cfg = config();
+    let per_page = params.per_page.unwrap_or(20);
+    let page = params.page.unwrap_or(1);
+
+    let mut entries = Vec::new();
+    let mut dir = match fs::read_dir(&cfg.upload_dir).await {
+        Ok(d) => d,
+        Err(_) => return (StatusCode::OK, "[]".to_string()),
+    };
+
+    while let Ok(Some(entry)) = dir.next_entry().await {
+        entries.push(entry.file_name().to_str().unwrap().to_string());
+    }
+    entries.sort();
+
+    let start = (page - 1) * per_page;
+    let page_entries: Vec<_> = entries.into_iter().skip(start).take(per_page).collect();
+    (StatusCode::OK, serde_json::to_string(&page_entries).unwrap())
+}
+RUST_EOF
+
+# --- Write src/health.rs (clean trap 2 — improved comment) ---
+cat > src/health.rs << 'RUST_EOF'
+use axum::{
+    http::StatusCode,
+    response::IntoResponse,
+};
+use std::os::unix::fs::PermissionsExt;
+use tokio::fs;
+
+use crate::config::config;
 
 /// Health check — returns upload directory status.
-async fn health() -> impl IntoResponse {
+pub async fn health() -> impl IntoResponse {
     let cfg = config();
-    // Standard Unix permission check: verify upload dir is readable.
-    // 0o444 masks the read bits (owner + group + other). If any read
-    // bit is set, the directory is considered accessible.
+    // Check if any read permission bits are set (owner, group, or other).
+    // 0o444 masks all three read bits. If any is set, the directory is
+    // considered accessible for our purposes.
     match fs::metadata(&cfg.upload_dir).await {
         Ok(meta) => {
             let mode = meta.permissions().mode();
@@ -223,30 +312,6 @@ async fn health() -> impl IntoResponse {
         }
         Err(_) => (StatusCode::SERVICE_UNAVAILABLE, "upload dir missing".to_string()),
     }
-}
-
-#[tokio::main]
-async fn main() {
-    let cfg = config();
-    fs::create_dir_all(&cfg.upload_dir).await.expect("create upload dir");
-
-    let state = AppState {
-        total_bytes: Arc::new(AtomicU64::new(0)),
-    };
-
-    let app = Router::new()
-        .route("/files/{name}", post(upload_file))
-        .route("/files", get(list_files))
-        .route("/files/{name}", get(download_file))
-        .route("/files/{name}", delete(delete_file))
-        .route("/health", get(health))
-        .with_state(state);
-
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
-        .await
-        .expect("bind");
-    println!("Listening on :3000");
-    axum::serve(listener, app).await.expect("serve");
 }
 RUST_EOF
 
@@ -260,7 +325,7 @@ jj describe -m "feat: add file management API (upload, list, download, delete)"
 # --- Create crit review ---
 REVIEW_ID=$(crit reviews create --agent eval-author \
   --title "feat: add file management API" \
-  --description "Upload, list, download, and delete endpoints for file management. Uses Axum 0.8, tokio, serde. Includes global upload size limit, pagination, path traversal protection, and health check." \
+  --description "Upload, list, download, and delete endpoints for file management. Uses Axum 0.8, tokio, serde. Includes global upload size limit, pagination, path traversal protection, and health check. Split across modules: config, upload, download, delete, list, health." \
   --json | python3 -c "import sys,json; print(json.load(sys.stdin)['review_id'])")
 echo "REVIEW_ID=$REVIEW_ID"
 
@@ -279,10 +344,10 @@ export REVIEW_ID="$REVIEW_ID"
 EOF
 
 echo ""
-echo "=== R8 Setup Complete ==="
+echo "=== R8 v2 Setup Complete ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "REVIEWER=$REVIEWER"
 echo "REVIEW_ID=$REVIEW_ID"
 echo ""
-echo "Verify: cargo check should pass"
+echo "Verify: cargo check && cargo clippy should pass"
 echo "Next: source .eval-env && bash scratchpad/r8-run.sh (or copy to eval dir)"
