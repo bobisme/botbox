@@ -101,4 +101,63 @@ describe("sync", () => {
     expect(content).not.toContain("old content")
     expect(content).toContain("## Botbox Workflow")
   })
+
+  test("updates managed section even when docs are unchanged (bd-1pe)", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir) // Docs are now up to date
+
+    // Create AGENTS.md with stale managed section
+    writeFileSync(
+      join(tempDir, "AGENTS.md"),
+      [
+        "# My Project",
+        "",
+        "Custom stuff.",
+        "",
+        "<!-- botbox:managed-start -->",
+        "stale managed section content",
+        "<!-- botbox:managed-end -->",
+      ].join("\n"),
+    )
+
+    // Sync should update managed section even though docs are current
+    sync({ check: false })
+
+    let content = readFileSync(join(tempDir, "AGENTS.md"), "utf-8")
+    expect(content).toContain("# My Project")
+    expect(content).toContain("Custom stuff.")
+    expect(content).not.toContain("stale managed section content")
+    expect(content).toContain("## Botbox Workflow")
+  })
+
+  test("--check fails when managed section is stale but docs are current", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir) // Docs are current
+
+    // Create AGENTS.md with stale managed section
+    writeFileSync(
+      join(tempDir, "AGENTS.md"),
+      [
+        "# My Project",
+        "",
+        "Custom stuff.",
+        "",
+        "<!-- botbox:managed-start -->",
+        "stale managed section content",
+        "<!-- botbox:managed-end -->",
+      ].join("\n"),
+    )
+
+    // Should throw because managed section is stale
+    expect(() => sync({ check: true })).toThrow(ExitError)
+    expect(() => sync({ check: true })).toThrow(
+      /Stale:.*managed section of AGENTS\.md/,
+    )
+
+    // File should not be modified in --check mode
+    let content = readFileSync(join(tempDir, "AGENTS.md"), "utf-8")
+    expect(content).toContain("stale managed section content")
+  })
 })

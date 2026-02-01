@@ -24,31 +24,52 @@ export function sync(opts) {
   const installed = readVersionMarker(agentsDir)
   const latest = currentVersion()
 
-  if (installed === latest) {
-    console.log("Already up to date.")
-    return
-  }
+  // Check if docs need updating (don't update yet, just check)
+  const docsNeedUpdate = installed !== latest
 
-  if (opts.check) {
-    throw new ExitError(
-      `Stale: installed ${installed ?? "(none)"}, latest ${latest}`,
-      1,
-    )
-  }
-
-  // Update workflow docs
-  copyWorkflowDocs(agentsDir)
-  writeVersionMarker(agentsDir)
-  console.log("Updated workflow docs")
-
-  // Update managed section of AGENTS.md
+  // Check if managed section needs updating (don't update yet, just check)
   const agentsMdPath = join(projectDir, "AGENTS.md")
+  let managedSectionNeedsUpdate = false
+  let managedSectionContent = ""
+  let managedSectionUpdated = ""
+
   if (existsSync(agentsMdPath)) {
-    const content = readFileSync(agentsMdPath, "utf-8")
-    const updated = updateManagedSection(content)
-    writeFileSync(agentsMdPath, updated)
+    managedSectionContent = readFileSync(agentsMdPath, "utf-8")
+    managedSectionUpdated = updateManagedSection(managedSectionContent)
+    managedSectionNeedsUpdate = managedSectionContent !== managedSectionUpdated
+  }
+
+  // Validate in --check mode (after all checks, before any writes)
+  if (opts.check && (docsNeedUpdate || managedSectionNeedsUpdate)) {
+    let msg = "Stale:"
+    if (docsNeedUpdate) {
+      msg += ` workflow docs (${installed ?? "(none)"} → ${latest})`
+    }
+    if (managedSectionNeedsUpdate) {
+      if (docsNeedUpdate) msg += ","
+      msg += " managed section of AGENTS.md"
+    }
+    throw new ExitError(msg, 1)
+  }
+
+  // Perform updates
+  if (docsNeedUpdate) {
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+    console.log("Updated workflow docs")
+  }
+
+  if (managedSectionNeedsUpdate) {
+    writeFileSync(agentsMdPath, managedSectionUpdated)
     console.log("Updated managed section of AGENTS.md")
   }
 
-  console.log(`Synced: ${installed ?? "(none)"} → ${latest}`)
+  // Summary output
+  if (!docsNeedUpdate && !managedSectionNeedsUpdate) {
+    console.log("Already up to date.")
+  } else if (docsNeedUpdate) {
+    console.log(`Synced: ${installed ?? "(none)"} → ${latest}`)
+  } else if (managedSectionNeedsUpdate) {
+    console.log("Updated managed section (workflow docs unchanged)")
+  }
 }
