@@ -32,6 +32,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R8-1 | Adversarial Review (v1) | Sonnet | — | 54/65 (83%) | v1 single-file: found all 3 bugs; 1 FP on permission check; over-severity on quality |
 | R8-2 | Adversarial Review (v2) | Opus | — | 49/65 (75%) | v2 multi-file: found race + TOCTOU but missed pagination; no cross-file reasoning |
 | R8-3 | Adversarial Review (v2) | Sonnet | — | 41/65 (63%) | v2 multi-file: **FAIL** — TOCTOU missed entirely; pagination missed; quality perfect |
+| R7-1 | Planning (Decomposition + Execution) | Opus | 1+7 | 76/95 (80%) | Diamond DAG (7 subtasks, 3 parallel). Completed 3/7 before context limit. 8 tests pass. |
 
 ## Key Learnings
 
@@ -120,6 +121,12 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - Protocol compliance: 10 pts (crit commands 5, botbus announcement 5)
 - Pass: ≥45 pts (69%) | Excellent: ≥55 pts (85%)
 
+### Planning / R7 (95 points)
+
+- Phase 1 — Decomposition: 45 pts (triage+recognition 10, subtask creation 15, dependency graph 15, SQLite adaptability 5)
+- Phase 2 — Execution: 50 pts (worker loop compliance 25, implementation quality 15, cross-subtask coherence 10)
+- Pass: ≥66 pts (69%) | Excellent: ≥81 pts (85%)
+
 ### Scoring Notes
 
 - **Progress comments**: Required by docs (cheap insurance for crash recovery), but only -1 pt if missing on a task completed quickly. The requirement exists for failure-case visibility, not ceremony.
@@ -146,3 +153,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R8-1](2026-02-01-review-r8-run1-sonnet.md)
 - [R8-2](2026-02-01-review-r8-run2-opus.md)
 - [R8-3](2026-02-01-review-r8-run3-sonnet.md)
+- [R7-1](2026-02-01-planning-r7-run1-opus.md)

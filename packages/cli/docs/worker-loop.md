@@ -22,7 +22,14 @@ Your project channel is `$BOTBOX_PROJECT`. All botbus commands must include `--a
 - **Check blocked beads** for resolved blockers: if a bead was blocked pending information or an upstream fix that has since landed, unblock it with `br update <id> --status=open` and a comment noting why.
 - **Groom each ready bead** (`br show <id>`): ensure it has a clear title, description with acceptance criteria and testing strategy, appropriate priority, and labels. Fix anything missing and comment what you changed.
 - Pick one task: `bv --robot-next` — parse the JSON to get the bead ID.
-- If the task is large (epic or multi-step), break it into smaller beads with `br create` + `br dep add`, then run `bv --robot-next` again. Repeat until you have exactly one small, atomic task.
+- If the task is large (epic or multi-step), decompose it:
+  1. **Groom the parent** first — add labels, refine acceptance criteria, note any discrepancies between the description and the actual project state (e.g., bead says "use SQLite" but no DB crate in dependencies). Comment your findings on the parent bead.
+  2. **Create child beads** with `br create` — each one a resumable unit of work. Titles in imperative form. Descriptions must include acceptance criteria (what "done" looks like).
+  3. **Set priorities** that reflect execution order — foundation subtasks get higher priority than downstream features, tests get lowest.
+  4. **Wire dependencies** with `br dep add <child> <parent>`. Look for parallelism — tasks that share a prerequisite but don't depend on each other should not be chained linearly.
+  5. **Comment your decomposition plan** on the parent bead: what you created, why, and any decisions you made (e.g., "Using in-memory storage instead of SQLite because no DB crate available").
+  6. **Verify** with `br dep tree <parent>` — the graph should have at least one point where multiple tasks are unblocked simultaneously.
+  7. Run `bv --robot-next` again. Repeat until you have exactly one small, atomic task.
 - If the bead is claimed by another agent (`botbus check-claim --agent $AGENT "bead://$BOTBOX_PROJECT/<id>"`), skip it and pick the next recommendation. If all are claimed, stop with "No work available."
 
 ### 2. Start — claim and set up

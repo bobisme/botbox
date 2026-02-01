@@ -12,6 +12,7 @@ This is the next step toward the full dev-agent architecture described in `docs/
 | R2 | Author response: handle comments, fix, re-request | 1 (dev agent) | Future |
 | R3 | Full loop: author requests → reviewer reviews → author responds → merge | 2 (dev + reviewer) | Future |
 | R4 | Integration: worker loop + review + merge | 2 (dev + reviewer) | ✅ Done |
+| R7 | Planning: epic decomposition, dependency graph, sequential execution | 1 (dev agent) | ✅ Done |
 | R8 | Adversarial review: subtle bugs requiring execution-path reasoning | 1 (reviewer) | ✅ Done |
 
 ## R1: Reviewer Eval
@@ -596,6 +597,134 @@ Excellent: ≥81 (85%)
 |-----|-------|-------|-------------|
 | R4-1 | Sonnet | 89/95 (94%) | Full lifecycle works; Phase 4 needed prompt fix for workspace visibility + crit index bug |
 | R4-2 | Sonnet | 95/95 (100%) | crit v0.9.1 vote override fix confirmed; perfect score. Phase 4: 10/10 (was 4/10) |
+
+---
+
+## R7: Planning Eval — Epic Decomposition and Sequencing
+
+### Concept
+
+Single Opus agent receives a complex feature request as one bead. Must decompose it into subtasks with correct dependencies, then execute them in order following worker-loop.md. Tests planning ability — can the agent recognize a task is too large, create a non-trivial dependency graph, and systematically work through it?
+
+2 phases: Phase 1 = triage + decompose (stop before coding), Phase 2 = execute subtasks via worker loop.
+
+### Feature Request
+
+**"Build task management API"** — Rust/Axum, in-memory or SQLite. The bead description mentions "Store tasks in SQLite for persistence" but Cargo.toml has no DB crate. This is the adaptability test — agent must notice the gap and make a decision.
+
+Endpoints: CRUD for tasks, tag management, filtering + pagination, overdue query. Natural decomposition into 5-7 subtasks with a diamond dependency graph (not purely linear).
+
+### Setup
+
+```bash
+bash scratchpad/r7-setup.sh
+# Creates eval dir, Cargo.toml (no SQLite crate), minimal main.rs, feature request bead.
+# Outputs EVAL_DIR, DEV_AGENT, PARENT_BEAD.
+# Source .eval-env in the eval dir before running phases.
+```
+
+### Execution
+
+```bash
+# Phase 1: Decomposition (triage only, no coding)
+cd $EVAL_DIR && source .eval-env
+bash scratchpad/r7-phase1.sh
+
+# Phase 2: Execute subtasks via worker loop
+cd $EVAL_DIR && source .eval-env
+bash scratchpad/r7-phase2.sh
+```
+
+### Scoring (95 points)
+
+#### Phase 1 — Decomposition (45 points)
+
+| Category | Criterion | Pts | Verification |
+|----------|-----------|-----|-------------|
+| **Triage** | Found bead via `br ready` / `bv --robot-next` | 3 | `br show` shows interaction |
+| | Recognized bead is too large for one session | 3 | Creates child beads instead of jumping to code |
+| | Groomed parent bead (acceptance criteria, labels) | 4 | `br show <parent>` updated |
+| **Subtasks** | Created 4-7 child beads with distinct scopes | 5 | `br list` count |
+| | Titles are actionable (imperative form) | 3 | `br show` each |
+| | Descriptions include acceptance criteria | 4 | What "done" looks like per subtask |
+| | Priorities reflect ordering | 3 | Foundation = higher priority than tests |
+| **Deps** | Dependencies wired with `br dep add` (not just comments) | 5 | `br dep tree <parent>` shows edges |
+| | Root subtask has no parents (unblocked) | 3 | `br ready` shows it first |
+| | Downstream blocked by actual prerequisites | 4 | Filtering blocked by CRUD, not unrelated |
+| | Graph has parallelism (not purely linear) | 3 | ≥2 tasks share same prerequisite |
+| **Adapt** | Noticed SQLite vs Cargo.toml discrepancy | 2 | Comment or subtask mentions it |
+| | Made explicit decision (add crate, use in-memory, or defer) | 3 | Any documented decision = full marks |
+
+**Failure modes:**
+- Skips decomposition entirely (does all in one bead): 0/45, max total 15/95 (FAIL)
+- Creates subtasks but no `br dep add`: 0/15 on deps
+- Purely linear chain: 2/3 on parallelism (recognizes order, misses independence)
+
+#### Phase 2 — Execution (50 points)
+
+| Category | Criterion | Pts | Verification |
+|----------|-----------|-----|-------------|
+| **Loop** | Picks subtasks respecting dep order (never starts blocked bead) | 5 | `br list --format json` timestamps |
+| | Start protocol per subtask (in_progress, claim, workspace, announce) | 5 | `botbus history`, `maw ws list` |
+| | Progress comment per subtask | 5 | `br comments <id>` |
+| | Finish protocol per subtask (close, merge ws, release, sync, announce) | 5 | `br show` closed, no leaked workspaces |
+| | Completed ≥3 subtasks (partial: 2=15, 1=10, 0=0) | 5 | Count of closed children |
+| **Quality** | Code compiles (`cargo check`) | 5 | Run after all merges |
+| | At least CRUD endpoints exist | 5 | Route definitions in source |
+| | Storage layer exists | 3 | Data model struct + HashMap/Vec/SQLite |
+| | Any test passes | 2 | `cargo test` |
+| **Coherence** | Later subtasks build on earlier (no reimplementation) | 4 | Code inspection |
+| | Parent bead closed after all children | 3 | `br show <parent>` |
+| | Final announcement references feature completion | 3 | `botbus history` |
+
+```
+Phase 1 — Decomposition:     45 pts
+  Triage + recognition:       10
+  Subtask creation (4-7):     15
+  Dependency graph (DAG):     15
+  Adaptability (SQLite):       5
+
+Phase 2 — Execution:          50 pts
+  Worker loop compliance:     25
+  Implementation quality:     15
+  Cross-subtask coherence:    10
+
+Pass: ≥66 (69%)
+Excellent: ≥81 (85%)
+```
+
+### Verification
+
+After Phase 1:
+```bash
+br dep tree $PARENT_BEAD          # dependency graph
+br ready                          # first unblocked subtask(s)
+br comments $PARENT_BEAD          # decomposition plan + SQLite decision
+botbus history r7-eval --limit 10 # planning announcement
+```
+
+After Phase 2:
+```bash
+br list --format json             # all beads with status
+br dep tree $PARENT_BEAD          # all should be closed
+cargo check && cargo test         # code quality
+maw ws list                       # no leaked workspaces
+botbus claims --agent $DEV_AGENT  # no active claims
+botbus history r7-eval --limit 50 # full timeline
+```
+
+### Expected Results
+
+| Model | Phase 1 (45) | Phase 2 (50) | Total (95) | Reasoning |
+|-------|-------------|-------------|-----------|-----------|
+| Opus | 38-45 | 40-50 | 78-95 (82-100%) | Strong planning, should produce good DAG. May hit context limits on later subtasks. |
+| Sonnet | 25-38 | 30-45 | 55-83 (58-87%) | Will decompose but likely linear chain. May miss SQLite trap. |
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| R7-1 | Opus | 76/95 (80%) | Strong diamond DAG (7 subtasks, 3 parallel). Completed 3/7 subtasks before context limit. Code compiles, 8 tests pass. No parent grooming, flat priorities, implicit SQLite decision. |
 
 ---
 
