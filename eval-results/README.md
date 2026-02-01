@@ -29,6 +29,7 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 | R3-1 | Full Review Loop | Sonnet | — | 60/65 (92%) | Re-review LGTM + merge; first merge attempt timed out (wrong crit command) |
 | R4-1 | Integration (Full Lifecycle) | Sonnet | 1 | 89/95 (94%) | End-to-end triage→merge works; re-review needed prompt fix for workspace visibility |
 | R4-2 | Integration (Full Lifecycle) | Sonnet | 1 | 95/95 (100%) | crit v0.9.1 vote override fix confirmed; perfect score with workspace path hint |
+| R8-1 | Adversarial Review | Sonnet | — | 54/65 (83%) | Found all 3 subtle bugs (race, TOCTOU, underflow); 1 FP on permission check clean trap |
 
 ## Key Learnings
 
@@ -58,6 +59,9 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - **`crit reviews merge` not `crit reviews close`** — agent timed out trying to find a "close" command. Precise command names in prompts prevent this.
 - **Reviewer re-review was thorough** — read actual code, ran clippy, verified each fix against original issue. Didn't rubber-stamp based on author's thread replies alone.
 - **crit v0.9.1 vote override fix confirmed** — R4-2 LGTM properly overrides block in SQLite index. The 6-point Phase 4 improvement (4/10 → 10/10) is entirely attributable to this fix + workspace path hint.
+- **Sonnet finds execution-path bugs with the v2 prompt** — R8-1 found all 3 adversarial bugs (race condition, TOCTOU delete, pagination underflow) that require comparing code paths rather than pattern matching. Expected range was 35-50; actual was 54/65 (83%). The v2 prompt's evidence-grounding instruction helps with subtle bugs too.
+- **Clean code traps must be truly unambiguous** — R8-1 flagged the `mode & 0o444` permission check as LOW because the comment said "Standard Unix permission check" but the code only checks if bits are set, not actual process readability. The reviewer's argument has some merit. Future traps should be code that is both correct AND has accurate comments.
+- **Quality issue over-severity is the main calibration gap** — R8-1 rated the non-UTF-8 `.unwrap()` as HIGH ("DoS") rather than LOW. While a panic is impactful, the trigger (non-UTF-8 filename on disk) isn't attacker-controlled in normal upload flows. Severity calibration degrades with more complex code.
 - **R4 results are reproducible** — R4-1 and R4-2 with different agents, same protocol, same outcomes (modulo the fixed bug). Validates the eval framework produces consistent measurements.
 
 ## Upstream Tool Versions (as of 2026-01-31)
@@ -99,6 +103,15 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - Phase 5 (Merge + Finish): 10 pts (verify LGTM 2, crit merge 2, maw merge 2, close+release 2, sync+announce 2)
 - Pass: ≥66 pts (69%) | Excellent: ≥81 pts (85%)
 
+### Adversarial Review / R8 (65 points)
+
+- Bug detection: 30 pts (race condition 12, TOCTOU delete 12, pagination underflow 6)
+- Blocking decision: 5 pts (block if HIGH+ issues exist)
+- Quality feedback: 10 pts (non-UTF-8 unwrap 3, silent error discard 3, constructive 4)
+- FP resistance: 10 pts (OnceLock 5, permission bit check 5)
+- Protocol compliance: 10 pts (crit commands 5, botbus announcement 5)
+- Pass: ≥45 pts (69%) | Excellent: ≥55 pts (85%)
+
 ### Scoring Notes
 
 - **Progress comments**: Required by docs (cheap insurance for crash recovery), but only -1 pt if missing on a task completed quickly. The requirement exists for failure-case visibility, not ceremony.
@@ -122,3 +135,4 @@ Behavioral evaluation of agents following the botbox protocol. See `eval-proposa
 - [R3-1](2026-01-31-review-r3-run1-sonnet.md)
 - [R4-1](2026-01-31-review-r4-run1-sonnet.md)
 - [R4-2](2026-01-31-review-r4-run2-sonnet.md)
+- [R8-1](2026-02-01-review-r8-run1-sonnet.md)

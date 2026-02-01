@@ -12,6 +12,7 @@ This is the next step toward the full dev-agent architecture described in `docs/
 | R2 | Author response: handle comments, fix, re-request | 1 (dev agent) | Future |
 | R3 | Full loop: author requests → reviewer reviews → author responds → merge | 2 (dev + reviewer) | Future |
 | R4 | Integration: worker loop + review + merge | 2 (dev + reviewer) | ✅ Done |
+| R8 | Adversarial review: subtle bugs requiring execution-path reasoning | 1 (reviewer) | ✅ Done |
 
 ## R1: Reviewer Eval
 
@@ -595,6 +596,132 @@ Excellent: ≥81 (85%)
 |-----|-------|-------|-------------|
 | R4-1 | Sonnet | 89/95 (94%) | Full lifecycle works; Phase 4 needed prompt fix for workspace visibility + crit index bug |
 | R4-2 | Sonnet | 95/95 (100%) | crit v0.9.1 vote override fix confirmed; perfect score. Phase 4: 10/10 (was 4/10) |
+
+---
+
+## R8: Adversarial Review Eval
+
+### Concept
+
+Single-reviewer eval (same shape as R1) with harder bugs requiring execution-path reasoning, not pattern matching. Tests the ceiling of review quality. The fixture is a file management API (~120 lines, Rust/Axum) with upload, list, download, and delete endpoints.
+
+### Bug Design
+
+3 subtle bugs that require comparing execution paths, not just pattern matching:
+
+1. **Race condition in upload size limit (HIGH)** — `AtomicU64` check-then-act: `load()` then `fetch_add()` is not atomic. Two concurrent uploads both pass the limit check and exceed total.
+2. **TOCTOU in file delete (HIGH)** — `canonicalize()` + `starts_with()` check validates path, then `remove_file(&file_path)` uses the **original path**, not `&canonical`. Between check and delete, the file can be replaced with a symlink. Contrast: `download_file` correctly uses `&canonical`. Reviewer must compare the two functions to spot the discrepancy.
+3. **Pagination usize underflow (MEDIUM)** — `(page - 1) * per_page` when `page=0` wraps to `usize::MAX`. DoS via query param.
+
+2 quality issues:
+
+1. `entry.file_name().to_str().unwrap()` — panics on non-UTF-8 filenames (LOW)
+2. `fs::remove_file(...).await.ok()` — cleanup error silently discarded (INFO)
+
+2 clean code traps (must NOT flag):
+
+1. `OnceLock<AppConfig>` — correct lazy-init for runtime env vars
+2. `mode & 0o444` — standard Unix permission bit check, well-commented
+
+### Key Design Decisions
+
+- Download has correct `&canonical` usage; delete has `&file_path` (the TOCTOU). Reviewer must compare the two functions.
+- Upload has no path traversal protection — valid observation but NOT scored. Tests whether reviewer gets distracted by the obvious pattern-match bug and misses the subtle race.
+- Clippy won't catch the race condition or TOCTOU (semantic bugs, not syntactic). May catch `page - 1` underflow.
+- Both clean code traps are genuinely correct (learned from R1's static mut mistake).
+
+### Setup
+
+```bash
+bash scratchpad/r8-setup.sh
+# Creates eval dir, fixture, crit review. Outputs EVAL_DIR, REVIEWER, REVIEW_ID.
+# Source .eval-env in the eval dir before running.
+```
+
+### Execution
+
+```bash
+cd $EVAL_DIR && source .eval-env
+bash scratchpad/r8-run.sh
+# Identical R1 v2 prompt: clippy, web search, severity levels, evidence-grounding.
+```
+
+### Scoring (65 points)
+
+#### Bug Detection (30 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Bug 1 (race condition): identified check-then-act | 4 | crit comment on upload load/fetch_add |
+| Bug 1: suggested atomic fix (compare_exchange or lock) | 4 | Comment includes fix suggestion |
+| Bug 1: correct severity (HIGH) | 4 | Severity label is HIGH or CRITICAL |
+| Bug 2 (TOCTOU delete): identified &file_path vs &canonical | 4 | crit comment on delete_file remove_file |
+| Bug 2: suggested fix (use &canonical) | 4 | Comment references canonical path |
+| Bug 2: correct severity (HIGH or CRITICAL) | 4 | Severity label is HIGH or CRITICAL |
+| Bug 3 (pagination): identified page=0 underflow | 3 | crit comment on list_files |
+| Bug 3: suggested fix (clamp or default) | 3 | Comment includes fix |
+
+#### Blocking Decision (5 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Blocked the review (HIGH+ issues exist) | 5 | `crit review` shows block vote |
+
+#### Quality Feedback (10 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Found unwrap on non-UTF-8 filename | 3 | crit comment on to_str().unwrap() |
+| Found silent error discard in delete | 3 | crit comment on .ok() |
+| Comments are constructive (suggest fixes) | 4 | Not just "this is bad" |
+
+#### False Positive Resistance (10 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Did not flag OnceLock as a bug | 5 | No thread on OnceLock, or acknowledges it's correct |
+| Did not flag `mode & 0o444` as a bug | 5 | No thread on permission check, or acknowledges it's correct |
+
+#### Protocol Compliance (10 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Used crit commands correctly (--file, --line) | 5 | Comments have file and line references |
+| Posted summary on botbus | 5 | botbus message with -L review-done |
+
+```
+Bug detection:              30 points
+Blocking decision:           5 points
+Quality feedback:           10 points
+False positive resistance:  10 points
+Protocol compliance:        10 points
+                           ───────────
+Total:                      65 points
+
+Pass: ≥45 (69%)
+Excellent: ≥55 (85%)
+```
+
+### Expected Results
+
+| Model | Expected | Reasoning |
+|-------|----------|-----------|
+| Sonnet | 35-50 (54-77%) | R1-3 was 65/65 with easier (pattern-match) bugs. These require execution-path reasoning. |
+| Opus | 50-65 (77-100%) | Stronger at multi-step reasoning; may catch all 3. |
+
+### Verification
+
+```bash
+crit review $REVIEW_ID
+crit threads list $REVIEW_ID
+botbus history r8-eval --limit 10
+```
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| R8-1 | Sonnet | 54/65 (83%) | Found all 3 adversarial bugs; 1 FP on permission check trap; over-severity on quality issues |
 
 ---
 
