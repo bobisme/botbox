@@ -70,9 +70,9 @@ This project uses the botbox multi-agent workflow.
 
 ### Identity
 
-Every command that touches botbus or crit requires \`--agent <name>\`.
+Every command that touches bus or crit requires \`--agent <name>\`.
 Use \`<project>-dev\` as your name (e.g., \`terseid-dev\`). Agents spawned by \`agent-loop.sh\` receive a random name automatically.
-Run \`botbus whoami --agent $AGENT\` to confirm your identity.
+Run \`bus whoami --agent $AGENT\` to confirm your identity.
 
 ### Lifecycle
 
@@ -85,8 +85,8 @@ ${lifecycleLinks}
 ### Quick Start
 
 \`\`\`bash
-AGENT=<project>-dev   # or: AGENT=$(botbus generate-name)
-botbus whoami --agent $AGENT
+AGENT=<project>-dev   # or: AGENT=$(bus generate-name)
+bus whoami --agent $AGENT
 br ready
 \`\`\`
 
@@ -94,21 +94,21 @@ br ready
 
 - Create a bead for each unit of work before starting.
 - Update status as you progress: \`open\` → \`in_progress\` → \`closed\`.
-- Reference bead IDs in all botbus messages.
+- Reference bead IDs in all bus messages.
 - Sync on session end: \`br sync --flush-only\`.
 
 ### Mesh Protocol
 
-- Include \`-L mesh\` on botbus messages.
-- Claim bead: \`botbus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"\`.
-- Claim workspace: \`botbus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"\`.
-- Claim agents before spawning: \`botbus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
-- Release claims when done: \`botbus release --agent $AGENT --all\`.
+- Include \`-L mesh\` on bus messages.
+- Claim bead: \`bus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"\`.
+- Claim workspace: \`bus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"\`.
+- Claim agents before spawning: \`bus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
+- Release claims when done: \`bus release --agent $AGENT --all\`.
 
 ### Spawning Agents
 
-1. Check if the role is online: \`botbus agents\`.
-2. Claim the agent lease: \`botbus claim --agent $AGENT "agent://role"\`.
+1. Check if the role is online: \`bus agents\`.
+2. Claim the agent lease: \`bus claim --agent $AGENT "agent://role"\`.
 3. Spawn with an explicit identity (e.g., via botty or agent-loop.sh).
 4. Announce with \`-L spawn-ack\`.
 
@@ -122,10 +122,10 @@ br ready
 
 When you encounter issues with tools from other projects:
 
-1. Query the \`#projects\` registry: \`botbus inbox --agent $AGENT --channels projects --all\`
+1. Query the \`#projects\` registry: \`bus inbox --agent $AGENT --channels projects --all\`
 2. Find the project entry (format: \`project:<name> repo:<path> lead:<agent> tools:<tool1>,<tool2>\`)
 3. Navigate to the repo, create beads with \`br create\`
-4. Post to the project channel: \`botbus send <project> "Filed beads: <ids>. <summary> @<lead>" -L feedback\`
+4. Post to the project channel: \`bus send <project> "Filed beads: <ids>. <summary> @<lead>" -L feedback\`
 
 See [report-issue.md](.agents/botbox/report-issue.md) for details.
 
@@ -133,7 +133,7 @@ See [report-issue.md](.agents/botbox/report-issue.md) for details.
 
 | Tool | Purpose | Key commands |
 |------|---------|-------------|
-| botbus | Communication, claims, presence | \`send\`, \`inbox\`, \`claim\`, \`release\`, \`agents\` |
+| bus | Communication, claims, presence | \`send\`, \`inbox\`, \`claim\`, \`release\`, \`agents\` |
 | maw | Isolated jj workspaces | \`ws create\`, \`ws merge\`, \`ws destroy\` |
 | br/bv | Work tracking + triage | \`ready\`, \`create\`, \`close\`, \`--robot-next\` |
 | crit | Code review | \`review\`, \`comment\`, \`lgtm\`, \`block\` |

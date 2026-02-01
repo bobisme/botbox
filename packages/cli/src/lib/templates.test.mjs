@@ -84,7 +84,7 @@ describe("renderAgentsMd", () => {
       tools: [],
       reviewers: [],
     })
-    expect(result).toContain("| botbus |")
+    expect(result).toContain("| bus |")
     expect(result).toContain("| maw |")
     expect(result).toContain("| br/bv |")
     expect(result).toContain("| crit |")
@@ -99,7 +99,7 @@ describe("renderAgentsMd", () => {
       reviewers: [],
     })
     expect(result).toContain("### Quick Start")
-    expect(result).toContain("botbus generate-name")
+    expect(result).toContain("bus generate-name")
     expect(result).toContain("br ready")
   })
 
@@ -123,8 +123,8 @@ describe("renderAgentsMd", () => {
     })
     expect(result).toContain("### Mesh Protocol")
     expect(result).toContain("-L mesh")
-    expect(result).toContain("botbus claim")
-    expect(result).toContain("botbus release")
+    expect(result).toContain("bus claim")
+    expect(result).toContain("bus release")
   })
 
   test("managed section contains spawning agents", () => {
@@ -135,7 +135,7 @@ describe("renderAgentsMd", () => {
       reviewers: [],
     })
     expect(result).toContain("### Spawning Agents")
-    expect(result).toContain("botbus agents")
+    expect(result).toContain("bus agents")
     expect(result).toContain("-L spawn-ack")
   })
 

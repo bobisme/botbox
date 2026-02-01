@@ -12,6 +12,19 @@ Your project channel is `$BOTBOX_PROJECT`. All bus commands must include `--agen
 
 ## Loop
 
+### 0. Resume check — handle in-progress reviews
+
+Before triaging new work, check if you have an in-progress bead from a previous iteration:
+
+- `bus claims --agent $AGENT` — look for `bead://` claims
+- If you hold a bead claim:
+  - Check for review activity: `crit inbox --agent $AGENT`
+  - Read the review: `crit review <review-id>`
+  - **LGTM (approved)**: Follow [merge-check](merge-check.md), then go to step 6 (Finish)
+  - **Blocked (changes requested)**: Follow [review-response](review-response.md) to fix issues and re-request review. Then STOP this iteration.
+  - **Pending (no new activity)**: STOP this iteration. The reviewer has not responded yet.
+- If no active claims: proceed to step 1 (Triage).
+
 ### 1. Triage — find and groom work, then pick one small task (always run this, even if you already know what to work on)
 
 - Check inbox: `bus inbox --agent $AGENT --channels $BOTBOX_PROJECT --mark-read`
@@ -62,8 +75,26 @@ If stuck:
 - Release the bead claim: `bus release --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
 - Move on to triage again (go to step 1).
 
-### 5. Finish — mandatory teardown (never skip)
+### 5. Review request — submit work for review
 
+After completing the implementation:
+
+- Describe the change: `maw ws jj $WS describe -m "<bead-id>: <summary>"`
+- Create a crit review: `crit reviews create --agent $AGENT --title "<bead-title>" --description "<summary of changes>"`
+- Request review: `crit reviews request <review-id> --agent $AGENT`
+- Add a comment to the bead: `br comments add <bead-id> "Review requested: <review-id>, workspace: $WS ($WS_PATH)"`
+- Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>: <bead-title>" -L mesh -L review-request`
+- **STOP this iteration.** Do NOT close the bead, merge the workspace, or release claims. The reviewer will process the review, and you will resume in the next iteration via step 0.
+
+See [review-request](review-request.md) for full details.
+
+### 6. Finish — mandatory teardown (never skip)
+
+If a review was conducted:
+- Verify approval: `crit review <review-id>` — confirm LGTM, no blocks
+- Mark review as merged: `crit reviews merge <review-id> --agent $AGENT`
+
+Then proceed with teardown:
 - `br comments add <bead-id> "Completed by $AGENT"`
 - `br close <bead-id> --reason="Completed" --suggest-next`
 - `maw ws merge $WS --destroy` (if merge conflict, preserve workspace and announce)
@@ -71,9 +102,9 @@ If stuck:
 - `br sync --flush-only`
 - `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L mesh -L task-done`
 
-### 6. Repeat
+### 7. Repeat
 
-Go back to step 1. The loop ends when triage finds no work.
+Go back to step 0. The loop ends when triage finds no work and no reviews are pending.
 
 ## Key Rules
 
