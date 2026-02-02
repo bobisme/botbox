@@ -28,11 +28,11 @@ Do NOT close the bead. Do NOT merge the workspace. Stop after requesting review.
 
 2. START:
    - br update <bead-id> --status=in_progress
-   - botbus claim --agent ${DEV_AGENT} \"bead://r4-eval/<bead-id>\" -m \"<bead-id>\"
+   - bus claims stake --agent ${DEV_AGENT} \"bead://r4-eval/<bead-id>\" -m \"<bead-id>\"
    - maw ws create --random — note workspace name (\$WS) and absolute path (\$WS_PATH)
    - All file operations must use the absolute workspace path. For jj: maw ws jj \$WS <args>.
    - Do NOT cd into the workspace and stay there.
-   - botbus claim --agent ${DEV_AGENT} \"workspace://r4-eval/\$WS\" -m \"<bead-id>\"
+   - bus claims stake --agent ${DEV_AGENT} \"workspace://r4-eval/\$WS\" -m \"<bead-id>\"
    - Announce: botbus send --agent ${DEV_AGENT} r4-eval \"Working on <bead-id>\" -L mesh -L task-claim
 
 3. WORK:

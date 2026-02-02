@@ -18,14 +18,25 @@ describe("init (non-interactive)", () => {
   /** @type {string} */
   let origCwd
 
+  /** @type {string | undefined} */
+  let origBotbusDataDir
+
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "botbox-init-test-"))
     origCwd = process.cwd()
     process.chdir(tempDir)
+    // Isolate botbus so tests don't pollute real data (hooks, channels, etc.)
+    origBotbusDataDir = process.env.BOTBUS_DATA_DIR
+    process.env.BOTBUS_DATA_DIR = join(tempDir, ".botbus-test")
   })
 
   afterEach(() => {
     process.chdir(origCwd)
+    if (origBotbusDataDir !== undefined) {
+      process.env.BOTBUS_DATA_DIR = origBotbusDataDir
+    } else {
+      delete process.env.BOTBUS_DATA_DIR
+    }
     rmSync(tempDir, { recursive: true, force: true })
   })
 
@@ -287,6 +298,49 @@ describe("init (non-interactive)", () => {
     expect(content).toContain("`botty`")
   })
 
+  test("runs maw init when maw is in tools", async () => {
+    let hasMaw = false
+    try {
+      execSync("maw --version", { stdio: "ignore" })
+      hasMaw = true
+    } catch {
+      // maw not installed
+    }
+
+    await init({
+      name: "maw-init-test",
+      type: "api",
+      tools: "maw",
+      interactive: false,
+    })
+
+    if (hasMaw) {
+      // jj should be initialized
+      expect(existsSync(join(tempDir, ".jj"))).toBe(true)
+    }
+    // Either way, init should not throw
+    expect(existsSync(join(tempDir, ".agents", "botbox"))).toBe(true)
+  })
+
+  test("runs crit init when crit is in tools", async () => {
+    // Ensure jj is initialized first (crit may need it)
+    try {
+      execSync("jj git init", { cwd: tempDir, stdio: "ignore", env: process.env })
+    } catch {
+      // jj not available
+    }
+
+    await init({
+      name: "crit-init-test",
+      type: "api",
+      tools: "crit",
+      interactive: false,
+    })
+
+    // Init should not throw regardless of crit availability
+    expect(existsSync(join(tempDir, ".agents", "botbox"))).toBe(true)
+  })
+
   test("registers on #projects when botbus is in tools", async () => {
     let hasBus = false
     try {
@@ -318,6 +372,7 @@ describe("init (non-interactive)", () => {
 
     let output = execSync("bus history projects -n 5 --format text", {
       encoding: "utf-8",
+      env: process.env,
     })
     expect(output).toContain("project: bus-reg-test")
     expect(output).toContain(`repo: ${tempDir}`)
@@ -346,7 +401,7 @@ describe("init (non-interactive)", () => {
     }
 
     // Initialize beads and create a spec file
-    execSync("br init", { cwd: tempDir, stdio: "ignore" })
+    execSync("br init", { cwd: tempDir, stdio: "ignore", env: process.env })
     let { writeFileSync } = await import("node:fs")
     writeFileSync(join(tempDir, "spec.md"), "# Spec\nBuild a thing.")
 
@@ -361,6 +416,7 @@ describe("init (non-interactive)", () => {
     let output = execSync("br list --json", {
       cwd: tempDir,
       encoding: "utf-8",
+      env: process.env,
     })
     expect(output).toContain("Review spec.md")
   })
@@ -379,7 +435,7 @@ describe("init (non-interactive)", () => {
     }
 
     // Initialize beads, create src/ so it doesn't trigger the "create source structure" bead
-    execSync("br init", { cwd: tempDir, stdio: "ignore" })
+    execSync("br init", { cwd: tempDir, stdio: "ignore", env: process.env })
     let { mkdirSync: mkFs } = await import("node:fs")
     mkFs(join(tempDir, "src"))
 
@@ -394,6 +450,7 @@ describe("init (non-interactive)", () => {
     let output = execSync("br list --json", {
       cwd: tempDir,
       encoding: "utf-8",
+      env: process.env,
     })
     expect(output).toContain("Scout project")
   })
@@ -413,7 +470,7 @@ describe("init (non-interactive)", () => {
   test("registers auto-spawn hook when botbus is in tools", async () => {
     let hasBus = false
     try {
-      execSync("bus hooks list", { stdio: "ignore" })
+      execSync("bus hooks list", { stdio: "ignore", env: process.env })
       hasBus = true
     } catch {
       // bus hooks not available
@@ -439,6 +496,7 @@ describe("init (non-interactive)", () => {
 
     let output = execSync("bus hooks list --format json", {
       encoding: "utf-8",
+      env: process.env,
     })
     let hooks = JSON.parse(output)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
@@ -446,17 +504,12 @@ describe("init (non-interactive)", () => {
       (/** @type {any} */ h) => h.channel === "hook-reg-test" && h.active,
     )
     expect(hook).toBeTruthy()
-
-    // Clean up
-    if (hook) {
-      execSync(`bus hooks remove ${hook.id}`, { stdio: "ignore" })
-    }
   })
 
   test("does not duplicate hook on second init", async () => {
     let hasBus = false
     try {
-      execSync("bus hooks list", { stdio: "ignore" })
+      execSync("bus hooks list", { stdio: "ignore", env: process.env })
       hasBus = true
     } catch {
       // bus hooks not available
@@ -483,6 +536,7 @@ describe("init (non-interactive)", () => {
 
     let output = execSync("bus hooks list --format json", {
       encoding: "utf-8",
+      env: process.env,
     })
     let hooks = JSON.parse(output)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
@@ -490,11 +544,6 @@ describe("init (non-interactive)", () => {
       (/** @type {any} */ h) => h.channel === "hook-dup-test" && h.active,
     )
     expect(matching.length).toBe(1)
-
-    // Clean up
-    for (let h of matching) {
-      execSync(`bus hooks remove ${h.id}`, { stdio: "ignore" })
-    }
   })
 
   test("does not register on #projects when botbus not in tools", async () => {
@@ -519,6 +568,7 @@ describe("init (non-interactive)", () => {
 
     let after = execSync("bus history projects -n 50 --format text", {
       encoding: "utf-8",
+      env: process.env,
     })
     expect(after).not.toContain("project: no-bus-test")
   })

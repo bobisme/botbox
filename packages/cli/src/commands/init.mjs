@@ -187,10 +187,32 @@ export async function init(opts) {
   } else if (initBeads && tools.includes("beads")) {
     const { execSync } = await import("node:child_process")
     try {
-      execSync("br init", { cwd: projectDir, stdio: "inherit" })
+      execSync("br init", { cwd: projectDir, stdio: "inherit", env: process.env })
       console.log("Initialized beads")
     } catch {
       console.warn("Warning: br init failed (is beads installed?)")
+    }
+  }
+
+  // Initialize maw (jj + .workspaces/ gitignore)
+  if (tools.includes("maw")) {
+    const { execSync } = await import("node:child_process")
+    try {
+      execSync("maw init", { cwd: projectDir, stdio: "inherit", env: process.env })
+      console.log("Initialized maw (jj)")
+    } catch {
+      console.warn("Warning: maw init failed (is maw installed?)")
+    }
+  }
+
+  // Initialize crit (code review)
+  if (tools.includes("crit")) {
+    const { execSync } = await import("node:child_process")
+    try {
+      execSync("crit init", { cwd: projectDir, stdio: "inherit", env: process.env })
+      console.log("Initialized crit")
+    } catch {
+      console.warn("Warning: crit init failed (is crit installed?)")
     }
   }
 
@@ -202,7 +224,7 @@ export async function init(opts) {
     try {
       execSync(
         `bus send --agent ${name}-dev projects "project: ${name}  repo: ${absPath}  lead: ${name}-dev  tools: ${toolsList}" -L project-registry`,
-        { cwd: projectDir, stdio: "inherit" },
+        { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log("Registered project on #projects channel")
     } catch {
@@ -268,7 +290,7 @@ async function registerSpawnHook(projectDir, name) {
 
   // Check if bus supports hooks
   try {
-    execSync("bus hooks list", { stdio: "pipe" })
+    execSync("bus hooks list", { stdio: "pipe", env: process.env })
   } catch {
     // bus doesn't support hooks or isn't installed
     return
@@ -279,6 +301,7 @@ async function registerSpawnHook(projectDir, name) {
     let existing = execSync("bus hooks list --format json", {
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      env: process.env,
     })
     let hooks = JSON.parse(existing)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
@@ -292,8 +315,8 @@ async function registerSpawnHook(projectDir, name) {
 
   try {
     execSync(
-      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --cwd ${absPath} --release-on-exit -- bash scripts/dev-loop.sh ${name} ${agent}`,
-      { cwd: projectDir, stdio: "inherit" },
+      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} -- bash scripts/dev-loop.sh ${name} ${agent}`,
+      { cwd: projectDir, stdio: "inherit", env: process.env },
     )
     console.log("Registered auto-spawn hook for dev agent")
   } catch {
@@ -318,7 +341,7 @@ async function seedInitialBeads(projectDir, name, types) {
     try {
       execSync(
         `br create --actor ${agent} --owner ${agent} --title="${title}" --description="${description}" --type=task --priority=${priority}`,
-        { cwd: projectDir, stdio: "pipe" },
+        { cwd: projectDir, stdio: "pipe", env: process.env },
       )
       return true
     } catch {

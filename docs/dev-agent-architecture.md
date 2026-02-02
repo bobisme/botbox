@@ -76,7 +76,7 @@ After work is complete (either by the dev agent or a worker), if review is enabl
 3. Announce on botbus: `bus send --agent $AGENT $PROJECT "Review requested: <review-id> @security-reviewer" -L mesh -L review-request`
 
 **Ensure reviewer is running:**
-1. Check if reviewer is active: `bus check-claim --agent $AGENT "agent://security-reviewer"`
+1. Check if reviewer is active: `bus claims check --agent $AGENT "agent://security-reviewer"`
 2. If not running, spawn it: `botty spawn --name security-reviewer -- <reviewer-script>`
 
 **Wait for review:**
@@ -106,7 +106,7 @@ On the next iteration where a review response is visible:
 Same as the current agent-loop finish:
 - `br comments add <id> "Completed by $AGENT"`
 - `br close <id> --reason="Completed" --suggest-next`
-- `bus release --agent $AGENT --all`
+- `bus claims release --agent $AGENT --all`
 - `br sync --flush-only`
 - `bus send --agent $AGENT $PROJECT "Completed <id>" -L mesh -L task-done`
 
@@ -118,7 +118,7 @@ Agents coordinate through two channels:
 
 **beads + crit** — persistent state. Bead status (open/in_progress/closed), crit reviews (pending/approved/blocked), comments and threads. This is the source of truth; botbus messages are notifications.
 
-Claims (`bus claim`) prevent conflicts:
+Claims (`bus claims stake`) prevent conflicts:
 - `agent://<name>` — agent lease (one instance at a time)
 - `bead://<project>/<id>` — bead ownership
 - `workspace://<project>/<ws>` — workspace ownership

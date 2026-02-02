@@ -19,7 +19,7 @@ All steps below are required — they clean up resources, prevent workspace leak
    - The `--destroy` flag is required — it cleans up the workspace after merging
    - If merge fails due to conflicts, do NOT destroy. Instead add a comment: `br comments add --actor $AGENT --author $AGENT <bead-id> "Merge conflict — workspace preserved for manual resolution"` and announce the conflict in the project channel.
    - If the command succeeds but the workspace still exists (`maw ws list`), report: `bus send --agent $AGENT $BOTBOX_PROJECT "Tool issue: maw ws merge --destroy did not remove workspace $WS" -L mesh -L tool-issue`
-6. Release all claims held by this agent: `bus release --agent $AGENT --all`
+6. Release all claims held by this agent: `bus claims release --agent $AGENT --all`
 7. Sync the beads ledger: `br sync --flush-only`
 8. Announce completion in the project channel: `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L mesh -L task-done`
 

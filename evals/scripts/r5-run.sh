@@ -58,17 +58,17 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    and testing strategy, appropriate priority. Fix anything missing, comment what you changed.
    Use bv --robot-next to pick exactly one small task. If the task is large, break it down with
    br create + br dep add, then bv --robot-next again. If a bead is claimed
-   (bus check-claim --agent ${AGENT} \"bead://r5-app/<id>\"), skip it.
+   (bus claims check --agent ${AGENT} \"bead://r5-app/<id>\"), skip it.
 
 3. START: br update <id> --status=in_progress.
-   bus claim --agent ${AGENT} \"bead://r5-app/<id>\" -m \"<id>\".
+   bus claims stake --agent ${AGENT} \"bead://r5-app/<id>\" -m \"<id>\".
    Create workspace: run maw ws create --random. Note the workspace name AND absolute path
    from the output (e.g., name \"frost-castle\", path \"/abs/path/.workspaces/frost-castle\").
    Store the name as WS and the absolute path as WS_PATH.
    IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
    For bash commands: cd \$WS_PATH && <command>. For jj commands: maw ws jj \$WS <args>.
    Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
-   bus claim --agent ${AGENT} \"workspace://r5-app/\$WS\" -m \"<id>\".
+   bus claims stake --agent ${AGENT} \"workspace://r5-app/\$WS\" -m \"<id>\".
    br comments add <id> \"Started in workspace \$WS (\$WS_PATH)\".
    Announce: bus send --agent ${AGENT} r5-app \"Working on <id>: <title>\" -L mesh -L task-claim.
 
@@ -79,7 +79,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    stuck. br comments add <id> \"Blocked: <details>\".
    bus send --agent ${AGENT} r5-app \"Stuck on <id>: <reason>\" -L mesh -L task-blocked.
    br update <id> --status=blocked.
-   Release: bus release --agent ${AGENT} \"bead://r5-app/<id>\".
+   Release: bus claims release --agent ${AGENT} \"bead://r5-app/<id>\".
    Stop this cycle.
 
 6. REVIEW REQUEST:
@@ -96,7 +96,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    br comments add <id> \"Completed by ${AGENT}\".
    br close <id> --reason=\"Completed\" --suggest-next.
    maw ws merge \$WS --destroy (if conflict, preserve and announce).
-   bus release --agent ${AGENT} --all.
+   bus claims release --agent ${AGENT} --all.
    br sync --flush-only.
    bus send --agent ${AGENT} r5-app \"Completed <id>: <title>\" -L mesh -L task-done.
 

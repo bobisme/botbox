@@ -46,7 +46,7 @@ Report a bug, feature request, or feedback to another project.
 
 5. **Ensure the lead agent is running** so your report gets triaged:
    ```bash
-   bus check-claim --agent $AGENT "agent://<lead-agent>"
+   bus claims check --agent $AGENT "agent://<lead-agent>"
    ```
    If the claim is **not held** (lead agent is offline), spawn it:
    ```bash

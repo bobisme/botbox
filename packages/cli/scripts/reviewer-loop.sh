@@ -75,15 +75,15 @@ echo "Model:     ${MODEL:-system default}"
 # --- Confirm identity ---
 bus whoami --agent "$AGENT"
 
-# --- Claim the agent lease ---
-if ! bus claim --agent "$AGENT" "agent://$AGENT" -m "reviewer-loop for $PROJECT"; then
-	echo "Claim denied. Reviewer $AGENT is already running."
-	exit 0
+# --- Refresh the agent lease (hook creates the initial claim) ---
+if ! bus claims refresh --agent "$AGENT" "agent://$AGENT"; then
+	echo "Claim refresh failed. Reviewer $AGENT is not properly initialized."
+	exit 1
 fi
 
 # --- Cleanup on exit ---
 cleanup() {
-	bus release --agent "$AGENT" "agent://$AGENT" >/dev/null 2>&1 || true
+	bus claims release --agent "$AGENT" "agent://$AGENT" >/dev/null 2>&1 || true
 	echo "Cleanup complete for $AGENT."
 }
 

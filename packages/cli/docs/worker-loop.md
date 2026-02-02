@@ -43,15 +43,15 @@ Before triaging new work, check if you have an in-progress bead from a previous 
   5. **Comment your decomposition plan** on the parent bead: what you created, why, and any decisions you made (e.g., "Using in-memory storage instead of SQLite because no DB crate available").
   6. **Verify** with `br dep tree <parent>` — the graph should have at least one point where multiple tasks are unblocked simultaneously.
   7. Run `bv --robot-next` again. Repeat until you have exactly one small, atomic task.
-- If the bead is claimed by another agent (`bus check-claim --agent $AGENT "bead://$BOTBOX_PROJECT/<id>"`), skip it and pick the next recommendation. If all are claimed, stop with "No work available."
+- If the bead is claimed by another agent (`bus claims check --agent $AGENT "bead://$BOTBOX_PROJECT/<id>"`), skip it and pick the next recommendation. If all are claimed, stop with "No work available."
 
 ### 2. Start — claim and set up
 
 - `br update --actor $AGENT <bead-id> --status=in_progress`
-- `bus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
+- `bus claims stake --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
 - `maw ws create --random` — note the workspace name (e.g., `frost-castle`) and the **absolute path** from the output. Store as `$WS` (name) and `$WS_PATH` (absolute path).
 - **All file operations must use the absolute workspace path** from `maw ws create` output. Use absolute paths for Read, Write, and Edit. For bash: `cd $WS_PATH && <command>`. For jj: `maw ws jj $WS <args>`. **Do not `cd` into the workspace and stay there** — the workspace will be destroyed during finish, breaking your shell session.
-- `bus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
+- `bus claims stake --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
 - `bus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>: <bead-title>" -L mesh -L task-claim`
 
 ### 3. Work — implement the task
@@ -72,7 +72,7 @@ If stuck:
 - Post in the project channel: `bus send --agent $AGENT $BOTBOX_PROJECT "Stuck on <bead-id>: <summary>" -L mesh -L task-blocked`
 - If a tool behaved unexpectedly (e.g., command succeeded but had no effect), also report it: `bus send --agent $AGENT $BOTBOX_PROJECT "Tool issue: <tool> <what happened>" -L mesh -L tool-issue`
 - `br update --actor $AGENT <bead-id> --status=blocked`
-- Release the bead claim: `bus release --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
+- Release the bead claim: `bus claims release --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
 - Move on to triage again (go to step 1).
 
 ### 5. Review request — submit work for review
@@ -97,7 +97,7 @@ Then proceed with teardown:
 - `br comments add --actor $AGENT --author $AGENT <bead-id> "Completed by $AGENT"`
 - `br close --actor $AGENT <bead-id> --reason="Completed" --suggest-next`
 - `maw ws merge $WS --destroy` (if merge conflict, preserve workspace and announce)
-- `bus release --agent $AGENT --all`
+- `bus claims release --agent $AGENT --all`
 - `br sync --flush-only`
 - `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L mesh -L task-done`
 

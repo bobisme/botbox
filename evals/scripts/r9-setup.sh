@@ -285,7 +285,7 @@ jj new
 
 # --- Simulate crash state for subtask 3 ---
 br update "$S3" --status=in_progress
-bus claim --agent "$AGENT" "bead://r9-eval/$S3" -m "$S3"
+bus claims stake --agent "$AGENT" "bead://r9-eval/$S3" -m "$S3"
 
 # Create workspace for subtask 3
 maw ws create --random
@@ -307,7 +307,7 @@ fi
 echo "WS=$WS"
 echo "WS_PATH=$WS_PATH"
 
-bus claim --agent "$AGENT" "workspace://r9-eval/$WS" -m "$S3"
+bus claims stake --agent "$AGENT" "workspace://r9-eval/$WS" -m "$S3"
 
 # Write partial get_item.rs in the workspace (handler stub, not wired into router)
 cat > "$WS_PATH/src/get_item.rs" << 'RUST_EOF'

@@ -35,7 +35,7 @@ Find exactly one actionable bead, or determine there is no work available. Groom
      - Create smaller child beads with `br create --actor $AGENT --owner $AGENT` and `br dep add --actor $AGENT <child> <parent>`.
      - Then run `bv --robot-next` again to pick one of the children.
    - Repeat until you have exactly one small, atomic task.
-8. Verify the bead is not claimed by another agent: `bus check-claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
+8. Verify the bead is not claimed by another agent: `bus claims check --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
    - If claimed by someone else, back off and run `bv --robot-next` again excluding that bead.
    - If all candidates are claimed, output `NO_WORK_AVAILABLE` and stop.
 9. Output the single bead ID as the result.

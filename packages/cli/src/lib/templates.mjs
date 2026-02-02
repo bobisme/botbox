@@ -100,15 +100,15 @@ br ready
 ### Mesh Protocol
 
 - Include \`-L mesh\` on bus messages.
-- Claim bead: \`bus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"\`.
-- Claim workspace: \`bus claim --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"\`.
-- Claim agents before spawning: \`bus claim --agent $AGENT "agent://role" -m "<bead-id>"\`.
-- Release claims when done: \`bus release --agent $AGENT --all\`.
+- Claim bead: \`bus claims stake --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"\`.
+- Claim workspace: \`bus claims stake --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"\`.
+- Claim agents before spawning: \`bus claims stake --agent $AGENT "agent://role" -m "<bead-id>"\`.
+- Release claims when done: \`bus claims release --agent $AGENT --all\`.
 
 ### Spawning Agents
 
 1. Check if the role is online: \`bus agents\`.
-2. Claim the agent lease: \`bus claim --agent $AGENT "agent://role"\`.
+2. Claim the agent lease: \`bus claims stake --agent $AGENT "agent://role"\`.
 3. Spawn with an explicit identity (e.g., via botty or agent-loop.sh).
 4. Announce with \`-L spawn-ack\`.
 

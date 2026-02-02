@@ -37,7 +37,7 @@ Steps:
    Run this from the project root (${EVAL_DIR}), not from inside the workspace.
 4. Close the bead: br close ${BEAD_ID} --reason=\"Completed\" --suggest-next
    Run from the project root.
-5. Release all claims: botbus release --agent ${DEV_AGENT} --all
+5. Release all claims: bus claims release --agent ${DEV_AGENT} --all
 6. Sync: br sync --flush-only
 7. Announce: botbus send --agent ${DEV_AGENT} r4-eval \"Completed ${BEAD_ID}: merged ${REVIEW_ID}\" -L mesh -L task-done
 

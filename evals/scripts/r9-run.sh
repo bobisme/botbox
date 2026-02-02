@@ -53,7 +53,7 @@ For the in-progress bead:
 - Describe: maw ws jj <ws-name> describe -m \"<id>: <summary>\"
 - Merge: maw ws merge <ws-name> --destroy
 - Close: br close <id> --reason=\"Completed\"
-- Release: bus release --agent ${AGENT} \"bead://r9-eval/<id>\"
+- Release: bus claims release --agent ${AGENT} \"bead://r9-eval/<id>\"
 - Announce: bus send --agent ${AGENT} r9-eval \"Completed <id>: <title>\" -L mesh -L task-done
 
 ## 2. CHECK FOR REMAINING WORK
@@ -65,9 +65,9 @@ After completing the in-progress bead:
 
 For each remaining subtask:
 1. br update <id> --status=in_progress
-2. bus claim --agent ${AGENT} \"bead://r9-eval/<id>\" -m \"<id>\"
+2. bus claims stake --agent ${AGENT} \"bead://r9-eval/<id>\" -m \"<id>\"
 3. maw ws create --random — note workspace NAME and absolute PATH
-4. bus claim --agent ${AGENT} \"workspace://r9-eval/\$WS\" -m \"<id>\"
+4. bus claims stake --agent ${AGENT} \"workspace://r9-eval/\$WS\" -m \"<id>\"
 5. Announce: bus send --agent ${AGENT} r9-eval \"Working on <id>: <title>\" -L mesh -L task-claim
 6. Implement in the workspace. All file operations use absolute WS_PATH.
    For jj: maw ws jj \$WS <args>. Do NOT cd into workspace and stay there.
@@ -76,7 +76,7 @@ For each remaining subtask:
 9. Describe: maw ws jj \$WS describe -m \"<id>: <summary>\"
 10. Merge: maw ws merge \$WS --destroy
 11. br close <id> --reason=\"Completed\"
-12. bus release --agent ${AGENT} \"bead://r9-eval/<id>\"
+12. bus claims release --agent ${AGENT} \"bead://r9-eval/<id>\"
 13. br sync --flush-only
 14. bus send --agent ${AGENT} r9-eval \"Completed <id>: <title>\" -L mesh -L task-done
 

@@ -517,7 +517,7 @@ EOF
 - Mark review merged: `crit reviews merge <id>` (NOT `close`)
 - Merge workspace: `maw ws merge $WS --destroy` (no `-f`)
 - Close bead: `br close <id>`
-- Release claims: `bus release --agent $DEV --all`
+- Release claims: `bus claims release --agent $DEV --all`
 - Sync: `br sync --flush-only`
 - Announce: `bus send ... -L task-done`
 
@@ -565,7 +565,7 @@ EOF
 | Verified LGTM before merge | 2 | Agent reads review first |
 | `crit reviews merge` (not close) | 2 | `crit reviews list` shows merged |
 | `maw ws merge --destroy` (no -f) | 2 | Workspace removed, code on main |
-| `br close` + `bus release --all` | 2 | Bead closed, no active claims |
+| `br close` + `bus claims release --all` | 2 | Bead closed, no active claims |
 | `br sync --flush-only` + announce | 2 | bus history shows task-done |
 
 ```

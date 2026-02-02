@@ -37,7 +37,7 @@ For EACH bead, do these steps:
      Note the workspace NAME and absolute PATH from the output.
   b. Generate a worker identity: bus generate-name
   c. Mark the bead in_progress: br update <id> --status=in_progress
-  d. Claim the bead: bus claim --agent ${DEV_AGENT} \"bead://r6-eval/<id>\" -m \"dispatched to <worker-name>\"
+  d. Claim the bead: bus claims stake --agent ${DEV_AGENT} \"bead://r6-eval/<id>\" -m \"dispatched to <worker-name>\"
   e. Announce dispatch: bus send --agent ${DEV_AGENT} r6-eval \"Dispatching <worker-name> for <id>: <title>\" -L mesh -L task-claim
 
   f. Launch the worker as a BACKGROUND process:
@@ -87,7 +87,7 @@ For each completed bead:
   a. Verify changes: maw ws jj <ws-name> diff
   b. Merge workspace: maw ws merge <ws-name> --destroy
   c. Close bead: br close <id> --reason=\"Completed by <worker-name>\"
-  d. Release claims: bus release --agent ${DEV_AGENT} \"bead://r6-eval/<id>\"
+  d. Release claims: bus claims release --agent ${DEV_AGENT} \"bead://r6-eval/<id>\"
   e. Announce: bus send --agent ${DEV_AGENT} r6-eval \"Merged <id>: <title>\" -L mesh -L task-done
 
 After merging all: br sync --flush-only

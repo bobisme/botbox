@@ -127,8 +127,8 @@ describe("renderAgentsMd", () => {
     })
     expect(result).toContain("### Mesh Protocol")
     expect(result).toContain("-L mesh")
-    expect(result).toContain("bus claim")
-    expect(result).toContain("bus release")
+    expect(result).toContain("bus claims stake")
+    expect(result).toContain("bus claims release")
   })
 
   test("managed section contains spawning agents", () => {

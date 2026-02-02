@@ -12,13 +12,13 @@ fi
 
 ORIG_AGENT="$BOTBUS_AGENT"
 
-if ! botbus claim "agent://$REVIEWER_NAME" -m "spawn $REVIEWER_NAME"; then
+if ! bus claims stake "agent://$REVIEWER_NAME" -m "spawn $REVIEWER_NAME"; then
 	echo "Claim denied. $REVIEWER_NAME should already be spawned."
 	exit 0
 fi
 
 cleanup() {
-	BOTBUS_AGENT="$ORIG_AGENT" botbus release "agent://$REVIEWER_NAME" >/dev/null 2>&1 || true
+	BOTBUS_AGENT="$ORIG_AGENT" bus claims release "agent://$REVIEWER_NAME" >/dev/null 2>&1 || true
 	export BOTBUS_AGENT="$ORIG_AGENT"
 }
 

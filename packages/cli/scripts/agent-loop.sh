@@ -75,16 +75,16 @@ echo "Model:     ${MODEL:-system default}"
 # --- Confirm identity ---
 bus whoami --agent "$AGENT"
 
-# --- Claim the agent lease ---
-if ! bus claim --agent "$AGENT" "agent://$AGENT" -m "worker-loop for $PROJECT"; then
-	echo "Claim denied. Agent $AGENT is already running."
-	exit 0
+# --- Refresh the agent lease (hook creates the initial claim) ---
+if ! bus claims refresh --agent "$AGENT" "agent://$AGENT"; then
+	echo "Claim refresh failed. Agent $AGENT is not properly initialized."
+	exit 1
 fi
 
 # --- Cleanup on exit ---
 cleanup() {
-	bus release --agent "$AGENT" "agent://$AGENT" >/dev/null 2>&1 || true
-	bus release --agent "$AGENT" --all >/dev/null 2>&1 || true
+	bus claims release --agent "$AGENT" "agent://$AGENT" >/dev/null 2>&1 || true
+	bus claims release --agent "$AGENT" --all >/dev/null 2>&1 || true
 	br sync --flush-only >/dev/null 2>&1 || true
 	echo "Cleanup complete for $AGENT."
 }
@@ -184,17 +184,17 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    and testing strategy, appropriate priority. Fix anything missing, comment what you changed.
    Use bv --robot-next to pick exactly one small task. If the task is large, break it down with
    br create + br dep add, then bv --robot-next again. If a bead is claimed
-   (bus check-claim --agent $AGENT "bead://$PROJECT/<id>"), skip it.
+   (bus claims check --agent $AGENT "bead://$PROJECT/<id>"), skip it.
 
 3. START: br update --actor $AGENT <id> --status=in_progress.
-   bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>".
+   bus claims stake --agent $AGENT "bead://$PROJECT/<id>" -m "<id>".
    Create workspace: run maw ws create --random. Note the workspace name AND absolute path
    from the output (e.g., name "frost-castle", path "/abs/path/.workspaces/frost-castle").
    Store the name as WS and the absolute path as WS_PATH.
    IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
    For bash commands: cd \$WS_PATH && <command>. For jj commands: maw ws jj \$WS <args>.
    Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
-   bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>".
+   bus claims stake --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>".
    br comments add --actor $AGENT --author $AGENT <id> "Started in workspace \$WS (\$WS_PATH)".
    Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim.
 
@@ -205,7 +205,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    stuck. br comments add --actor $AGENT --author $AGENT <id> "Blocked: <details>".
    bus send --agent $AGENT $PROJECT "Stuck on <id>: <reason>" -L mesh -L task-blocked.
    br update --actor $AGENT <id> --status=blocked.
-   Release: bus release --agent $AGENT "bead://$PROJECT/<id>".
+   Release: bus claims release --agent $AGENT "bead://$PROJECT/<id>".
    Stop this cycle.
 
 6. REVIEW REQUEST:
@@ -224,7 +224,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    br comments add --actor $AGENT --author $AGENT <id> "Completed by $AGENT".
    br close --actor $AGENT <id> --reason="Completed" --suggest-next.
    maw ws merge \$WS --destroy (if conflict, preserve and announce).
-   bus release --agent $AGENT --all.
+   bus claims release --agent $AGENT --all.
    br sync --flush-only.
    bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done.
 

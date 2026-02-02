@@ -104,16 +104,16 @@ echo "Review:    $REVIEW"
 # --- Confirm identity ---
 bus whoami --agent "$AGENT"
 
-# --- Claim the agent lease ---
-if ! bus claim --agent "$AGENT" "agent://$AGENT" -m "dev-loop for $PROJECT"; then
-	echo "Claim denied. Agent $AGENT is already running."
-	exit 0
+# --- Refresh the agent lease (hook creates the initial claim) ---
+if ! bus claims refresh --agent "$AGENT" "agent://$AGENT"; then
+	echo "Claim refresh failed. Agent $AGENT is not properly initialized."
+	exit 1
 fi
 
 # --- Cleanup on exit ---
 cleanup() {
-	bus release --agent "$AGENT" "agent://$AGENT" >/dev/null 2>&1 || true
-	bus release --agent "$AGENT" --all >/dev/null 2>&1 || true
+	bus claims release --agent "$AGENT" "agent://$AGENT" >/dev/null 2>&1 || true
+	bus claims release --agent "$AGENT" --all >/dev/null 2>&1 || true
 	br sync --flush-only >/dev/null 2>&1 || true
 	echo "Cleanup complete for $AGENT."
 }
@@ -231,7 +231,7 @@ GROOM each ready bead (br show <id>): ensure clear title, description with accep
 and testing strategy, appropriate priority. Fix anything missing, comment what you changed.
 
 Count the number of independent ready beads (not blocked by each other).
-Check which are already claimed: bus check-claim --agent $AGENT "bead://$PROJECT/<id>". Skip claimed ones.
+Check which are already claimed: bus claims check --agent $AGENT "bead://$PROJECT/<id>". Skip claimed ones.
 
 ## 3. DISPATCH DECISION
 
@@ -245,9 +245,9 @@ Based on count of unclaimed, independent ready beads:
 
 Same as the standard worker loop:
 1. br update --actor $AGENT <id> --status=in_progress
-2. bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>"
+2. bus claims stake --agent $AGENT "bead://$PROJECT/<id>" -m "<id>"
 3. maw ws create --random — note workspace NAME and absolute PATH
-4. bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
+4. bus claims stake --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
 5. br comments add --actor $AGENT --author $AGENT <id> "Started in workspace \$WS (\$WS_PATH)"
 6. Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim
 7. Implement the task. All file operations use absolute WS_PATH.
@@ -264,7 +264,7 @@ If REVIEW is true:
 If REVIEW is false:
   10. Merge: maw ws merge \$WS --destroy
   11. br close --actor $AGENT <id> --reason="Completed"
-  12. bus release --agent $AGENT --all
+  12. bus claims release --agent $AGENT --all
   13. br sync --flush-only
   14. bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done
 
@@ -283,8 +283,8 @@ Read each bead (br show <id>) and select a model based on complexity:
 1. maw ws create --random — note NAME and PATH
 2. bus generate-name — get a worker identity
 3. br update --actor $AGENT <id> --status=in_progress
-4. bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "dispatched to <worker-name>"
-5. bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
+4. bus claims stake --agent $AGENT "bead://$PROJECT/<id>" -m "dispatched to <worker-name>"
+5. bus claims stake --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
 6. br comments add --actor $AGENT --author $AGENT <id> "Dispatched worker <worker-name> (model: <model>) in workspace \$WS (\$WS_PATH)"
 7. bus send --agent $AGENT $PROJECT "Dispatching <worker-name> for <id>: <title>" -L mesh -L task-claim
 
@@ -332,7 +332,7 @@ After dispatching (or if resuming with dispatched workers):
 - If a worker appears stuck past $WORKER_TIMEOUT seconds with no progress:
   br comments add --actor $AGENT --author $AGENT <id> "Worker <name> timed out"
   br update --actor $AGENT <id> --status=blocked
-  bus release --agent $AGENT "bead://$PROJECT/<id>"
+  bus claims release --agent $AGENT "bead://$PROJECT/<id>"
   Continue with other workers.
 
 ## 6. MERGE
@@ -343,7 +343,7 @@ For each completed worker:
    If conflict: br comments add --actor $AGENT --author $AGENT <id> "Merge conflict in <ws>, preserving workspace"
    Skip destroy, move to next. Announce the conflict.
 3. br close --actor $AGENT <id> --reason="Completed by <worker-name>"
-4. bus release --agent $AGENT "bead://$PROJECT/<id>"
+4. bus claims release --agent $AGENT "bead://$PROJECT/<id>"
 5. bus send --agent $AGENT $PROJECT "Merged <id>: <title>" -L mesh -L task-done
 
 After all merges: br sync --flush-only
@@ -351,7 +351,7 @@ After all merges: br sync --flush-only
 ## 7. REVIEW (if REVIEW=true)
 
 After merging, if review is enabled:
-- Check if a reviewer is already running: bus check-claim --agent $AGENT "agent://reviewer"
+- Check if a reviewer is already running: bus claims check --agent $AGENT "agent://reviewer"
 - If reviews are needed and no reviewer is running:
   Consider spawning reviewer-loop.sh (note: this is handled in subsequent iterations)
 - This is iteration-aware — review happens across iterations, not blocking this one.
