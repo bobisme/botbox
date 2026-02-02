@@ -1012,7 +1012,103 @@ cargo check                  # merged code still compiles
 
 ---
 
+## R9: Crash Recovery (bd-3sy)
+
+### Concept
+
+Test whether an agent can resume mid-task after a session crash by reading bead comments and not duplicating completed work. The agent inherits a crashed session's identity, discovers the state from claims and bead comments, and completes all remaining work.
+
+### Test Code
+
+Rust/Axum items CRUD API. Setup script (`scratchpad/r9-setup.sh`) creates:
+
+- **Baseline**: `/health` endpoint, `Item` struct, `AppState` with `Arc<Mutex<Vec<Item>>>` and `AtomicU64` ID counter
+- **Parent bead**: "Build items CRUD API" with 5 subtask children in a linear dependency chain
+- **Subtasks 1-2 (closed, merged)**: `GET /items` (src/list.rs) and `POST /items` (src/create.rs) — code is in main branch, beads closed with progress comments
+- **Subtask 3 (crash state)**: `GET /items/:id` — bead in_progress, workspace exists with partial `src/get_item.rs` (handler stub that unwraps instead of returning 404, not wired into router). Agent holds bead and workspace claims. Bead comments describe what was done and what remains.
+- **Subtasks 4-5 (ready, blocked)**: `DELETE /items/:id` and `PUT /items/:id` — blocked by dependency chain
+
+The agent receives the same identity as the crashed session and a prompt saying "you are resuming after a previous session ended unexpectedly" — but is NOT told which bead, which subtask, or what's already done.
+
+### Execution
+
+```bash
+# Setup
+bash scratchpad/r9-setup.sh
+cd $EVAL_DIR && source .eval-env
+
+# Run (single session, agent discovers crash state)
+bash scratchpad/r9-run.sh
+```
+
+### Rubric (70 points)
+
+#### State Detection (20 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Checks claims before acting | 5 | Agent runs `bus claims --agent` as first action |
+| Reads bead comments on claimed bead | 5 | Agent runs `br comments <s3>` or `br show <s3>` |
+| Identifies subtasks 1-2 as completed | 5 | Agent acknowledges they're closed/done (doesn't attempt to redo) |
+| Identifies subtask 3 as in-progress with workspace | 5 | Agent finds the existing workspace and partial code |
+
+#### No Duplication (15 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Doesn't recreate subtask 1 work | 5 | No new `src/list.rs` write, no re-implementation of GET /items |
+| Doesn't recreate subtask 2 work | 5 | No new `src/create.rs` write, no re-implementation of POST /items |
+| Uses existing workspace for subtask 3 | 5 | Doesn't `maw ws create` a new workspace when one already exists for S3 |
+
+#### Recovery Execution (25 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Completes subtask 3 (GET /items/:id) | 8 | Handler works with 404 handling, wired into router, bead closed |
+| Completes subtask 4 (DELETE /items/:id) | 6 | Handler works, new workspace created, bead closed |
+| Completes subtask 5 (PUT /items/:id) | 6 | Handler works, new workspace created, bead closed |
+| All code compiles (`cargo check`) | 5 | Final `cargo check` passes with all endpoints |
+
+#### Protocol Compliance (10 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| --agent on bus and crit commands | 3 | Grep session transcript for bus/crit commands |
+| Progress comments on each subtask | 3 | `br comments` shows progress for S3, S4, S5 |
+| Bus announcements | 2 | Sends task-claim and task-done messages |
+| Parent bead closed | 2 | Parent bead status=closed after all subtasks done |
+
+**Pass**: ≥49 (70%), **Excellent**: ≥60 (86%)
+
+**Expected**: Opus 55-65 (79-93%), Sonnet 40-55 (57-79%)
+
+### Verification
+
+```bash
+source .eval-env
+br ready                                        # should be empty
+br show $PARENT_BEAD                             # closed
+br show $S3 && br show $S4 && br show $S5        # all closed
+jj log --no-graph -n 15                          # subtask commits merged
+bus history --agent $AGENT r9-eval               # resume + completion announcements
+ls .workspaces/ 2>/dev/null                      # should be empty (all destroyed)
+cargo check                                      # merged code compiles
+```
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| — | — | — | Not yet run |
+
+### v2 Ideas
+
+- **Reviewer timeout**: Review requested but never completed — agent should re-request or escalate
+- **Conflicting workspace**: Workspace has merge conflicts from concurrent work
+- **Lost bus message**: Claim exists but completion announcement never sent — agent must infer from bead status
+
+---
+
 ### Remaining
 
 - **R5: Multi-project coordination** (bd-2s1): Cross-project issue filing and fix flow via report-issue.md
-- **R9: Recovery** (bd-3sy): Mid-run crash recovery — resume from bead comments without duplicating work

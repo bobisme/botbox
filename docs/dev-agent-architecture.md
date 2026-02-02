@@ -141,7 +141,7 @@ What's validated and what remains (as of multi-agent run 1, 2026-02-01):
 | Adversarial review (subtle bugs) | ✅ R8 × 3 | Opus 75%, Sonnet 63% (FAIL) |
 | Parallel dispatch | ❌ R6 — not tested | — |
 | Cross-project coordination | ❌ R5 — not tested | — |
-| Crash recovery | ❌ R9 — not tested | — |
+| Crash recovery | ⏳ R9 — rubric + scripts ready | — |
 
 ## Remaining Evals
 
