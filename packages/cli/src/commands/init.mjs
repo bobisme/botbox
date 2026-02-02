@@ -1,6 +1,6 @@
 import { checkbox, confirm, input } from "@inquirer/prompts"
 import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
 import { renderAgentsMd } from "../lib/templates.mjs"
@@ -18,6 +18,7 @@ export const LANGUAGES = ["rust", "python", "node", "go", "typescript", "java"]
  * @param {string} [opts.reviewers]
  * @param {string} [opts.language]
  * @param {boolean} [opts.initBeads]
+ * @param {boolean} [opts.seedWork]
  * @param {boolean} [opts.force]
  * @param {boolean} [opts.interactive]
  */
@@ -107,6 +108,12 @@ export async function init(opts) {
       ? await confirm({ message: "Initialize beads?", default: true })
       : false)
 
+  const seedWork =
+    opts.seedWork ??
+    (interactive
+      ? await confirm({ message: "Seed initial work beads?", default: false })
+      : false)
+
   // Create .agents/botbox/
   const agentsDir = join(projectDir, ".agents", "botbox")
   mkdirSync(agentsDir, { recursive: true })
@@ -149,6 +156,32 @@ export async function init(opts) {
     }
   }
 
+  // Register project on botbus #projects channel
+  if (tools.includes("botbus")) {
+    const { execSync } = await import("node:child_process")
+    let absPath = resolve(projectDir)
+    let toolsList = tools.join(", ")
+    try {
+      execSync(
+        `bus send --agent ${name}-dev projects "project: ${name}  repo: ${absPath}  lead: ${name}-dev  tools: ${toolsList}" -L project-registry`,
+        { cwd: projectDir, stdio: "inherit" },
+      )
+      console.log("Registered project on #projects channel")
+    } catch {
+      console.warn("Warning: Failed to register on #projects (is bus installed?)")
+    }
+  }
+
+  // Seed initial work beads
+  if (seedWork && !tools.includes("beads")) {
+    console.warn("Skipping seed work: beads not in tools list")
+  } else if (seedWork && tools.includes("beads")) {
+    let beadsCreated = await seedInitialBeads(projectDir, name, types)
+    if (beadsCreated > 0) {
+      console.log(`Created ${beadsCreated} seed bead${beadsCreated > 1 ? "s" : ""}`)
+    }
+  }
+
   // Generate .gitignore
   const gitignorePath = join(projectDir, ".gitignore")
   if (languages.length > 0 && !existsSync(gitignorePath)) {
@@ -178,6 +211,73 @@ export async function init(opts) {
  */
 function missingFlag(flag) {
   throw new Error(`${flag} is required in non-interactive mode`)
+}
+
+/**
+ * Scout the repo and create initial beads for work items.
+ * @param {string} projectDir - Project root directory
+ * @param {string} name - Project name
+ * @param {string[]} types - Project types
+ * @returns {Promise<number>} Number of beads created
+ */
+async function seedInitialBeads(projectDir, name, types) {
+  let { execSync } = await import("node:child_process")
+  let agent = `${name}-dev`
+  let beadsCreated = 0
+
+  /** @param {string} title @param {string} description @param {number} priority */
+  let createBead = (title, description, priority) => {
+    try {
+      execSync(
+        `br create --actor ${agent} --owner ${agent} --title="${title}" --description="${description}" --type=task --priority=${priority}`,
+        { cwd: projectDir, stdio: "pipe" },
+      )
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // Scout for spec files
+  let specFiles = ["spec.md", "SPEC.md", "specification.md", "design.md"]
+  for (let spec of specFiles) {
+    if (existsSync(join(projectDir, spec)) && createBead(
+      `Review ${spec} and create implementation beads`,
+      `Read ${spec}, understand requirements, and break down into actionable beads with acceptance criteria.`,
+      1,
+    )) {
+      beadsCreated++
+    }
+  }
+
+  // Scout for README
+  if (existsSync(join(projectDir, "README.md")) && createBead(
+    "Review README and align project setup",
+    "Read README.md for project goals, architecture decisions, and setup requirements. Create beads for any gaps.",
+    2,
+  )) {
+    beadsCreated++
+  }
+
+  // Scout for source structure
+  if (!existsSync(join(projectDir, "src")) && createBead(
+    "Create initial source structure",
+    `Set up src/ directory and project scaffolding for project type: ${types.join(", ")}.`,
+    2,
+  )) {
+    beadsCreated++
+  }
+
+  // Fallback if nothing found
+  if (beadsCreated === 0 && createBead(
+    "Scout project and create initial beads",
+    "Explore the repository, understand the project goals, and create actionable beads for initial implementation work.",
+    1,
+  )) {
+    beadsCreated++
+  }
+
+  return beadsCreated
 }
 
 /**

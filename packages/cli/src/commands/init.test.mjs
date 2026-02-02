@@ -9,6 +9,7 @@ import {
 } from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
+import { execSync } from "node:child_process"
 import { init } from "./init.mjs"
 
 describe("init (non-interactive)", () => {
@@ -189,5 +190,154 @@ describe("init (non-interactive)", () => {
     expect(content).toContain("`crit`")
     expect(content).toContain("`botbus`")
     expect(content).toContain("`botty`")
+  })
+
+  test("registers on #projects when botbus is in tools", async () => {
+    let hasBus = false
+    try {
+      execSync("bus --version", { stdio: "ignore" })
+      hasBus = true
+    } catch {
+      // bus not installed
+    }
+
+    if (!hasBus) {
+      // Verify init succeeds gracefully without bus
+      await init({
+        name: "bus-test",
+        type: "api",
+        tools: "botbus",
+        interactive: false,
+      })
+      // Should not throw — just warn
+      return
+    }
+
+    // bus is available — verify the message was sent
+    await init({
+      name: "bus-reg-test",
+      type: "api",
+      tools: "botbus",
+      interactive: false,
+    })
+
+    let output = execSync("bus history projects -n 5 --format text", {
+      encoding: "utf-8",
+    })
+    expect(output).toContain("project: bus-reg-test")
+    expect(output).toContain(`repo: ${tempDir}`)
+    expect(output).toContain("lead: bus-reg-test-dev")
+  })
+
+  test("seed-work creates beads for spec files", async () => {
+    let hasBr = false
+    try {
+      execSync("br --version", { stdio: "ignore" })
+      hasBr = true
+    } catch {
+      // br not installed
+    }
+
+    if (!hasBr) {
+      // Verify init succeeds gracefully without br
+      await init({
+        name: "seed-test",
+        type: "api",
+        tools: "beads",
+        seedWork: true,
+        interactive: false,
+      })
+      return
+    }
+
+    // Initialize beads and create a spec file
+    execSync("br init", { cwd: tempDir, stdio: "ignore" })
+    let { writeFileSync } = await import("node:fs")
+    writeFileSync(join(tempDir, "spec.md"), "# Spec\nBuild a thing.")
+
+    await init({
+      name: "seed-spec-test",
+      type: "api",
+      tools: "beads",
+      seedWork: true,
+      interactive: false,
+    })
+
+    let output = execSync("br list --json", {
+      cwd: tempDir,
+      encoding: "utf-8",
+    })
+    expect(output).toContain("Review spec.md")
+  })
+
+  test("seed-work creates fallback bead when no spec files found", async () => {
+    let hasBr = false
+    try {
+      execSync("br --version", { stdio: "ignore" })
+      hasBr = true
+    } catch {
+      // br not installed
+    }
+
+    if (!hasBr) {
+      return
+    }
+
+    // Initialize beads, create src/ so it doesn't trigger the "create source structure" bead
+    execSync("br init", { cwd: tempDir, stdio: "ignore" })
+    let { mkdirSync: mkFs } = await import("node:fs")
+    mkFs(join(tempDir, "src"))
+
+    await init({
+      name: "seed-fallback-test",
+      type: "api",
+      tools: "beads",
+      seedWork: true,
+      interactive: false,
+    })
+
+    let output = execSync("br list --json", {
+      cwd: tempDir,
+      encoding: "utf-8",
+    })
+    expect(output).toContain("Scout project")
+  })
+
+  test("seed-work skipped when beads not in tools", async () => {
+    await init({
+      name: "seed-no-beads",
+      type: "api",
+      tools: "maw",
+      seedWork: true,
+      interactive: false,
+    })
+    // Should not throw — just warn
+    expect(existsSync(join(tempDir, ".agents", "botbox"))).toBe(true)
+  })
+
+  test("does not register on #projects when botbus not in tools", async () => {
+    let hasBus = false
+    try {
+      execSync("bus --version", { stdio: "ignore" })
+      hasBus = true
+    } catch {
+      // bus not installed
+    }
+
+    if (!hasBus) {
+      return
+    }
+
+    await init({
+      name: "no-bus-test",
+      type: "api",
+      tools: "beads,maw",
+      interactive: false,
+    })
+
+    let after = execSync("bus history projects -n 50 --format text", {
+      encoding: "utf-8",
+    })
+    expect(after).not.toContain("project: no-bus-test")
   })
 })

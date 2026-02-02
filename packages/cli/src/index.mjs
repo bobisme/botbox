@@ -35,6 +35,7 @@ program
     "Language/framework (comma-separated: rust,python,node,go,typescript,java)",
   )
   .option("--init-beads", "Initialize beads issue tracker")
+  .option("--seed-work", "Create initial beads by scouting the repo")
   .option("--force", "Overwrite existing AGENTS.md")
   .option("--no-interactive", "Skip interactive prompts (use flags only)")
   .action(init)
