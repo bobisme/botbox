@@ -13,7 +13,7 @@ This is the next step toward the full dev-agent architecture described in `docs/
 | R3 | Full loop: author requests → reviewer reviews → author responds → merge | 2 (dev + reviewer) | Future |
 | R4 | Integration: worker loop + review + merge | 2 (dev + reviewer) | ✅ Done |
 | R7 | Planning: epic decomposition, dependency graph, sequential execution | 1 (dev agent) | ✅ Done |
-| R6 | Parallel dispatch: dev agent dispatches Haiku workers, monitors, merges | 1 (dev) + 3 (workers) | Planned |
+| R6 | Parallel dispatch: dev agent dispatches Haiku workers, monitors, merges | 1 (dev) + 3 (workers) | ✅ Done |
 | R8 | Adversarial review: subtle bugs requiring execution-path reasoning | 1 (reviewer) | ✅ Done |
 
 ## R1: Reviewer Eval
@@ -1002,6 +1002,7 @@ cargo check                  # merged code still compiles
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
+| R6-1 | Opus (dev) + Haiku (workers) | 69/70 (99%) | Perfect parallel dispatch: 3 workers launched in 2s, all completed in 85s. Dev agent pre-wrote implementation code in worker prompts. Only deduction: jj merge conflict markers in commit tree (cosmetic). |
 
 ### v2 Ideas
 
