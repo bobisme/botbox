@@ -73,7 +73,7 @@ After work is complete (either by the dev agent or a worker), if review is enabl
 The dev agent doesn't block. It continues its loop. Options:
 - Sleep briefly and check next iteration (simplest)
 - Use `bus wait --agent $AGENT -L review-done -t 120` for event-driven notification
-- Check `crit inbox --agent $AGENT` each iteration for completed reviews
+- Check `crit reviews list --agent $AGENT --status=open --format=json` each iteration for review status
 
 **Handle review response:**
 On the next iteration where a review response is visible:
@@ -88,7 +88,7 @@ On the next iteration where a review response is visible:
 
 **Merge:**
 1. Verify approval: `crit review <review-id>` — confirm LGTM, no blocks
-2. Merge workspace: `maw ws merge $WS --destroy -f`
+2. Merge workspace: `maw ws merge $WS --destroy`
 3. Close bead, release claims, sync, announce
 
 ### 5. Cleanup
@@ -115,7 +115,7 @@ Claims (`bus claim`) prevent conflicts:
 
 ## Eval Coverage
 
-What's validated today and what remains:
+What's validated and what remains (as of multi-agent run 1, 2026-02-01):
 
 | Capability | Eval Status | Best Score |
 |-----------|-------------|------------|
@@ -123,23 +123,22 @@ What's validated today and what remains:
 | Inbox triage | ✅ 5 runs | Sonnet 99% (v3) |
 | Grooming | ✅ Observed in all runs | Consistent |
 | `has_work()` gating | ✅ Validated | br sync fix confirmed |
-| Parallel dispatch | ❌ Not tested | — |
-| Review request (create + announce) | ❌ Not tested | — |
-| Review loop (reviewer agent) | ❌ Not tested | — |
-| Review response handling (fix/address/defer) | ❌ Not tested | — |
-| Cross-agent spawning (botty) | ❌ Not tested | — |
-| Multi-iteration coordination | ❌ Not tested | — |
+| Review request (create + announce) | ✅ R4 + multi-agent run 1 | 4/5 (request flag issue) |
+| Review loop (reviewer agent) | ✅ R1 × 3, R3, R8 × 3 | Opus 100% (R1), 75% (R8v2) |
+| Review response handling (fix/address/defer) | ✅ R2, R3 | Opus 100% (R2) |
+| Multi-iteration coordination | ✅ Multi-agent run 1 | 80% (4 beads, 48 min) |
+| Planning / epic decomposition | ✅ R7 | Opus 80% (76/95) |
+| Adversarial review (subtle bugs) | ✅ R8 × 3 | Opus 75%, Sonnet 63% (FAIL) |
+| Parallel dispatch | ❌ R6 — not tested | — |
+| Cross-project coordination | ❌ R5 — not tested | — |
+| Crash recovery | ❌ R9 — not tested | — |
 
-## Incremental Eval Plan
+## Remaining Evals
 
-Build on the existing eval framework, one capability at a time:
+| Eval | Bead | What it tests |
+|------|------|---------------|
+| R5 | bd-2s1 | Cross-project issue filing and fix flow via report-issue.md and #projects registry |
+| R6 | bd-2rb | Dev agent dispatches Haiku workers in parallel, tracks completions, handles failures |
+| R9 | bd-3sy | Mid-run crash recovery — resume from bead comments without duplicating work |
 
-**Next: Review request** — Extend the worker loop eval so the agent creates a crit review after finishing work and announces it on botbus. Score: did it create the review? Did it mention the reviewer? This is a small addition to the existing finish flow.
-
-**Then: Review loop** — Standalone eval for the reviewer agent. Seed a crit review with intentional issues (one real bug, one style nit, one false alarm). Score: did it find the bug? Did it LGTM or block appropriately?
-
-**Then: Review response** — The worker agent sees reviewer comments on its next iteration. Score: did it fix the blocking issue? Did it push back on the false positive? Did it re-request review?
-
-**Then: Parallel dispatch** — The dev agent has 3 independent beads. Score: did it spawn workers? Did it track completions? Did it avoid dispatching the same bead twice?
-
-**Then: Full integration** — End-to-end run with triage, dispatch, review, and merge across multiple iterations. This is the target architecture running as a real eval.
+See `eval-review.md` for full rubrics and `eval-results/README.md` for all run reports.

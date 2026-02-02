@@ -13,6 +13,7 @@ This is the next step toward the full dev-agent architecture described in `docs/
 | R3 | Full loop: author requests → reviewer reviews → author responds → merge | 2 (dev + reviewer) | Future |
 | R4 | Integration: worker loop + review + merge | 2 (dev + reviewer) | ✅ Done |
 | R7 | Planning: epic decomposition, dependency graph, sequential execution | 1 (dev agent) | ✅ Done |
+| R6 | Parallel dispatch: dev agent dispatches Haiku workers, monitors, merges | 1 (dev) + 3 (workers) | Planned |
 | R8 | Adversarial review: subtle bugs requiring execution-path reasoning | 1 (reviewer) | ✅ Done |
 
 ## R1: Reviewer Eval
@@ -884,12 +885,133 @@ bus history r8-eval --limit 10
 
 ---
 
-### Beyond R4
+## R6: Parallel Dispatch Eval
 
-Once the single-project dev agent is validated:
+### Concept
 
-- **Multi-project coordination**: Dev agents for different projects filing cross-project issues (report-issue.md), reviewing each other's APIs
-- **Parallel dispatch eval**: Dev agent has 3+ independent beads, spawns Haiku workers, tracks completions, handles failures (worker gets stuck → dev agent reassigns)
-- **Planning eval**: Opus dev agent receives a large feature request, breaks it into beads with dependency graph, sequences work across iterations
-- **Adversarial review**: Reviewer intentionally given code with subtle, hard-to-find bugs (concurrency issues, edge cases in error paths) to test the ceiling of review quality
-- **Recovery eval**: Mid-run failure simulation — worker crashes, reviewer times out, botbus goes down — testing whether the dev agent recovers gracefully on next iteration
+Test whether a dev agent can dispatch Haiku workers in parallel for independent beads, monitor their progress via botbus, and merge completed work — rather than doing tasks sequentially. This is the core capability that separates a "lead dev" agent from a "worker" agent.
+
+### Setup
+
+```bash
+bash scratchpad/r6-setup.sh
+# Creates eval dir with Rust/Axum project and 3 independent beads.
+# Outputs EVAL_DIR, DEV_AGENT, BEAD1-3.
+# Source .eval-env in the eval dir before running.
+```
+
+The environment includes:
+- Rust/Axum skeleton with `AppState` (request counter) and `/health` endpoint
+- 3 pre-groomed, independent P2 beads:
+
+| Bead | Task | Complexity |
+|------|------|------------|
+| 1 | `GET /version` → `{"name":"r6-eval","version":"0.1.0"}` | Trivial |
+| 2 | `POST /echo` → `{"echo":"<body>"}` | Trivial |
+| 3 | `GET /metrics` + request counter middleware | Easy |
+
+All beads have acceptance criteria and testing strategy pre-written. No grooming needed — the dev agent should recognize these as dispatch-ready.
+
+### Execution
+
+```bash
+cd $EVAL_DIR && source .eval-env
+bash scratchpad/r6-run.sh
+# WORKER_MODEL=haiku by default (set WORKER_MODEL=sonnet to override)
+# CLAUDE_MODEL controls the dev agent model (Opus recommended)
+```
+
+The dev agent is prompted to:
+1. Triage `br ready` — recognize 3 independent beads
+2. For each: create workspace, generate worker identity, launch `claude --model haiku -p "..." &`
+3. Dispatch ALL 3 before waiting for any to complete
+4. Monitor via botbus for completion announcements
+5. Merge each workspace, close beads, announce
+
+Workers implement tasks but do NOT close beads or merge workspaces (the dev agent handles coordination).
+
+### Scoring (70 points)
+
+#### Dispatch (30 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Recognizes multiple independent beads | 5 | `br ready`, identifies all 3 |
+| Creates separate workspace for each bead | 5 | `maw ws create` × 3 |
+| Generates worker identities | 3 | `bus generate-name` × 3 |
+| Constructs correct worker prompts (bead ID, workspace path, agent identity) | 5 | Prompt includes all 3 fields |
+| Launches all workers before any completes — true parallelism | 7 | All 3 backgrounded before any polling |
+| Workers use correct model (haiku or configured) | 5 | `--model haiku` in launch command |
+
+#### Monitoring (15 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Polls for worker completions | 5 | `bus inbox` or bead comment checks |
+| Detects worker completion announcements | 5 | Recognizes `-L task-done` messages |
+| Tracks which beads are done vs pending | 5 | Doesn't try to merge unfinished work |
+
+#### Merge (15 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Verifies worker changes exist | 3 | `maw ws jj <ws> diff` or similar |
+| Merges workspaces correctly | 4 | `maw ws merge <ws> --destroy` × completed |
+| Closes beads | 4 | `br close` × completed |
+| Announces each completion | 4 | `bus send -L task-done` × completed |
+
+#### Protocol (10 points)
+
+| Criterion | Points | Verification |
+|-----------|--------|-------------|
+| Uses `--agent` consistently on all commands | 5 | Dev agent uses own identity throughout |
+| Correct botbus labels (mesh, task-done, task-claim) | 5 | Labels present on all announcements |
+
+```
+Dispatch:    30 points
+Monitoring:  15 points
+Merge:       15 points
+Protocol:    10 points
+             ──────────
+Total:       70 points
+
+Pass: ≥49 (70%)
+Excellent: ≥60 (86%)
+```
+
+### Expected Results
+
+| Model | Expected | Reasoning |
+|-------|----------|-----------|
+| Opus | 50-70 (71-100%) | Strong at coordination. May dispatch in parallel if prompted clearly. Risk: might default to sequential out of caution. |
+| Sonnet | 30-50 (43-71%) | Can follow dispatch instructions but may serialize. Less reliable at background process management. |
+
+### Verification
+
+```bash
+source .eval-env
+br ready                    # should be empty (all 3 closed)
+br show $BEAD1 && br show $BEAD2 && br show $BEAD3  # all closed
+jj log --no-graph -n 10     # worker commits merged
+bus history --agent $DEV_AGENT r6-eval  # dispatch + merge timeline
+ls .workspaces/ 2>/dev/null  # should be empty (all destroyed)
+cargo check                  # merged code still compiles
+```
+
+### Results
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+
+### v2 Ideas
+
+- **Failure handling**: Add a 4th bead that's impossible (e.g., "Add PostgreSQL pooling" with no pg crate). Score: does the dev agent detect the stuck worker and move on?
+- **Worker timeout**: Kill a worker process mid-task. Score: does the dev agent notice and reassign?
+- **Code review**: Dev agent reviews worker output before merging. Score: does it catch obvious issues?
+
+---
+
+### Remaining
+
+- **R5: Multi-project coordination** (bd-2s1): Cross-project issue filing and fix flow via report-issue.md
+- **R9: Recovery** (bd-3sy): Mid-run crash recovery — resume from bead comments without duplicating work
