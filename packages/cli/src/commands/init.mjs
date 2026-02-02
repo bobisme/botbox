@@ -16,6 +16,7 @@ export const PROJECT_TYPES = ["api", "cli", "frontend", "library", "monorepo", "
 export const AVAILABLE_TOOLS = ["beads", "maw", "crit", "botbus", "botty"]
 export const REVIEWER_ROLES = ["security", "correctness"]
 export const LANGUAGES = ["rust", "python", "node", "go", "typescript", "java"]
+export const BOTBOX_CONFIG_VERSION = "1.0.0"
 
 /**
  * @param {object} opts
@@ -185,6 +186,7 @@ export async function init(opts) {
   const configPath = join(projectDir, ".botbox.json")
   if (!existsSync(configPath) || opts.force) {
     const config = {
+      version: BOTBOX_CONFIG_VERSION,
       project: {
         name,
         type: types,
