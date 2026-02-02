@@ -315,7 +315,7 @@ async function registerSpawnHook(projectDir, name) {
 
   try {
     execSync(
-      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} -- bash scripts/dev-loop.sh ${name} ${agent}`,
+      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bash scripts/dev-loop.sh ${name} ${agent}`,
       { cwd: projectDir, stdio: "inherit", env: process.env },
     )
     console.log("Registered auto-spawn hook for dev agent")

@@ -4,6 +4,7 @@ set -euo pipefail
 # --- Defaults ---
 MAX_LOOPS=20
 LOOP_PAUSE=10
+CLAUDE_TIMEOUT=600
 MODEL=""
 PROJECT=""
 AGENT=""
@@ -140,7 +141,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		break
 	fi
 
-	claude ${MODEL:+--model "$MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
+	if ! timeout "$CLAUDE_TIMEOUT" claude ${MODEL:+--model "$MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
 		cat <<EOF
 You are reviewer agent "$AGENT" for project "$PROJECT".
 
@@ -195,7 +196,17 @@ Key rules:
 - All bus and crit commands use --agent $AGENT.
 - STOP after completing one review. Do not loop.
 EOF
-	)"
+	)"; then
+		exit_code=$?
+		if [[ $exit_code -eq 124 ]]; then
+			echo "Claude timed out after ${CLAUDE_TIMEOUT}s on review loop $i"
+			bus send --agent "$AGENT" "$PROJECT" \
+				"Reviewer Claude iteration timed out after ${CLAUDE_TIMEOUT}s on loop $i" \
+				-L mesh -L tool-issue >/dev/null 2>&1 || true
+		else
+			echo "Claude exited with code $exit_code on review loop $i"
+		fi
+	fi
 
 	sleep "$LOOP_PAUSE"
 done

@@ -4,6 +4,7 @@ set -euo pipefail
 # --- Defaults ---
 MAX_LOOPS=20
 LOOP_PAUSE=60
+CLAUDE_TIMEOUT=900
 WORKER_MODEL=haiku
 WORKER_TIMEOUT=600
 MODEL=opus
@@ -175,7 +176,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		break
 	fi
 
-	claude --model "$MODEL" --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
+	if ! timeout "$CLAUDE_TIMEOUT" claude --model "$MODEL" --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
 		cat <<EOF
 You are lead dev agent "$AGENT" for project "$PROJECT".
 
@@ -370,7 +371,17 @@ After merging, if review is enabled:
 - If a tool behaves unexpectedly: bus send --agent $AGENT $PROJECT "Tool issue: <details>" -L mesh -L tool-issue
 - STOP after completing one iteration. Do not loop — the outer bash loop handles iteration.
 EOF
-	)"
+	)"; then
+		exit_code=$?
+		if [[ $exit_code -eq 124 ]]; then
+			echo "Claude timed out after ${CLAUDE_TIMEOUT}s on dev loop $i"
+			bus send --agent "$AGENT" "$PROJECT" \
+				"Dev agent Claude iteration timed out after ${CLAUDE_TIMEOUT}s on loop $i" \
+				-L mesh -L tool-issue >/dev/null 2>&1 || true
+		else
+			echo "Claude exited with code $exit_code on dev loop $i"
+		fi
+	fi
 
 	# Full sync between iterations
 	br sync 2>/dev/null || true

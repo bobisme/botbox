@@ -4,6 +4,7 @@ set -euo pipefail
 # --- Defaults ---
 MAX_LOOPS=20
 LOOP_PAUSE=5
+CLAUDE_TIMEOUT=600
 MODEL=""
 PROJECT=""
 AGENT=""
@@ -146,7 +147,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		break
 	fi
 
-	claude ${MODEL:+--model "$MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
+	if ! timeout "$CLAUDE_TIMEOUT" claude ${MODEL:+--model "$MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
 		cat <<EOF
 You are worker agent "$AGENT" for project "$PROJECT".
 
@@ -241,7 +242,17 @@ Key rules:
 - If a tool behaves unexpectedly, report it: bus send --agent $AGENT $PROJECT "Tool issue: <details>" -L mesh -L tool-issue.
 - STOP after completing one task or determining no work. Do not loop.
 EOF
-	)"
+	)"; then
+		exit_code=$?
+		if [[ $exit_code -eq 124 ]]; then
+			echo "Claude timed out after ${CLAUDE_TIMEOUT}s on loop $i"
+			bus send --agent "$AGENT" "$PROJECT" \
+				"Claude iteration timed out after ${CLAUDE_TIMEOUT}s on loop $i" \
+				-L mesh -L tool-issue >/dev/null 2>&1 || true
+		else
+			echo "Claude exited with code $exit_code on loop $i"
+		fi
+	fi
 
 	# Full sync between iterations so has_work() sees bead closures
 	# from the previous claude session (which only does --flush-only).
