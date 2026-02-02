@@ -9,10 +9,11 @@ Your identity is `$AGENT`. All bus commands must include `--agent $AGENT`. Run `
 1. Read new review requests:
    - `bus inbox --agent $AGENT --channel $BOTBOX_PROJECT -n 50`
    - `bus wait --agent $AGENT -L review-request -t 5` (optional)
-2. Use `crit inbox --agent $AGENT` to find reviews needing attention.
+2. Find open reviews: `crit reviews list --agent $AGENT --status=open --format=json`
 3. For each review, gather context before commenting:
    a. Read the review and diff: `crit review <id>` and `crit diff <id>`
-   b. Read the full source files changed in the diff
+      - `crit review <id> --format=json` includes `workspace.path` for reading source files
+   b. Read the full source files changed in the diff from the **workspace path** (e.g., `.workspaces/$WS/src/file.rs`), not project root
    c. Read project config (e.g., `Cargo.toml`) for edition and dependency versions
    d. Run static analysis (e.g., `cargo clippy 2>&1`) — cite warnings in your comments
    e. If unsure about framework or library behavior, use web search to verify before commenting
@@ -36,7 +37,7 @@ Focus on security and correctness. Ground findings in evidence — compiler outp
 
 When re-review is requested after a block, the author's fixes live in their **workspace**, not on the main branch. The main branch still has the pre-fix code until merge.
 
-1. Check the botbus `review-response` message for the workspace name and path.
+1. Get the workspace path from `crit review <id> --format=json` (field: `workspace.path`). This is auto-detected from the change_id.
 2. Read source files from the **workspace path** (e.g., `.workspaces/$WS/src/main.rs`), not from the project root.
 3. Run static analysis in the workspace: `cd $WS_PATH && cargo clippy 2>&1`
 4. Verify each fix against the original issue — read actual code, don't just trust thread replies.
