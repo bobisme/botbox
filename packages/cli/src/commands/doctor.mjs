@@ -3,6 +3,10 @@ import { existsSync, lstatSync } from "node:fs"
 import { join } from "node:path"
 import { currentVersion, readVersionMarker } from "../lib/docs.mjs"
 import { ExitError } from "../lib/errors.mjs"
+import {
+  currentScriptsVersion,
+  readScriptsVersionMarker,
+} from "../lib/scripts.mjs"
 
 const TOOLS = [
   { name: "botbus", check: "botbus --version" },
@@ -50,6 +54,19 @@ export function doctor() {
   } else {
     console.log("  ✗ .agents/botbox/ not found (run botbox init)")
     issues++
+  }
+
+  // Check scripts
+  const scriptsDir = join(projectDir, "scripts")
+  const scriptsVer = readScriptsVersionMarker(scriptsDir)
+  if (scriptsVer !== null) {
+    const latestScripts = currentScriptsVersion()
+    if (scriptsVer === latestScripts) {
+      console.log(`  ✓ loop scripts up to date (${latestScripts})`)
+    } else {
+      console.log(`  ✗ loop scripts stale (${scriptsVer} → ${latestScripts})`)
+      issues++
+    }
   }
 
   // Check AGENTS.md

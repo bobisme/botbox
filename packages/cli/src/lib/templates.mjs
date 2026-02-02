@@ -137,7 +137,66 @@ See [report-issue.md](.agents/botbox/report-issue.md) for details.
 | maw | Isolated jj workspaces | \`ws create\`, \`ws merge\`, \`ws destroy\` |
 | br/bv | Work tracking + triage | \`ready\`, \`create\`, \`close\`, \`--robot-next\` |
 | crit | Code review | \`review\`, \`comment\`, \`lgtm\`, \`block\` |
-| botty | Agent runtime | \`spawn\`, \`kill\`, \`tail\`, \`snapshot\` |`
+| botty | Agent runtime | \`spawn\`, \`kill\`, \`tail\`, \`snapshot\` |
+
+### Loop Scripts
+
+Scripts in \`scripts/\` automate agent loops:
+
+| Script | Purpose |
+|--------|---------|
+| \`agent-loop.sh\` | Worker: sequential triage-start-work-finish |
+| \`dev-loop.sh\` | Lead dev: triage, parallel dispatch, merge |
+| \`reviewer-loop.sh\` | Reviewer: review loop until queue empty |
+| \`spawn-security-reviewer.sh\` | Spawn a security reviewer |
+
+Usage: \`bash scripts/<script>.sh <project-name> [agent-name]\``
+}
+
+/**
+ * @typedef {object} DetectedConfig
+ * @property {string} [name]
+ * @property {string[]} [type]
+ * @property {string[]} [tools]
+ * @property {string[]} [reviewers]
+ */
+
+/**
+ * Parse project config from the header of an existing AGENTS.md.
+ * Returns only the fields that were successfully detected.
+ * @param {string} content - Raw AGENTS.md content
+ * @returns {DetectedConfig}
+ */
+export function parseAgentsMdHeader(content) {
+  /** @type {DetectedConfig} */
+  let result = {}
+  let lines = content.split("\n")
+
+  for (let line of lines) {
+    if (line.startsWith("<!--")) {
+      break
+    } else if (line.startsWith("# ")) {
+      result.name = line.slice(2).trim()
+    } else if (line.startsWith("Project type: ")) {
+      result.type = line.slice(14).split(",").map((s) => s.trim())
+    } else if (line.startsWith("Tools: ")) {
+      result.tools = line
+        .slice(7)
+        .replaceAll("`", "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    } else if (line.startsWith("Reviewer roles: ")) {
+      result.reviewers = line.slice(16).split(",").map((s) => s.trim())
+    }
+  }
+
+  // No reviewer line means no reviewers configured (not a parse failure)
+  if (result.name && !result.reviewers) {
+    result.reviewers = []
+  }
+
+  return result
 }
 
 /**

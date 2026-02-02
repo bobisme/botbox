@@ -14,7 +14,7 @@
     "check": "tsc -p jsconfig.json",
     "test": "bun test"
   },
-  "files": ["src/", "docs/"],
+  "files": ["src/", "docs/", "scripts/"],
   "keywords": ["botbox", "agents", "multi-agent", "workflow"],
   "license": "MIT",
   "repository": {

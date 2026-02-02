@@ -177,6 +177,101 @@ describe("init (non-interactive)", () => {
     ).rejects.toThrow("Unknown reviewers")
   })
 
+  test("copies loop scripts with full tools", async () => {
+    await init({
+      name: "scripts-test",
+      type: "api",
+      tools: "beads,maw,crit,botbus",
+      reviewers: "security",
+      interactive: false,
+    })
+
+    let scriptsDir = join(tempDir, "scripts")
+    expect(existsSync(scriptsDir)).toBe(true)
+    let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".sh"))
+    expect(scripts).toContain("agent-loop.sh")
+    expect(scripts).toContain("dev-loop.sh")
+    expect(scripts).toContain("reviewer-loop.sh")
+    expect(scripts).toContain("spawn-security-reviewer.sh")
+    expect(existsSync(join(scriptsDir, ".scripts-version"))).toBe(true)
+  })
+
+  test("copies only reviewer-loop with crit+botbus tools", async () => {
+    await init({
+      name: "partial-scripts-test",
+      type: "api",
+      tools: "crit,botbus",
+      interactive: false,
+    })
+
+    let scriptsDir = join(tempDir, "scripts")
+    expect(existsSync(scriptsDir)).toBe(true)
+    let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".sh"))
+    expect(scripts).toContain("reviewer-loop.sh")
+    expect(scripts).not.toContain("agent-loop.sh")
+    expect(scripts).not.toContain("dev-loop.sh")
+    expect(scripts).not.toContain("spawn-security-reviewer.sh")
+  })
+
+  test("does not create scripts dir when no scripts are eligible", async () => {
+    await init({
+      name: "no-scripts-test",
+      type: "api",
+      tools: "beads",
+      interactive: false,
+    })
+
+    expect(existsSync(join(tempDir, "scripts"))).toBe(false)
+  })
+
+  test("re-init detects config from existing AGENTS.md", async () => {
+    await init({
+      name: "detect-test",
+      type: "cli",
+      tools: "beads,maw",
+      reviewers: "security",
+      interactive: false,
+    })
+
+    // Re-init without specifying name/type/tools/reviewers
+    await init({
+      force: true,
+      interactive: false,
+    })
+
+    let content = readFileSync(join(tempDir, "AGENTS.md"), "utf-8")
+    expect(content).toContain("# detect-test")
+    expect(content).toContain("Project type: cli")
+    expect(content).toContain("`beads`")
+    expect(content).toContain("`maw`")
+    expect(content).toContain("Reviewer roles: security")
+  })
+
+  test("CLI flags override detected values on re-init", async () => {
+    await init({
+      name: "original-name",
+      type: "api",
+      tools: "beads",
+      interactive: false,
+    })
+
+    await init({
+      name: "new-name",
+      force: true,
+      interactive: false,
+    })
+
+    let content = readFileSync(join(tempDir, "AGENTS.md"), "utf-8")
+    expect(content).toContain("# new-name")
+    expect(content).toContain("Project type: api")
+  })
+
+  test("non-interactive fresh init still requires --name", () => {
+    expect(
+      init({ type: "api", interactive: false }),
+    ).rejects.toThrow("--name is required")
+  })
+
   test("defaults all tools when tools flag omitted", async () => {
     await init({
       name: "test-project",

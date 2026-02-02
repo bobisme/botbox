@@ -1,5 +1,7 @@
 # botbox
 
+![botbox utopia](images/botbox-utopia.webp)
+
 Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps projects and keeps workflow docs in sync.
 
 ## Eval Results

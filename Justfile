@@ -18,3 +18,6 @@ check:
 publish:
     cd packages/cli && bun publish --access public
     cd packages/botbox && bun publish
+
+link:
+    cd packages/cli && bun link

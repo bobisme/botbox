@@ -1,5 +1,11 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs"
+import {
+  mkdtempSync,
+  mkdirSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs"
 import { join } from "node:path"
 import { tmpdir } from "node:os"
 import {
@@ -8,6 +14,7 @@ import {
   currentVersion,
 } from "../lib/docs.mjs"
 import { ExitError } from "../lib/errors.mjs"
+import { copyScripts, currentScriptsVersion } from "../lib/scripts.mjs"
 import { sync } from "./sync.mjs"
 
 describe("sync", () => {
@@ -159,5 +166,57 @@ describe("sync", () => {
     // File should not be modified in --check mode
     let content = readFileSync(join(tempDir, "AGENTS.md"), "utf-8")
     expect(content).toContain("stale managed section content")
+  })
+
+  test("updates scripts when version is stale", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    // Set up scripts dir with stale version
+    let scriptsDir = join(tempDir, "scripts")
+    copyScripts(scriptsDir, {
+      tools: ["crit", "botbus"],
+      reviewers: [],
+    })
+    writeFileSync(join(scriptsDir, ".scripts-version"), "000000000000")
+
+    sync({ check: false })
+
+    let version = readFileSync(
+      join(scriptsDir, ".scripts-version"),
+      "utf-8",
+    ).trim()
+    expect(version).toBe(currentScriptsVersion())
+  })
+
+  test("--check fails when scripts are stale", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    let scriptsDir = join(tempDir, "scripts")
+    copyScripts(scriptsDir, {
+      tools: ["crit", "botbus"],
+      reviewers: [],
+    })
+    writeFileSync(join(scriptsDir, ".scripts-version"), "000000000000")
+
+    expect(() => sync({ check: true })).toThrow(ExitError)
+    expect(() => sync({ check: true })).toThrow(/Stale:.*loop scripts/)
+  })
+
+  test("skips scripts check when no .scripts-version marker", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    // Create scripts dir without version marker
+    let scriptsDir = join(tempDir, "scripts")
+    mkdirSync(scriptsDir)
+    writeFileSync(join(scriptsDir, "some-script.sh"), "#!/bin/bash")
+
+    // Should not throw — no version marker means not managed by botbox
+    sync({ check: false })
   })
 })

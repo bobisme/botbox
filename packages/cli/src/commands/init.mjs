@@ -1,9 +1,16 @@
 import { checkbox, confirm, input } from "@inquirer/prompts"
-import { existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs"
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
 import { join, resolve } from "node:path"
 import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
-import { renderAgentsMd } from "../lib/templates.mjs"
+import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
+import { parseAgentsMdHeader, renderAgentsMd } from "../lib/templates.mjs"
 
 export const PROJECT_TYPES = ["api", "cli", "frontend", "library", "monorepo", "tui"]
 export const AVAILABLE_TOOLS = ["beads", "maw", "crit", "botbus", "botty"]
@@ -27,22 +34,36 @@ export async function init(opts) {
   const projectDir = process.cwd()
 
   try {
+    // Detect existing config from AGENTS.md on re-init
+    const agentsDir = join(projectDir, ".agents", "botbox")
+    const agentsMdPath = join(projectDir, "AGENTS.md")
+    const isReinit = existsSync(agentsDir)
+
+    /** @type {import("../lib/templates.mjs").DetectedConfig} */
+    let detected = {}
+    if (isReinit && existsSync(agentsMdPath)) {
+      detected = parseAgentsMdHeader(readFileSync(agentsMdPath, "utf-8"))
+    }
+
     const name =
       opts.name ??
       (interactive
-        ? await input({ message: "Project name:" })
-        : missingFlag("--name"))
+        ? await input({ message: "Project name:", default: detected.name })
+        : detected.name ?? missingFlag("--name"))
 
   const type =
     opts.type ??
     (interactive
       ? await checkbox({
           message: "Project type (select one or more):",
-          choices: PROJECT_TYPES.map((t) => ({ value: t })),
+          choices: PROJECT_TYPES.map((t) => ({
+            value: t,
+            checked: detected.type ? detected.type.includes(t) : false,
+          })),
           validate: (answer) =>
             answer.length > 0 ? true : "Select at least one project type",
         })
-      : missingFlag("--type"))
+      : detected.type ?? missingFlag("--type"))
 
   const types = Array.isArray(type) ? type : [type]
   const invalid = types.filter((t) => !PROJECT_TYPES.includes(t))
@@ -52,7 +73,8 @@ export async function init(opts) {
     )
   }
 
-  let tools = AVAILABLE_TOOLS
+  /** @type {string[]} */
+  let tools
   if (opts.tools) {
     tools = opts.tools.split(",").map((s) => s.trim())
     let invalid = tools.filter((t) => !AVAILABLE_TOOLS.includes(t))
@@ -64,12 +86,17 @@ export async function init(opts) {
   } else if (interactive) {
     tools = await checkbox({
       message: "Tools to enable:",
-      choices: AVAILABLE_TOOLS.map((t) => ({ value: t, checked: true })),
+      choices: AVAILABLE_TOOLS.map((t) => ({
+        value: t,
+        checked: detected.tools ? detected.tools.includes(t) : true,
+      })),
     })
+  } else {
+    tools = detected.tools ?? AVAILABLE_TOOLS
   }
 
   /** @type {string[]} */
-  let reviewers = []
+  let reviewers
   if (opts.reviewers) {
     reviewers = opts.reviewers.split(",").map((s) => s.trim())
     let invalid = reviewers.filter((r) => !REVIEWER_ROLES.includes(r))
@@ -81,8 +108,13 @@ export async function init(opts) {
   } else if (interactive) {
     reviewers = await checkbox({
       message: "Reviewer roles:",
-      choices: REVIEWER_ROLES.map((r) => ({ value: r })),
+      choices: REVIEWER_ROLES.map((r) => ({
+        value: r,
+        checked: detected.reviewers ? detected.reviewers.includes(r) : false,
+      })),
     })
+  } else {
+    reviewers = detected.reviewers ?? []
   }
 
   /** @type {string[]} */
@@ -115,7 +147,6 @@ export async function init(opts) {
       : false)
 
   // Create .agents/botbox/
-  const agentsDir = join(projectDir, ".agents", "botbox")
   mkdirSync(agentsDir, { recursive: true })
   console.log("Created .agents/botbox/")
 
@@ -124,8 +155,15 @@ export async function init(opts) {
   writeVersionMarker(agentsDir)
   console.log("Copied workflow docs")
 
+  // Copy loop scripts
+  let scriptsDir = join(projectDir, "scripts")
+  let copied = copyScripts(scriptsDir, { tools, reviewers })
+  if (copied.length > 0) {
+    writeScriptsVersionMarker(scriptsDir)
+    console.log(`Copied loop scripts: ${copied.join(", ")}`)
+  }
+
   // Generate AGENTS.md
-  const agentsMdPath = join(projectDir, "AGENTS.md")
   if (existsSync(agentsMdPath) && !opts.force) {
     console.warn(
       "AGENTS.md already exists. Use --force to overwrite, or run `botbox sync` to update.",
@@ -156,8 +194,8 @@ export async function init(opts) {
     }
   }
 
-  // Register project on botbus #projects channel
-  if (tools.includes("botbus")) {
+  // Register project on botbus #projects channel (skip on re-init)
+  if (tools.includes("botbus") && !isReinit) {
     const { execSync } = await import("node:child_process")
     let absPath = resolve(projectDir)
     let toolsList = tools.join(", ")

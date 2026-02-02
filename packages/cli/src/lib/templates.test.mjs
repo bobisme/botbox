@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { renderAgentsMd, updateManagedSection } from "./templates.mjs"
+import {
+  parseAgentsMdHeader,
+  renderAgentsMd,
+  updateManagedSection,
+} from "./templates.mjs"
 
 describe("renderAgentsMd", () => {
   test("includes project name as heading", () => {
@@ -270,5 +274,100 @@ describe("updateManagedSection", () => {
     expect(result).toContain("<!-- botbox:managed-start -->")
     expect(result).toContain("<!-- botbox:managed-end -->")
     expect(result).toContain("# My Project")
+  })
+})
+
+describe("parseAgentsMdHeader", () => {
+  test("parses name from heading", () => {
+    let result = parseAgentsMdHeader("# my-project\n\nProject type: api\nTools: `beads`\n")
+    expect(result.name).toBe("my-project")
+  })
+
+  test("parses single project type", () => {
+    let result = parseAgentsMdHeader("# test\n\nProject type: api\nTools: `beads`\n")
+    expect(result.type).toEqual(["api"])
+  })
+
+  test("parses multiple project types", () => {
+    let result = parseAgentsMdHeader("# test\n\nProject type: cli, api\nTools: `beads`\n")
+    expect(result.type).toEqual(["cli", "api"])
+  })
+
+  test("parses tools with backtick wrapping", () => {
+    let result = parseAgentsMdHeader(
+      "# test\n\nProject type: api\nTools: `beads`, `maw`, `crit`\n",
+    )
+    expect(result.tools).toEqual(["beads", "maw", "crit"])
+  })
+
+  test("parses reviewer roles", () => {
+    let result = parseAgentsMdHeader(
+      "# test\n\nProject type: api\nTools: `beads`\nReviewer roles: security, correctness\n",
+    )
+    expect(result.reviewers).toEqual(["security", "correctness"])
+  })
+
+  test("returns empty reviewers when line absent", () => {
+    let result = parseAgentsMdHeader("# test\n\nProject type: api\nTools: `beads`\n")
+    expect(result.reviewers).toEqual([])
+  })
+
+  test("stops parsing at managed section marker", () => {
+    let content =
+      "# test\n\nProject type: api\nTools: `beads`\n\n<!-- botbox:managed-start -->\n# not-a-name\n"
+    let result = parseAgentsMdHeader(content)
+    expect(result.name).toBe("test")
+  })
+
+  test("round-trips with renderAgentsMd", () => {
+    let original = {
+      name: "my-api",
+      type: ["cli", "api"],
+      tools: ["beads", "maw", "crit"],
+      reviewers: ["security"],
+    }
+    let rendered = renderAgentsMd(original)
+    let detected = parseAgentsMdHeader(rendered)
+    expect(detected.name).toBe("my-api")
+    expect(detected.type).toEqual(["cli", "api"])
+    expect(detected.tools).toEqual(["beads", "maw", "crit"])
+    expect(detected.reviewers).toEqual(["security"])
+  })
+
+  test("round-trips with no reviewers", () => {
+    let rendered = renderAgentsMd({
+      name: "test",
+      type: "library",
+      tools: ["beads"],
+      reviewers: [],
+    })
+    let detected = parseAgentsMdHeader(rendered)
+    expect(detected.name).toBe("test")
+    expect(detected.reviewers).toEqual([])
+  })
+
+  test("handles empty content", () => {
+    let result = parseAgentsMdHeader("")
+    expect(result.name).toBeUndefined()
+    expect(result.type).toBeUndefined()
+    expect(result.tools).toBeUndefined()
+  })
+
+  test("ignores user content between header and managed section", () => {
+    let content = [
+      "# my-project",
+      "",
+      "Project type: library",
+      "Tools: `beads`, `maw`",
+      "",
+      "## Architecture",
+      "This is a library that does things.",
+      "",
+      "<!-- botbox:managed-start -->",
+    ].join("\n")
+    let result = parseAgentsMdHeader(content)
+    expect(result.name).toBe("my-project")
+    expect(result.type).toEqual(["library"])
+    expect(result.tools).toEqual(["beads", "maw"])
   })
 })
