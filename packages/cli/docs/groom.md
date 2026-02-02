@@ -10,17 +10,17 @@ Groom a set of ready beads to improve backlog quality. Use this when you need to
 
 1. Check ready beads: `br ready`
 2. For each bead from `br ready`, run `br show <bead-id>` and fix anything missing:
-   - **Title**: Should be clear and actionable (imperative form, e.g., "Add /health endpoint"). If vague, update: `br update <bead-id> --title="..."`
-   - **Description**: Should explain what and why. If missing or vague, add context: `br update <bead-id> --description="..."`
-   - **Priority**: Should reflect relative importance. Adjust if wrong: `br update <bead-id> --priority=<1-4>`
-   - **Labels**: Add labels if the bead fits a category (see Label Conventions below). Apply with `br label add -l <label> <bead-id>` (creates label if it doesn't exist).
+   - **Title**: Should be clear and actionable (imperative form, e.g., "Add /health endpoint"). If vague, update: `br update --actor $AGENT <bead-id> --title="..."`
+   - **Description**: Should explain what and why. If missing or vague, add context: `br update --actor $AGENT <bead-id> --description="..."`
+   - **Priority**: Should reflect relative importance. Adjust if wrong: `br update --actor $AGENT <bead-id> --priority=<1-4>`
+   - **Labels**: Add labels if the bead fits a category (see Label Conventions below). Apply with `br label add --actor $AGENT -l <label> <bead-id>` (creates label if it doesn't exist).
    - **Acceptance criteria**: Description should include what "done" looks like. If missing, append criteria to the description.
    - **Testing strategy**: Description should mention how to verify the work (e.g., "run tests", "manual check", "curl endpoint"). If missing, append a brief testing note.
-   - Add a comment noting what you groomed: `br comments add <bead-id> "Groomed by $AGENT: <what changed>"`
+   - Add a comment noting what you groomed: `br comments add --actor $AGENT --author $AGENT <bead-id> "Groomed by $AGENT: <what changed>"`
 3. Check bead size: each bead should be one resumable unit of work — if a session crashes after completing it, the next session knows exactly where to pick up. If a bead covers multiple distinct steps, break it down:
-   - Create smaller child beads with `br create` and `br dep add <child> <parent>`.
-   - Add sibling dependencies where order matters: `br dep add <later> <earlier>` (e.g., "write report" blocked by "run eval").
-   - Add a comment to the parent: `br comments add <parent-id> "Broken down into smaller tasks: <child-id>, ..."`
+   - Create smaller child beads with `br create --actor $AGENT --owner $AGENT` and `br dep add --actor $AGENT <child> <parent>`.
+   - Add sibling dependencies where order matters: `br dep add --actor $AGENT <later> <earlier>` (e.g., "write report" blocked by "run eval").
+   - Add a comment to the parent: `br comments add --actor $AGENT --author $AGENT <parent-id> "Broken down into smaller tasks: <child-id>, ..."`
 4. Announce if you groomed multiple beads: `bus send --agent $AGENT $BOTBOX_PROJECT "Groomed N beads: <summary>" -L mesh -L grooming`
 
 ## Acceptance Criteria
@@ -76,7 +76,7 @@ Before creating a new label:
 1. Check existing labels: `br label list`
 2. Reuse an existing label if it fits (prefer consistency over perfect naming)
 3. Only create a new label if you expect to use it for multiple beads
-4. Apply with `br label add -l <name> <bead-id>` (creates label automatically if it doesn't exist — no separate creation command needed)
+4. Apply with `br label add --actor $AGENT -l <name> <bead-id>` (creates label automatically if it doesn't exist — no separate creation command needed)
 
 ### Project-Specific vs Cross-Project
 

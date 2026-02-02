@@ -147,7 +147,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		cat <<EOF
 You are worker agent "$AGENT" for project "$PROJECT".
 
-IMPORTANT: Use --agent $AGENT on ALL bus and crit commands. Set BOTBOX_PROJECT=$PROJECT.
+IMPORTANT: Use --agent $AGENT on ALL bus and crit commands. Use --actor $AGENT on ALL mutating br commands (create, update, close, comments add, dep add, label add). Also use --owner $AGENT on br create and --author $AGENT on br comments add. Set BOTBOX_PROJECT=$PROJECT.
 
 Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
 then STOP. Do not start a second task — the outer loop handles iteration.
@@ -166,7 +166,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    - If no review comment (work was in progress when session ended):
      * Read the workspace code to see what's already done.
      * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
-     * After completing: br comments add <id> "Resumed and completed: <what you finished>".
+     * After completing: br comments add --actor $AGENT --author $AGENT <id> "Resumed and completed: <what you finished>".
      * Then proceed to step 6 (REVIEW REQUEST) or step 7 (FINISH).
    If no active claims: proceed to step 1 (INBOX).
 
@@ -186,7 +186,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    br create + br dep add, then bv --robot-next again. If a bead is claimed
    (bus check-claim --agent $AGENT "bead://$PROJECT/<id>"), skip it.
 
-3. START: br update <id> --status=in_progress.
+3. START: br update --actor $AGENT <id> --status=in_progress.
    bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>".
    Create workspace: run maw ws create --random. Note the workspace name AND absolute path
    from the output (e.g., name "frost-castle", path "/abs/path/.workspaces/frost-castle").
@@ -195,23 +195,23 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    For bash commands: cd \$WS_PATH && <command>. For jj commands: maw ws jj \$WS <args>.
    Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
    bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>".
-   br comments add <id> "Started in workspace \$WS (\$WS_PATH)".
+   br comments add --actor $AGENT --author $AGENT <id> "Started in workspace \$WS (\$WS_PATH)".
    Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim.
 
 4. WORK: br show <id>, then implement the task in the workspace.
-   Add at least one progress comment: br comments add <id> "Progress: ...".
+   Add at least one progress comment: br comments add --actor $AGENT --author $AGENT <id> "Progress: ...".
 
 5. STUCK CHECK: If same approach tried twice, info missing, or tool fails repeatedly — you are
-   stuck. br comments add <id> "Blocked: <details>".
+   stuck. br comments add --actor $AGENT --author $AGENT <id> "Blocked: <details>".
    bus send --agent $AGENT $PROJECT "Stuck on <id>: <reason>" -L mesh -L task-blocked.
-   br update <id> --status=blocked.
+   br update --actor $AGENT <id> --status=blocked.
    Release: bus release --agent $AGENT "bead://$PROJECT/<id>".
    Stop this cycle.
 
 6. REVIEW REQUEST:
    Describe the change: maw ws jj \$WS describe -m "<id>: <summary>".
    Create review: crit reviews create --agent $AGENT --title "<title>" --description "<summary>".
-   Add bead comment: br comments add <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)".
+   Add bead comment: br comments add --actor $AGENT --author $AGENT <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)".
    Announce: bus send --agent $AGENT $PROJECT "Review requested: <review-id> for <id>: <title>" -L mesh -L review-request.
    Do NOT close the bead. Do NOT merge the workspace. Do NOT release claims.
    STOP this iteration. The reviewer will process the review.
@@ -221,8 +221,8 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    If your shell is cd'd into .workspaces/, cd back to the project root first.
    If a review was conducted:
      crit reviews merge <review-id> --agent $AGENT.
-   br comments add <id> "Completed by $AGENT".
-   br close <id> --reason="Completed" --suggest-next.
+   br comments add --actor $AGENT --author $AGENT <id> "Completed by $AGENT".
+   br close --actor $AGENT <id> --reason="Completed" --suggest-next.
    maw ws merge \$WS --destroy (if conflict, preserve and announce).
    bus release --agent $AGENT --all.
    br sync --flush-only.

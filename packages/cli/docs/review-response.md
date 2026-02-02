@@ -30,7 +30,7 @@ Run this when:
    - Be specific — reference docs, compiler output, or design intent
 
    **Defer** (good idea, but out of scope for this change):
-   - Create a tracking bead: `br create "<title>" --label deferred`
+   - Create a tracking bead: `br create --actor $AGENT --owner $AGENT "<title>" --label deferred`
    - Reply: `crit reply <thread-id> --agent $AGENT "Deferred to <bead-id> for follow-up"`
 
 3. After handling all threads:

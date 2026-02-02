@@ -12,7 +12,7 @@ Report a bug, feature request, or feedback to another project.
 
 1. **Identify the project** that owns the tool:
    ```bash
-   bus inbox --agent $AGENT --channels projects --all | grep "tools:.*<toolname>"
+   bus history projects --format text | grep "tools:.*<toolname>"
    ```
    Parse the message to extract:
    - `repo:<path>` — repository path
@@ -26,8 +26,8 @@ Report a bug, feature request, or feedback to another project.
 
 3. **Create bead(s)** for your feedback:
    ```bash
-   br create --title="..." --description="..." --type=bug --priority=2
-   br create --title="..." --description="..." --type=feature --priority=3
+   br create --actor $AGENT --title="..." --description="..." --type=bug --priority=2
+   br create --actor $AGENT --title="..." --description="..." --type=feature --priority=3
    ```
    Include:
    - Reproduction steps (for bugs)
@@ -44,7 +44,18 @@ Report a bug, feature request, or feedback to another project.
    bus send --agent worker-alpha botty "Filed 7 beads based on e2e testing with botbox: bd-2rx (named keys), bd-2lj (record/replay), bd-142 (combined wait), bd-3qu (snapshot diff), bd-l96 (kill handling), bd-202 (assertions), bd-13p (script mode). Top priorities: named key sequences and record/replay. @botty-dev" -L mesh -L feedback
    ```
 
-5. **Return to your work** — the lead agent will triage and respond.
+5. **Ensure the lead agent is running** so your report gets triaged:
+   ```bash
+   bus check-claim --agent $AGENT "agent://<lead-agent>"
+   ```
+   If the claim is **not held** (lead agent is offline), spawn it:
+   ```bash
+   botty spawn --name <lead-agent> -- bash scripts/dev-loop.sh <project-name> <lead-agent>
+   ```
+   If `botty` is not available, skip this step — the report will be picked up
+   when the lead agent starts its next session.
+
+6. **Return to your work** — the lead agent will triage and respond.
 
 ## Notes
 

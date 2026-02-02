@@ -28,18 +28,18 @@ Before triaging new work, check if you have an in-progress bead from a previous 
 ### 1. Triage — find and groom work, then pick one small task (always run this, even if you already know what to work on)
 
 - Check inbox: `bus inbox --agent $AGENT --channels $BOTBOX_PROJECT --mark-read`
-- For messages that request work, create beads: `br create --title="..." --description="..." --type=task --priority=2`
+- For messages that request work, create beads: `br create --actor $AGENT --owner $AGENT --title="..." --description="..." --type=task --priority=2`
 - For questions or status checks, reply directly: `bus send --agent $AGENT <channel> "<reply>" -L mesh -L triage-reply`
 - Check ready beads: `br ready`
 - If no ready beads and no new beads from inbox, stop with message "No work available."
-- **Check blocked beads** for resolved blockers: if a bead was blocked pending information or an upstream fix that has since landed, unblock it with `br update <id> --status=open` and a comment noting why.
+- **Check blocked beads** for resolved blockers: if a bead was blocked pending information or an upstream fix that has since landed, unblock it with `br update --actor $AGENT <id> --status=open` and a comment noting why.
 - **Groom each ready bead** (`br show <id>`): ensure it has a clear title, description with acceptance criteria and testing strategy, appropriate priority, and labels. Fix anything missing and comment what you changed.
 - Pick one task: `bv --robot-next` — parse the JSON to get the bead ID.
 - If the task is large (epic or multi-step), decompose it:
   1. **Groom the parent** first — add labels, refine acceptance criteria, note any discrepancies between the description and the actual project state (e.g., bead says "use SQLite" but no DB crate in dependencies). Comment your findings on the parent bead.
-  2. **Create child beads** with `br create` — each one a resumable unit of work. Titles in imperative form. Descriptions must include acceptance criteria (what "done" looks like).
+  2. **Create child beads** with `br create --actor $AGENT --owner $AGENT` — each one a resumable unit of work. Titles in imperative form. Descriptions must include acceptance criteria (what "done" looks like).
   3. **Set priorities** that reflect execution order — foundation subtasks get higher priority than downstream features, tests get lowest.
-  4. **Wire dependencies** with `br dep add <child> <parent>`. Look for parallelism — tasks that share a prerequisite but don't depend on each other should not be chained linearly.
+  4. **Wire dependencies** with `br dep add --actor $AGENT <child> <parent>`. Look for parallelism — tasks that share a prerequisite but don't depend on each other should not be chained linearly.
   5. **Comment your decomposition plan** on the parent bead: what you created, why, and any decisions you made (e.g., "Using in-memory storage instead of SQLite because no DB crate available").
   6. **Verify** with `br dep tree <parent>` — the graph should have at least one point where multiple tasks are unblocked simultaneously.
   7. Run `bv --robot-next` again. Repeat until you have exactly one small, atomic task.
@@ -47,7 +47,7 @@ Before triaging new work, check if you have an in-progress bead from a previous 
 
 ### 2. Start — claim and set up
 
-- `br update <bead-id> --status=in_progress`
+- `br update --actor $AGENT <bead-id> --status=in_progress`
 - `bus claim --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
 - `maw ws create --random` — note the workspace name (e.g., `frost-castle`) and the **absolute path** from the output. Store as `$WS` (name) and `$WS_PATH` (absolute path).
 - **All file operations must use the absolute workspace path** from `maw ws create` output. Use absolute paths for Read, Write, and Edit. For bash: `cd $WS_PATH && <command>`. For jj: `maw ws jj $WS <args>`. **Do not `cd` into the workspace and stay there** — the workspace will be destroyed during finish, breaking your shell session.
@@ -58,7 +58,7 @@ Before triaging new work, check if you have an in-progress bead from a previous 
 
 - Read the bead details: `br show <bead-id>`
 - Do the work using the tools available in the workspace.
-- **You must add at least one progress comment** during work: `br comments add <bead-id> "Progress: ..."`
+- **You must add at least one progress comment** during work: `br comments add --actor $AGENT --author $AGENT <bead-id> "Progress: ..."`
   - Post when you've made meaningful progress or hit a milestone
   - This is required before you can close the bead — do not skip it
   - Essential for visibility and debugging if something goes wrong
@@ -68,10 +68,10 @@ Before triaging new work, check if you have an in-progress bead from a previous 
 You are stuck if: you attempted the same approach twice without progress, you cannot find needed information or files, or a tool command fails repeatedly.
 
 If stuck:
-- Add a detailed comment with what you tried and where you got blocked: `br comments add <bead-id> "Blocked: ..."`
+- Add a detailed comment with what you tried and where you got blocked: `br comments add --actor $AGENT --author $AGENT <bead-id> "Blocked: ..."`
 - Post in the project channel: `bus send --agent $AGENT $BOTBOX_PROJECT "Stuck on <bead-id>: <summary>" -L mesh -L task-blocked`
 - If a tool behaved unexpectedly (e.g., command succeeded but had no effect), also report it: `bus send --agent $AGENT $BOTBOX_PROJECT "Tool issue: <tool> <what happened>" -L mesh -L tool-issue`
-- `br update <bead-id> --status=blocked`
+- `br update --actor $AGENT <bead-id> --status=blocked`
 - Release the bead claim: `bus release --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>"`
 - Move on to triage again (go to step 1).
 
@@ -81,7 +81,7 @@ After completing the implementation:
 
 - Describe the change: `maw ws jj $WS describe -m "<bead-id>: <summary>"`
 - Create a crit review: `crit reviews create --agent $AGENT --title "<bead-title>" --description "<summary of changes>"`
-- Add a comment to the bead: `br comments add <bead-id> "Review requested: <review-id>, workspace: $WS ($WS_PATH)"`
+- Add a comment to the bead: `br comments add --actor $AGENT --author $AGENT <bead-id> "Review requested: <review-id>, workspace: $WS ($WS_PATH)"`
 - Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>: <bead-title>" -L mesh -L review-request`
 - **STOP this iteration.** Do NOT close the bead, merge the workspace, or release claims. The reviewer will process the review, and you will resume in the next iteration via step 0.
 
@@ -94,8 +94,8 @@ If a review was conducted:
 - Mark review as merged: `crit reviews merge <review-id> --agent $AGENT`
 
 Then proceed with teardown:
-- `br comments add <bead-id> "Completed by $AGENT"`
-- `br close <bead-id> --reason="Completed" --suggest-next`
+- `br comments add --actor $AGENT --author $AGENT <bead-id> "Completed by $AGENT"`
+- `br close --actor $AGENT <bead-id> --reason="Completed" --suggest-next`
 - `maw ws merge $WS --destroy` (if merge conflict, preserve workspace and announce)
 - `bus release --agent $AGENT --all`
 - `br sync --flush-only`

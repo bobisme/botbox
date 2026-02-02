@@ -176,7 +176,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		cat <<EOF
 You are lead dev agent "$AGENT" for project "$PROJECT".
 
-IMPORTANT: Use --agent $AGENT on ALL bus, br, crit, and maw commands. Set BOTBOX_PROJECT=$PROJECT.
+IMPORTANT: Use --agent $AGENT on ALL bus and crit commands. Use --actor $AGENT on ALL mutating br commands (create, update, close, comments add, dep add, label add). Also use --owner $AGENT on br create and --author $AGENT on br comments add. Set BOTBOX_PROJECT=$PROJECT.
 
 Your role is the LEAD DEVELOPER — you triage, dispatch, monitor, and merge.
 Execute exactly ONE iteration of the dev loop, then STOP.
@@ -207,7 +207,7 @@ For each bead:// claim:
     * If a "Review requested" comment exists: check review status (LGTM/BLOCKED/PENDING).
     * If no review comment (work was in progress when session ended):
       Read workspace code, complete remaining work in the EXISTING workspace (do NOT create new one).
-      After completing: br comments add <id> "Resumed and completed: <what you finished>".
+      After completing: br comments add --actor $AGENT --author $AGENT <id> "Resumed and completed: <what you finished>".
       Then proceed to merge or review.
 If no active claims: proceed to step 1.
 
@@ -244,26 +244,26 @@ Based on count of unclaimed, independent ready beads:
 ## 4a. SEQUENTIAL (1 bead — do it yourself)
 
 Same as the standard worker loop:
-1. br update <id> --status=in_progress
+1. br update --actor $AGENT <id> --status=in_progress
 2. bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>"
 3. maw ws create --random — note workspace NAME and absolute PATH
 4. bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
-5. br comments add <id> "Started in workspace \$WS (\$WS_PATH)"
+5. br comments add --actor $AGENT --author $AGENT <id> "Started in workspace \$WS (\$WS_PATH)"
 6. Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim
 7. Implement the task. All file operations use absolute WS_PATH.
    For jj: maw ws jj \$WS <args>. Do NOT cd into workspace and stay there.
-8. br comments add <id> "Progress: ..."
+8. br comments add --actor $AGENT --author $AGENT <id> "Progress: ..."
 9. Describe: maw ws jj \$WS describe -m "<id>: <summary>"
 
 If REVIEW is true:
   10. Create review: crit reviews create --agent $AGENT --title "<title>" --description "<summary>"
-  11. br comments add <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)"
+  11. br comments add --actor $AGENT --author $AGENT <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)"
   12. bus send --agent $AGENT $PROJECT "Review requested: <review-id> for <id>" -L mesh -L review-request
   13. STOP this iteration — wait for reviewer.
 
 If REVIEW is false:
   10. Merge: maw ws merge \$WS --destroy
-  11. br close <id> --reason="Completed"
+  11. br close --actor $AGENT <id> --reason="Completed"
   12. bus release --agent $AGENT --all
   13. br sync --flush-only
   14. bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done
@@ -282,10 +282,10 @@ Read each bead (br show <id>) and select a model based on complexity:
 ### For each bead being dispatched:
 1. maw ws create --random — note NAME and PATH
 2. bus generate-name — get a worker identity
-3. br update <id> --status=in_progress
+3. br update --actor $AGENT <id> --status=in_progress
 4. bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "dispatched to <worker-name>"
 5. bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
-6. br comments add <id> "Dispatched worker <worker-name> (model: <model>) in workspace \$WS (\$WS_PATH)"
+6. br comments add --actor $AGENT --author $AGENT <id> "Dispatched worker <worker-name> (model: <model>) in workspace \$WS (\$WS_PATH)"
 7. bus send --agent $AGENT $PROJECT "Dispatching <worker-name> for <id>: <title>" -L mesh -L task-claim
 
 8. Launch worker as a BACKGROUND process:
@@ -304,7 +304,7 @@ Read each bead (br show <id>) and select a model based on complexity:
 ### Worker prompt template:
 
 "You are worker agent <worker-name> for project $PROJECT.
-Use --agent <worker-name> on ALL bus and br commands.
+Use --agent <worker-name> on ALL bus commands. Use --actor <worker-name> on ALL mutating br commands. Use --author <worker-name> on br comments add.
 
 Your task: bead <id> — <title>
 Workspace: <ws-name> at <ws-path>
@@ -312,7 +312,7 @@ Workspace: <ws-name> at <ws-path>
 1. Read the bead: br show <id>
 2. Implement the task. All file operations use absolute path <ws-path>.
    For jj: maw ws jj <ws-name> <args>.
-3. Post a progress comment: br comments add <id> 'Progress: <what you did>'
+3. Post a progress comment: br comments add --actor <worker-name> --author <worker-name> <id> 'Progress: <what you did>'
 4. Verify your work (run tests, lints, or checks as appropriate for the project).
 5. Describe the change: maw ws jj <ws-name> describe -m '<id>: <summary>'
 6. Announce completion: bus send --agent <worker-name> $PROJECT 'Worker <worker-name> completed <id>: <title>' -L mesh -L task-done
@@ -330,8 +330,8 @@ After dispatching (or if resuming with dispatched workers):
 - Wait briefly (sleep 15-30 seconds between checks) and re-poll.
 - Continue monitoring until all dispatched workers have announced -L task-done or timeout is reached.
 - If a worker appears stuck past $WORKER_TIMEOUT seconds with no progress:
-  br comments add <id> "Worker <name> timed out"
-  br update <id> --status=blocked
+  br comments add --actor $AGENT --author $AGENT <id> "Worker <name> timed out"
+  br update --actor $AGENT <id> --status=blocked
   bus release --agent $AGENT "bead://$PROJECT/<id>"
   Continue with other workers.
 
@@ -340,9 +340,9 @@ After dispatching (or if resuming with dispatched workers):
 For each completed worker:
 1. Verify: maw ws jj <ws-name> diff
 2. Merge: maw ws merge <ws-name> --destroy
-   If conflict: br comments add <id> "Merge conflict in <ws>, preserving workspace"
+   If conflict: br comments add --actor $AGENT --author $AGENT <id> "Merge conflict in <ws>, preserving workspace"
    Skip destroy, move to next. Announce the conflict.
-3. br close <id> --reason="Completed by <worker-name>"
+3. br close --actor $AGENT <id> --reason="Completed by <worker-name>"
 4. bus release --agent $AGENT "bead://$PROJECT/<id>"
 5. bus send --agent $AGENT $PROJECT "Merged <id>: <title>" -L mesh -L task-done
 
