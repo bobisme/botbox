@@ -75,10 +75,13 @@ echo "Model:     ${MODEL:-system default}"
 # --- Confirm identity ---
 bus whoami --agent "$AGENT"
 
-# --- Refresh the agent lease (hook creates the initial claim) ---
-if ! bus claims refresh --agent "$AGENT" "agent://$AGENT"; then
-	echo "Claim refresh failed. Agent $AGENT is not properly initialized."
-	exit 1
+# --- Refresh or stake the agent lease ---
+# Try refresh first (hook may have created it), fall back to stake
+if ! bus claims refresh --agent "$AGENT" "agent://$AGENT" 2>/dev/null; then
+	if ! bus claims stake --agent "$AGENT" "agent://$AGENT" -m "worker-loop for $PROJECT"; then
+		echo "Claim denied. Agent $AGENT is already running."
+		exit 0
+	fi
 fi
 
 # --- Cleanup on exit ---
