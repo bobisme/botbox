@@ -182,6 +182,11 @@ export async function init(opts) {
     }
   }
 
+  // Register auto-spawn hook for the project channel
+  if (tools.includes("botbus")) {
+    await registerSpawnHook(projectDir, name)
+  }
+
   // Generate .gitignore
   const gitignorePath = join(projectDir, ".gitignore")
   if (languages.length > 0 && !existsSync(gitignorePath)) {
@@ -211,6 +216,51 @@ export async function init(opts) {
  */
 function missingFlag(flag) {
   throw new Error(`${flag} is required in non-interactive mode`)
+}
+
+/**
+ * Register an auto-spawn hook so the dev agent starts when messages arrive.
+ * @param {string} projectDir - Project root directory
+ * @param {string} name - Project name
+ */
+async function registerSpawnHook(projectDir, name) {
+  let { execSync } = await import("node:child_process")
+  let absPath = resolve(projectDir)
+  let agent = `${name}-dev`
+
+  // Check if bus supports hooks
+  try {
+    execSync("bus hooks list", { stdio: "pipe" })
+  } catch {
+    // bus doesn't support hooks or isn't installed
+    return
+  }
+
+  // Check for existing hook on this channel to avoid duplicates
+  try {
+    let existing = execSync("bus hooks list --format json", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    })
+    let hooks = JSON.parse(existing)
+    let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
+    if (arr.some((/** @type {any} */ h) => h.channel === name && h.active)) {
+      console.log("Auto-spawn hook already exists, skipping")
+      return
+    }
+  } catch {
+    // Parse failure — proceed to add
+  }
+
+  try {
+    execSync(
+      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --cwd ${absPath} --release-on-exit -- bash scripts/dev-loop.sh ${name} ${agent}`,
+      { cwd: projectDir, stdio: "inherit" },
+    )
+    console.log("Registered auto-spawn hook for dev agent")
+  } catch {
+    console.warn("Warning: Failed to register auto-spawn hook")
+  }
 }
 
 /**

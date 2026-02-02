@@ -315,6 +315,93 @@ describe("init (non-interactive)", () => {
     expect(existsSync(join(tempDir, ".agents", "botbox"))).toBe(true)
   })
 
+  test("registers auto-spawn hook when botbus is in tools", async () => {
+    let hasBus = false
+    try {
+      execSync("bus hooks list", { stdio: "ignore" })
+      hasBus = true
+    } catch {
+      // bus hooks not available
+    }
+
+    if (!hasBus) {
+      // Verify init succeeds gracefully without hooks support
+      await init({
+        name: "hook-test",
+        type: "api",
+        tools: "botbus",
+        interactive: false,
+      })
+      return
+    }
+
+    await init({
+      name: "hook-reg-test",
+      type: "api",
+      tools: "botbus",
+      interactive: false,
+    })
+
+    let output = execSync("bus hooks list --format json", {
+      encoding: "utf-8",
+    })
+    let hooks = JSON.parse(output)
+    let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
+    let hook = arr.find(
+      (/** @type {any} */ h) => h.channel === "hook-reg-test" && h.active,
+    )
+    expect(hook).toBeTruthy()
+
+    // Clean up
+    if (hook) {
+      execSync(`bus hooks remove ${hook.id}`, { stdio: "ignore" })
+    }
+  })
+
+  test("does not duplicate hook on second init", async () => {
+    let hasBus = false
+    try {
+      execSync("bus hooks list", { stdio: "ignore" })
+      hasBus = true
+    } catch {
+      // bus hooks not available
+    }
+
+    if (!hasBus) {
+      return
+    }
+
+    // Run init twice
+    await init({
+      name: "hook-dup-test",
+      type: "api",
+      tools: "botbus",
+      interactive: false,
+    })
+    await init({
+      name: "hook-dup-test",
+      type: "api",
+      tools: "botbus",
+      force: true,
+      interactive: false,
+    })
+
+    let output = execSync("bus hooks list --format json", {
+      encoding: "utf-8",
+    })
+    let hooks = JSON.parse(output)
+    let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
+    let matching = arr.filter(
+      (/** @type {any} */ h) => h.channel === "hook-dup-test" && h.active,
+    )
+    expect(matching.length).toBe(1)
+
+    // Clean up
+    for (let h of matching) {
+      execSync(`bus hooks remove ${h.id}`, { stdio: "ignore" })
+    }
+  })
+
   test("does not register on #projects when botbus not in tools", async () => {
     let hasBus = false
     try {
