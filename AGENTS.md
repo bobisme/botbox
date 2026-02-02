@@ -97,7 +97,7 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `docs/dev-agent-architecture.md` — Target multi-agent architecture
 - `eval-results/` — Individual run reports
 
-26 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 planning (R7), 3 adversarial review (R8), 1 crash recovery (R9). R9-1: Opus 69/70 (99%) — perfect crash recovery from mid-task failure, resumed from bead comments without redoing completed work. R7 planning eval: Opus 76/95 (80%). R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+27 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 cross-project (R5), 1 parallel dispatch (R6), 1 planning (R7), 3 adversarial review (R8), 1 crash recovery (R9). R5-1: Opus 70/70 (100%) — perfect cross-project coordination, followed report-issue.md to file bug in external project. R6-1: Opus 69/70 (99%). R9-1: Opus 69/70 (99%). R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
 
 ### Running R4 evals
 

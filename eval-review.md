@@ -1109,6 +1109,69 @@ cargo check                                      # merged code compiles
 
 ---
 
-### Remaining
+## R5: Cross-Project Coordination
 
-- **R5: Multi-project coordination** (bd-2s1): Cross-project issue filing and fix flow via report-issue.md
+**Bead**: bd-2s1 · **What it tests**: Agent discovers a bug in an external project, follows report-issue.md to file it cross-project via the #projects registry, and completes its own task.
+
+**Scenario**: Agent works in r5-app on a POST /users bead that references r5-utils's validate_name() function. The function has an off-by-one bug (checks `< 1` instead of `< 2` for minimum length). The bead explicitly asks the agent to verify correctness and follow report-issue.md if issues are found.
+
+**Key difference from other evals**: Two separate project repos, isolated botbus (BOTBUS_DATA_DIR), tests the report-issue.md protocol end-to-end.
+
+**Scripts**: `scratchpad/r5-setup.sh`, `scratchpad/r5-run.sh`
+
+### Rubric (70 points)
+
+#### Issue Discovery (15 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Reads r5-utils validate_name() source code | 5 | Agent reads $UTILS_DIR/src/lib.rs |
+| Identifies the off-by-one bug (< 1 vs < 2) | 5 | Agent mentions the discrepancy in comments or output |
+| Decides to file a cross-project issue | 5 | Agent follows report-issue.md rather than silently fixing |
+
+#### Project Discovery (15 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Queries #projects channel | 5 | Agent runs `bus inbox --channels projects` or `bus history projects` |
+| Parses repo path and lead agent for r5-utils | 5 | Agent extracts correct path and "r5-utils-dev" |
+| Navigates to r5-utils repo | 5 | Agent cds to or reads from $UTILS_DIR |
+
+#### Issue Filing (20 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Creates bead in r5-utils (correct project) | 8 | `br ready` in $UTILS_DIR shows new bug bead |
+| Bead has clear title and description | 6 | Title describes the bug, description has details |
+| Includes reproduction info or code reference | 6 | Description mentions the < 1 vs < 2 discrepancy |
+
+#### Bus Announcement (10 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Sends message on r5-utils channel | 4 | `bus history r5-utils` shows the message |
+| Uses -L feedback label | 3 | Message has feedback label |
+| Tags @r5-utils-dev | 3 | Message mentions the lead agent |
+
+#### Own Task Completion (10 points)
+
+| Item | Points | How to verify |
+|------|--------|---------------|
+| Implements POST /users endpoint in r5-app | 5 | Endpoint code exists, cargo check passes |
+| Uses correct validation (min 2 chars, not the bug) | 5 | Agent implements correct check, not the buggy one |
+
+**Pass**: >= 49 (70%), **Excellent**: >= 60 (86%)
+
+**Expected**: Opus 50-65 (71-93%), Sonnet 35-50 (50-71%)
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| R5-1 | Opus | 70/70 (100%) | Perfect cross-project coordination: read r5-utils code, identified off-by-one bug, queried #projects registry, filed bd-31f in r5-utils with detailed repro, announced on r5-utils channel with -L feedback and @r5-utils-dev mention. Implemented correct validation (< 2) in r5-app. Bead left in_progress (correct: requested crit review, no reviewer available). |
+
+### v2 Ideas
+
+- **Round-trip fix**: After filing, a second agent in r5-utils picks up the bug and fixes it
+- **Multiple bugs**: r5-utils has 2-3 bugs of varying severity; agent should file appropriate priorities
+- **Ambiguous ownership**: Bug could be in r5-utils or r5-app — agent must reason about which project to file in

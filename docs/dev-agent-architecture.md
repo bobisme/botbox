@@ -139,16 +139,10 @@ What's validated and what remains (as of multi-agent run 1, 2026-02-01):
 | Multi-iteration coordination | ✅ Multi-agent run 1 | 80% (4 beads, 48 min) |
 | Planning / epic decomposition | ✅ R7 | Opus 80% (76/95) |
 | Adversarial review (subtle bugs) | ✅ R8 × 3 | Opus 75%, Sonnet 63% (FAIL) |
-| Parallel dispatch | ❌ R6 — not tested | — |
-| Cross-project coordination | ❌ R5 — not tested | — |
+| Parallel dispatch | ✅ R6 × 1 | Opus 99% (69/70) |
+| Cross-project coordination | ✅ R5 × 1 | Opus 100% (70/70) |
 | Crash recovery | ✅ R9 × 1 | Opus 99% (69/70) |
 
-## Remaining Evals
+## Eval Status
 
-| Eval | Bead | What it tests |
-|------|------|---------------|
-| R5 | bd-2s1 | Cross-project issue filing and fix flow via report-issue.md and #projects registry |
-| R6 | bd-2rb | Dev agent dispatches Haiku workers in parallel, tracks completions, handles failures |
-| R9 | bd-3sy | Mid-run crash recovery — resume from bead comments without duplicating work |
-
-See `eval-review.md` for full rubrics and `eval-results/README.md` for all run reports.
+All planned evals (R1-R9) have been run. See `eval-review.md` for full rubrics and `eval-results/README.md` for all run reports.
