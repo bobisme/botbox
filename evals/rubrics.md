@@ -618,7 +618,7 @@ Endpoints: CRUD for tasks, tag management, filtering + pagination, overdue query
 ### Setup
 
 ```bash
-bash scratchpad/r7-setup.sh
+bash evals/scripts/r7-setup.sh
 # Creates eval dir, Cargo.toml (no SQLite crate), minimal main.rs, feature request bead.
 # Outputs EVAL_DIR, DEV_AGENT, PARENT_BEAD.
 # Source .eval-env in the eval dir before running phases.
@@ -629,11 +629,11 @@ bash scratchpad/r7-setup.sh
 ```bash
 # Phase 1: Decomposition (triage only, no coding)
 cd $EVAL_DIR && source .eval-env
-bash scratchpad/r7-phase1.sh
+bash evals/scripts/r7-phase1.sh
 
 # Phase 2: Execute subtasks via worker loop
 cd $EVAL_DIR && source .eval-env
-bash scratchpad/r7-phase2.sh
+bash evals/scripts/r7-phase2.sh
 ```
 
 ### Scoring (95 points)
@@ -779,7 +779,7 @@ Single-reviewer eval (same shape as R1) with harder bugs requiring execution-pat
 ### Setup
 
 ```bash
-bash scratchpad/r8-setup.sh
+bash evals/scripts/r8-setup.sh
 # Creates eval dir, fixture, crit review. Outputs EVAL_DIR, REVIEWER, REVIEW_ID.
 # Source .eval-env in the eval dir before running.
 ```
@@ -788,7 +788,7 @@ bash scratchpad/r8-setup.sh
 
 ```bash
 cd $EVAL_DIR && source .eval-env
-bash scratchpad/r8-run.sh
+bash evals/scripts/r8-run.sh
 # v3 prompt: references .agents/botbox/review-loop.md instead of embedding workflow.
 # review-loop.md now includes cross-file consistency and boundary check steps.
 ```
@@ -894,7 +894,7 @@ Test whether a dev agent can dispatch Haiku workers in parallel for independent 
 ### Setup
 
 ```bash
-bash scratchpad/r6-setup.sh
+bash evals/scripts/r6-setup.sh
 # Creates eval dir with Rust/Axum project and 3 independent beads.
 # Outputs EVAL_DIR, DEV_AGENT, BEAD1-3.
 # Source .eval-env in the eval dir before running.
@@ -916,7 +916,7 @@ All beads have acceptance criteria and testing strategy pre-written. No grooming
 
 ```bash
 cd $EVAL_DIR && source .eval-env
-bash scratchpad/r6-run.sh
+bash evals/scripts/r6-run.sh
 # WORKER_MODEL=haiku by default (set WORKER_MODEL=sonnet to override)
 # CLAUDE_MODEL controls the dev agent model (Opus recommended)
 ```
@@ -1020,7 +1020,7 @@ Test whether an agent can resume mid-task after a session crash by reading bead 
 
 ### Test Code
 
-Rust/Axum items CRUD API. Setup script (`scratchpad/r9-setup.sh`) creates:
+Rust/Axum items CRUD API. Setup script (`evals/scripts/r9-setup.sh`) creates:
 
 - **Baseline**: `/health` endpoint, `Item` struct, `AppState` with `Arc<Mutex<Vec<Item>>>` and `AtomicU64` ID counter
 - **Parent bead**: "Build items CRUD API" with 5 subtask children in a linear dependency chain
@@ -1034,11 +1034,11 @@ The agent receives the same identity as the crashed session and a prompt saying 
 
 ```bash
 # Setup
-bash scratchpad/r9-setup.sh
+bash evals/scripts/r9-setup.sh
 cd $EVAL_DIR && source .eval-env
 
 # Run (single session, agent discovers crash state)
-bash scratchpad/r9-run.sh
+bash evals/scripts/r9-run.sh
 ```
 
 ### Rubric (70 points)
@@ -1117,7 +1117,7 @@ cargo check                                      # merged code compiles
 
 **Key difference from other evals**: Two separate project repos, isolated botbus (BOTBUS_DATA_DIR), tests the report-issue.md protocol end-to-end.
 
-**Scripts**: `scratchpad/r5-setup.sh`, `scratchpad/r5-run.sh`
+**Scripts**: `evals/scripts/r5-setup.sh`, `evals/scripts/r5-run.sh`
 
 ### Rubric (70 points)
 

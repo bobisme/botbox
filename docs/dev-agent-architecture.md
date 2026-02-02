@@ -145,4 +145,4 @@ What's validated and what remains (as of multi-agent run 1, 2026-02-01):
 
 ## Eval Status
 
-All planned evals (R1-R9) have been run. See `eval-review.md` for full rubrics and `eval-results/README.md` for all run reports.
+All planned evals (R1-R9) have been run. See `evals/rubrics.md` for full rubrics and `evals/results/README.md` for all run reports.

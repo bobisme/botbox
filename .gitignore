@@ -4,3 +4,10 @@ bun.lockb
 
 # bv (beads viewer) local config and caches
 .bv/
+
+# Environment and secrets
+.env
+.env.*
+
+# Logs
+*.log

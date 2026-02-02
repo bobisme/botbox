@@ -12,7 +12,7 @@ Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps proj
 | Sonnet | 99%        | v3 (inbox triage)   | Handles full inbox + beads lifecycle                        |
 | Haiku  | 94%        | v2.1 (beads only)   | Excellent on pre-groomed tasks; struggles with inbox triage |
 
-**Takeaway**: Sonnet handles the full protocol including inbox triage. Haiku matches Sonnet on core task execution (94% vs 94-99%) but fails on message classification — use it for pre-triaged work. See [eval-results/](eval-results/README.md) for all 16 runs, scoring rubrics, and detailed findings.
+**Takeaway**: Sonnet handles the full protocol including inbox triage. Haiku matches Sonnet on core task execution (94% vs 94-99%) but fails on message classification — use it for pre-triaged work. See [evals/results/](evals/results/README.md) for all 16 runs, scoring rubrics, and detailed findings.
 
 ## What is botbox?
 

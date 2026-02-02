@@ -9,6 +9,7 @@ packages/cli/       @botbox/cli — the main CLI (commander + inquirer)
 packages/cli/docs/  Workflow docs (source of truth, bundled with npm package)
 packages/botbox/    botbox — npm alias that re-exports @botbox/cli
 scripts/            Shell scripts: agent-loop.sh (worker), reviewer-loop.sh (reviewer), dev-loop.sh (lead dev orchestrator)
+evals/              Behavioral eval framework: rubrics, scripts, and results
 .beads/             Issue tracker (beads)
 ```
 
@@ -91,17 +92,16 @@ Do **not** update docs for project-specific conventions — those belong in the 
 
 This project has a behavioral evaluation framework for testing whether agents follow the botbox protocol. Key docs:
 
-- `eval-proposal.md` — 5-level eval framework
-- `eval-loop.md` — Agent-loop.sh specific eval plan
-- `eval-review.md` — Review eval plan (R1-R4), tracked by epic bd-110
+- `evals/rubrics.md` — Eval rubrics (R1-R9), tracked by epic bd-110
 - `docs/dev-agent-architecture.md` — Target multi-agent architecture
-- `eval-results/` — Individual run reports
+- `evals/results/` — Individual run reports
+- `evals/scripts/` — Eval setup and run scripts
 
-27 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 cross-project (R5), 1 parallel dispatch (R6), 1 planning (R7), 3 adversarial review (R8), 1 crash recovery (R9). R5-1: Opus 70/70 (100%) — perfect cross-project coordination, followed report-issue.md to file bug in external project. R6-1: Opus 69/70 (99%). R9-1: Opus 69/70 (99%). R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+27 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 cross-project (R5), 1 parallel dispatch (R6), 1 planning (R7), 3 adversarial review (R8), 1 crash recovery (R9). R5-1: Opus 70/70 (100%) — perfect cross-project coordination, followed report-issue.md to file bug in external project. R6-1: Opus 69/70 (99%). R9-1: Opus 69/70 (99%). R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL). See [evals/results/README.md](evals/results/README.md) for all runs and key learnings.
 
 ### Running R4 evals
 
-Launcher scripts are in `scratchpad/r4-{setup,phase1,phase2,phase3,phase4,phase5}.sh`. Run setup first, then phases sequentially. Phase 3+4 are only needed if Phase 2 blocks. The eval environment path, agent names, and review/workspace IDs are auto-discovered by each script. See `eval-review.md` R4 section for the full rubric.
+Launcher scripts are in `evals/scripts/r4-{setup,phase1,phase2,phase3,phase4,phase5}.sh`. Run setup first, then phases sequentially. Phase 3+4 are only needed if Phase 2 blocks. The eval environment path, agent names, and review/workspace IDs are auto-discovered by each script. See `evals/rubrics.md` R4 section for the full rubric.
 
 Key learnings from R4-1:
 - Phase 4 (re-review) prompt must include workspace path — reviewer reads from `.workspaces/$WS/`, not project root
@@ -115,23 +115,23 @@ Key learnings from R4-1:
 ### Before starting work
 
 1. Check if a bead exists: `br ready`, `br show <id>`
-2. If no bead exists, create one: `br create --title="..." --description="..." --type=task --priority=<1-4>`
+2. If no bead exists, create one: `br create --actor $AGENT --owner $AGENT --title="..." --description="..." --type=task --priority=<1-4>`
 3. **Break down multi-step work** into subtasks before starting. Each subtask should be one resumable unit — if the session crashes after completing it, the next session knows exactly where to pick up. Wire dependencies:
-   - **Ordering** (B can't start until A is done): `br dep add B A` — "B is blocked by A"
-   - **Subtask-of** (parent can't close until child is done): `br dep add parent child` — "parent is blocked by child"
-   - **Sibling chain**: `br dep add S2 S1`, `br dep add S3 S2` — sequential ordering
-4. Mark it in_progress: `br update <id> --status=in_progress`
+   - **Ordering** (B can't start until A is done): `br dep add --actor $AGENT B A` — "B is blocked by A"
+   - **Subtask-of** (parent can't close until child is done): `br dep add --actor $AGENT parent child` — "parent is blocked by child"
+   - **Sibling chain**: `br dep add --actor $AGENT S2 S1`, `br dep add --actor $AGENT S3 S2` — sequential ordering
+4. Mark it in_progress: `br update --actor $AGENT <id> --status=in_progress`
 
 ### During work
 
-4. **Post progress comments** as you complete milestones: `br comments add <id> "what was done, what's next"`
+4. **Post progress comments** as you complete milestones: `br comments add --actor $AGENT --author $AGENT <id> "what was done, what's next"`
    - This is critical for crash recovery — if the session dies, the next session reads these comments to resume
    - Include: files changed, decisions made, what remains
    - Always include workspace name and path in the first comment (e.g., "Started in workspace frost-castle (/abs/path/.workspaces/frost-castle)")
 
 ### After work
 
-5. Close the bead: `br close <id>`
+5. Close the bead: `br close --actor $AGENT <id>`
 6. Sync: `br sync --flush-only`
 
 ### Bead quality (see [groom.md](packages/cli/docs/groom.md))
@@ -140,4 +140,4 @@ Key learnings from R4-1:
 - **Description**: What, why, acceptance criteria, testing strategy
 - **Priority**: P0 (critical) through P4 (nice-to-have)
 - **Labels**: Categorize consistently (e.g., `eval`, `cli`, `docs`)
-- **Size**: One bead = one resumable unit of work. If a task has multiple steps that could be completed independently (e.g., "run eval with Opus" and "run eval with Sonnet"), each step gets its own bead. Use `br dep add <child> <parent>` for subtasks and sibling dependencies for ordering.
+- **Size**: One bead = one resumable unit of work. If a task has multiple steps that could be completed independently (e.g., "run eval with Opus" and "run eval with Sonnet"), each step gets its own bead. Use `br dep add --actor $AGENT <child> <parent>` for subtasks and sibling dependencies for ordering.

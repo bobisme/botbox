@@ -1,0 +1,37 @@
+# Contributing
+
+Botbox is an experimental project exploring multi-agent workflows for software development. Because of its experimental nature and tight coupling with agentic tooling, the development process is unusual — most changes are made by AI agents following the botbox protocol itself.
+
+## Filing Issues
+
+Issues and bug reports are welcome. If you encounter a problem or have a suggestion, please open a GitHub issue with:
+
+- What you were trying to do
+- What happened instead
+- Steps to reproduce (if applicable)
+
+## Pull Requests
+
+You're welcome to open PRs to illustrate a proposed fix or improvement. However, there's no guarantee that external PRs will be merged directly — the agentic workflow may pick up the idea and implement it through the standard bead/review pipeline instead.
+
+If you do submit a PR:
+
+- Keep changes focused and minimal
+- Include a clear description of what and why
+- Expect that the change may be re-implemented rather than merged as-is
+
+## Development Setup
+
+Botbox uses **bun** (not node) as its runtime and **jj** (not git) for version control.
+
+```bash
+bun install              # install dependencies
+bun test                 # run tests
+just lint                # oxlint
+just fmt                 # oxfmt --write
+just check               # tsc type checking
+```
+
+## Questions
+
+For questions about how botbox works or how to use it, open a GitHub issue with the `question` label.

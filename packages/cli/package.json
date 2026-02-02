@@ -1,7 +1,8 @@
 {
   "name": "@botbox/cli",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Setup and sync tool for botbox multi-agent workflows",
+  "author": "Bob",
   "type": "module",
   "bin": {
     "botbox": "./src/index.mjs"

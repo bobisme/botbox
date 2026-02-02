@@ -316,7 +316,7 @@ echo "  cd $APP_DIR && cargo check"
 echo "  cd $APP_DIR && br ready  (should show 1 bead)"
 echo "  bus history projects     (should show 2 registry entries)"
 echo ""
-echo "Next: source $APP_DIR/.eval-env && bash $REPO_DIR/scratchpad/r5-run.sh"
+echo "Next: source $APP_DIR/.eval-env && bash $REPO_DIR/evals/scripts/r5-run.sh"
 
 # --- Save env ---
 cat > "$APP_DIR/.eval-env" << EOF

@@ -1,6 +1,6 @@
 # Eval Results
 
-Behavioral evaluation of agents following the botbox protocol. See `eval-proposal.md` for the framework and `eval-loop.md` for agent-loop.sh specifics.
+Behavioral evaluation of agents following the botbox protocol. See `evals/rubrics.md` for rubrics and scoring criteria.
 
 ## Runs
 
