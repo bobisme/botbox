@@ -1,17 +1,76 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# --- Configuration ---
-MAX_LOOPS=${MAX_LOOPS:-20}
-LOOP_PAUSE=${LOOP_PAUSE:-10}
+# --- Defaults ---
+MAX_LOOPS=20
+LOOP_PAUSE=10
+MODEL=""
+PROJECT=""
+AGENT=""
 
-# --- Arguments ---
-PROJECT="${1:?Usage: reviewer-loop.sh <project> [agent-name]}"
-AGENT="${2:-$(bus generate-name)}"
+# --- Usage ---
+usage() {
+	cat <<EOF
+Usage: reviewer-loop.sh [options] <project> [agent-name]
+
+Reviewer agent. Picks one open review per iteration, reads the diff,
+leaves comments, and votes LGTM or BLOCKED.
+
+Options:
+  --max-loops N   Max iterations (default: $MAX_LOOPS)
+  --pause N       Seconds between iterations (default: $LOOP_PAUSE)
+  --model M       Model for the reviewer agent (default: system default)
+  -h, --help      Show this help
+
+Arguments:
+  project         Project name (required)
+  agent-name      Agent identity (default: auto-generated)
+EOF
+	exit 0
+}
+
+# --- Parse flags ---
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+	--max-loops)
+		MAX_LOOPS="$2"
+		shift 2
+		;;
+	--pause)
+		LOOP_PAUSE="$2"
+		shift 2
+		;;
+	--model)
+		MODEL="$2"
+		shift 2
+		;;
+	-h | --help)
+		usage
+		;;
+	--)
+		shift
+		break
+		;;
+	-*)
+		echo "Unknown option: $1" >&2
+		usage
+		;;
+	*)
+		break
+		;;
+	esac
+done
+
+# --- Positional arguments ---
+PROJECT="${1:?Usage: reviewer-loop.sh [options] <project> [agent-name]}"
+shift
+AGENT="${1:-$(bus generate-name)}"
 
 echo "Reviewer:  $AGENT"
 echo "Project:   $PROJECT"
 echo "Max loops: $MAX_LOOPS"
+echo "Pause:     ${LOOP_PAUSE}s"
+echo "Model:     ${MODEL:-system default}"
 
 # --- Confirm identity ---
 bus whoami --agent "$AGENT"
@@ -78,7 +137,7 @@ for ((i = 1; i <= MAX_LOOPS; i++)); do
 		break
 	fi
 
-	claude ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
+	claude ${MODEL:+--model "$MODEL"} --dangerously-skip-permissions --allow-dangerously-skip-permissions -p "$(
 		cat <<EOF
 You are reviewer agent "$AGENT" for project "$PROJECT".
 

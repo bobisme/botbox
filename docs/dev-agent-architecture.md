@@ -16,6 +16,16 @@ The target architecture for a project-level dev agent (e.g., `terseid-dev`). Thi
 - **Sonnet**: General implementation, moderate complexity tasks, lead dev fallback when Opus budget is a concern.
 - **Haiku**: Routine, well-specified tasks with clear acceptance criteria. Best for pre-groomed beads where the work is straightforward (94% eval score on v2.1).
 
+## Script Selection
+
+| Script | Role | When to use |
+|--------|------|-------------|
+| `scripts/agent-loop.sh` | Worker. One task at a time, sequential. | Spawned by dev-loop for individual tasks, or standalone for simple projects with a single work queue. |
+| `scripts/reviewer-loop.sh` | Reviewer. One review at a time. | Spawned by dev-loop or standalone when code reviews are pending. |
+| `scripts/dev-loop.sh` | Lead dev. Triages, dispatches workers, monitors, merges. | The orchestrator for projects with multiple ready beads that benefit from parallel execution. |
+
+**Start here:** If your project has a handful of beads and one agent is enough, use `agent-loop.sh`. When you have multiple independent beads and want parallel dispatch with model selection, use `dev-loop.sh`.
+
 ## Main Loop
 
 `<project>-dev` runs in a loop similar to `scripts/agent-loop.sh`. Each iteration:

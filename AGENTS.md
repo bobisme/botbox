@@ -8,7 +8,7 @@ Botbox is a setup and sync tool for multi-agent workflows. It is NOT a runtime �
 packages/cli/       @botbox/cli — the main CLI (commander + inquirer)
 packages/cli/docs/  Workflow docs (source of truth, bundled with npm package)
 packages/botbox/    botbox — npm alias that re-exports @botbox/cli
-scripts/            agent-loop.sh and other shell scripts
+scripts/            Shell scripts: agent-loop.sh (worker), reviewer-loop.sh (reviewer), dev-loop.sh (lead dev orchestrator)
 .beads/             Issue tracker (beads)
 ```
 
