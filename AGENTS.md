@@ -97,7 +97,7 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - `docs/dev-agent-architecture.md` — Target multi-agent architecture
 - `eval-results/` — Individual run reports
 
-25 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 planning (R7), 3 adversarial review (R8). R7 planning eval: Opus 76/95 (80%) — strong diamond DAG decomposition (7 subtasks, 3 parallel), completed 3/7 subtasks before context limit, all code compiles and 8 tests pass. R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
+26 eval runs completed: 6 Level 2 single-session, 10 agent-loop.sh, 3 review (R1), 1 author response (R2), 1 full review loop (R3), 2 integration (R4), 1 planning (R7), 3 adversarial review (R8), 1 crash recovery (R9). R9-1: Opus 69/70 (99%) — perfect crash recovery from mid-task failure, resumed from bead comments without redoing completed work. R7 planning eval: Opus 76/95 (80%). R8v2 multi-file: Opus 49/65 (75%), Sonnet 41/65 (63% FAIL). See [eval-results/README.md](eval-results/README.md) for all runs and key learnings.
 
 ### Running R4 evals
 
@@ -116,7 +116,10 @@ Key learnings from R4-1:
 
 1. Check if a bead exists: `br ready`, `br show <id>`
 2. If no bead exists, create one: `br create --title="..." --description="..." --type=task --priority=<1-4>`
-3. **Break down multi-step work** into subtasks before starting. Each subtask should be one resumable unit — if the session crashes after completing it, the next session knows exactly where to pick up. Wire dependencies with `br dep add <child> <parent>` and between siblings where order matters.
+3. **Break down multi-step work** into subtasks before starting. Each subtask should be one resumable unit — if the session crashes after completing it, the next session knows exactly where to pick up. Wire dependencies:
+   - **Ordering** (B can't start until A is done): `br dep add B A` — "B is blocked by A"
+   - **Subtask-of** (parent can't close until child is done): `br dep add parent child` — "parent is blocked by child"
+   - **Sibling chain**: `br dep add S2 S1`, `br dep add S3 S2` — sequential ordering
 4. Mark it in_progress: `br update <id> --status=in_progress`
 
 ### During work
@@ -124,6 +127,7 @@ Key learnings from R4-1:
 4. **Post progress comments** as you complete milestones: `br comments add <id> "what was done, what's next"`
    - This is critical for crash recovery — if the session dies, the next session reads these comments to resume
    - Include: files changed, decisions made, what remains
+   - Always include workspace name and path in the first comment (e.g., "Started in workspace frost-castle (/abs/path/.workspaces/frost-castle)")
 
 ### After work
 

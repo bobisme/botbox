@@ -248,14 +248,15 @@ DESC_EOF
 
 echo "S1=$S1  S2=$S2  S3=$S3  S4=$S4  S5=$S5"
 
-# --- Wire dependencies: parent → children, linear chain ---
-br dep add "$S1" "$PARENT"
-br dep add "$S2" "$PARENT"
-br dep add "$S3" "$PARENT"
-br dep add "$S4" "$PARENT"
-br dep add "$S5" "$PARENT"
+# --- Wire dependencies ---
+# Parent is blocked by all children (can't close until all subtasks done)
+br dep add "$PARENT" "$S1"
+br dep add "$PARENT" "$S2"
+br dep add "$PARENT" "$S3"
+br dep add "$PARENT" "$S4"
+br dep add "$PARENT" "$S5"
 
-# Linear chain: S2 depends on S1, S3 on S2, etc.
+# Linear chain: S2 blocked by S1, S3 blocked by S2, etc.
 br dep add "$S2" "$S1"
 br dep add "$S3" "$S2"
 br dep add "$S4" "$S3"
@@ -287,24 +288,20 @@ br update "$S3" --status=in_progress
 bus claim --agent "$AGENT" "bead://r9-eval/$S3" -m "$S3"
 
 # Create workspace for subtask 3
-WS_OUTPUT=$(maw ws create --random 2>&1)
-WS=$(echo "$WS_OUTPUT" | grep -oP 'name[:\s]+\K\S+' | head -1 || echo "$WS_OUTPUT" | grep -oP '"\K[a-z]+-[a-z]+"' | head -1 | tr -d '"')
-WS_PATH=$(echo "$WS_OUTPUT" | grep -oP 'path[:\s]+\K\S+' | head -1 || echo "")
-
-# Fallback: find workspace path by listing .workspaces/
-if [[ -z "$WS_PATH" || ! -d "$WS_PATH" ]]; then
-  # maw ws list to find the workspace
-  WS_INFO=$(maw ws list 2>&1)
-  echo "WS_OUTPUT: $WS_OUTPUT"
-  echo "WS_INFO: $WS_INFO"
-  # Find directory in .workspaces/
-  for d in .workspaces/*/; do
-    if [[ -d "$d" ]]; then
-      WS=$(basename "$d")
-      WS_PATH="$(cd "$d" && pwd)"
-      break
-    fi
-  done
+maw ws create --random
+# Find the workspace by scanning .workspaces/
+WS=""
+WS_PATH=""
+for d in .workspaces/*/; do
+  if [[ -d "$d" ]]; then
+    WS=$(basename "$d")
+    WS_PATH="$(cd "$d" && pwd)"
+    break
+  fi
+done
+if [[ -z "$WS" ]]; then
+  echo "ERROR: no workspace found in .workspaces/" >&2
+  exit 1
 fi
 
 echo "WS=$WS"

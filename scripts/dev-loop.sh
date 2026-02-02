@@ -202,7 +202,13 @@ For each bead:// claim:
     * If worker still running and within timeout ($WORKER_TIMEOUT seconds): note it, move on.
     * If worker appears stuck (no progress, past timeout): log it, release claim, mark bead blocked.
   - If no dispatch comment (you're doing it yourself):
-    * Check review status as in agent-loop (crit review, handle LGTM/BLOCKED/PENDING).
+    * Run: br comments <bead-id> to see what was done and what remains.
+    * Look for workspace info in comments (workspace name and path).
+    * If a "Review requested" comment exists: check review status (LGTM/BLOCKED/PENDING).
+    * If no review comment (work was in progress when session ended):
+      Read workspace code, complete remaining work in the EXISTING workspace (do NOT create new one).
+      After completing: br comments add <id> "Resumed and completed: <what you finished>".
+      Then proceed to merge or review.
 If no active claims: proceed to step 1.
 
 ## 1. INBOX
@@ -242,24 +248,25 @@ Same as the standard worker loop:
 2. bus claim --agent $AGENT "bead://$PROJECT/<id>" -m "<id>"
 3. maw ws create --random — note workspace NAME and absolute PATH
 4. bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>"
-5. Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim
-6. Implement the task. All file operations use absolute WS_PATH.
+5. br comments add <id> "Started in workspace \$WS (\$WS_PATH)"
+6. Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim
+7. Implement the task. All file operations use absolute WS_PATH.
    For jj: maw ws jj \$WS <args>. Do NOT cd into workspace and stay there.
-7. br comments add <id> "Progress: ..."
-8. Describe: maw ws jj \$WS describe -m "<id>: <summary>"
+8. br comments add <id> "Progress: ..."
+9. Describe: maw ws jj \$WS describe -m "<id>: <summary>"
 
 If REVIEW is true:
-  9. Create review: crit reviews create --agent $AGENT --title "<title>" --description "<summary>"
-  10. br comments add <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)"
-  11. bus send --agent $AGENT $PROJECT "Review requested: <review-id> for <id>" -L mesh -L review-request
-  12. STOP this iteration — wait for reviewer.
+  10. Create review: crit reviews create --agent $AGENT --title "<title>" --description "<summary>"
+  11. br comments add <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)"
+  12. bus send --agent $AGENT $PROJECT "Review requested: <review-id> for <id>" -L mesh -L review-request
+  13. STOP this iteration — wait for reviewer.
 
 If REVIEW is false:
-  9. Merge: maw ws merge \$WS --destroy
-  10. br close <id> --reason="Completed"
-  11. bus release --agent $AGENT --all
-  12. br sync --flush-only
-  13. bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done
+  10. Merge: maw ws merge \$WS --destroy
+  11. br close <id> --reason="Completed"
+  12. bus release --agent $AGENT --all
+  13. br sync --flush-only
+  14. bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done
 
 ## 4b. PARALLEL DISPATCH (2+ beads)
 

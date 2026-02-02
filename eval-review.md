@@ -1099,7 +1099,7 @@ cargo check                                      # merged code compiles
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| — | — | — | Not yet run |
+| R9-1 | Opus | 69/70 (99%) | Perfect crash recovery: detected claims, read bead comments, completed S3 in existing workspace without redoing S1/S2, then finished S4+S5. All code compiles, all beads closed, parent closed. Only deduction: no progress comment added to S3 after completing the resumed work (pre-crash comments only). Total time ~6 min for 3 subtasks. |
 
 ### v2 Ideas
 

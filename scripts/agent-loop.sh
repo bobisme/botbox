@@ -155,12 +155,19 @@ then STOP. Do not start a second task — the outer loop handles iteration.
 0. RESUME CHECK (do this FIRST):
    Run: bus claims --agent $AGENT --mine
    If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
-   - Find the review ID: run br comments <bead-id> to find the "Review requested: <review-id>" comment.
-   - Check review status: crit review <review-id>
-   - If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
-   - If BLOCKED (changes requested): follow .agents/botbox/review-response.md to fix issues
-     in the workspace, re-request review, then STOP this iteration.
-   - If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
+   - Run: br comments <bead-id> to understand what was done before and what remains.
+   - Look for workspace info in comments (workspace name and path).
+   - If a "Review requested: <review-id>" comment exists:
+     * Check review status: crit review <review-id>
+     * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
+     * If BLOCKED (changes requested): follow .agents/botbox/review-response.md to fix issues
+       in the workspace, re-request review, then STOP this iteration.
+     * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
+   - If no review comment (work was in progress when session ended):
+     * Read the workspace code to see what's already done.
+     * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
+     * After completing: br comments add <id> "Resumed and completed: <what you finished>".
+     * Then proceed to step 6 (REVIEW REQUEST) or step 7 (FINISH).
    If no active claims: proceed to step 1 (INBOX).
 
 1. INBOX (do this before triaging):
@@ -188,6 +195,7 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    For bash commands: cd \$WS_PATH && <command>. For jj commands: maw ws jj \$WS <args>.
    Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
    bus claim --agent $AGENT "workspace://$PROJECT/\$WS" -m "<id>".
+   br comments add <id> "Started in workspace \$WS (\$WS_PATH)".
    Announce: bus send --agent $AGENT $PROJECT "Working on <id>: <title>" -L mesh -L task-claim.
 
 4. WORK: br show <id>, then implement the task in the workspace.
