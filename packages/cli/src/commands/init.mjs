@@ -181,6 +181,49 @@ export async function init(opts) {
     console.log("Symlinked CLAUDE.md → AGENTS.md")
   }
 
+  // Generate .botbox.json config
+  const configPath = join(projectDir, ".botbox.json")
+  if (!existsSync(configPath) || opts.force) {
+    const config = {
+      project: {
+        name,
+        type: types,
+        languages: languages.length > 0 ? languages : undefined,
+      },
+      tools: {
+        beads: tools.includes("beads"),
+        maw: tools.includes("maw"),
+        crit: tools.includes("crit"),
+        botbus: tools.includes("botbus"),
+        botty: tools.includes("botty"),
+      },
+      review: {
+        enabled: reviewers.length > 0,
+        reviewers,
+      },
+      agents: {
+        dev: {
+          model: "opus",
+          max_loops: 20,
+          pause: 60,
+          timeout: 900,
+        },
+        worker: {
+          model: "haiku",
+          timeout: 600,
+        },
+        reviewer: {
+          model: "opus",
+          max_loops: 20,
+          pause: 10,
+          timeout: 600,
+        },
+      },
+    }
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n")
+    console.log("Generated .botbox.json")
+  }
+
   // Initialize beads
   if (initBeads && !tools.includes("beads")) {
     console.warn("Skipping beads init: beads not in tools list")

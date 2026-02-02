@@ -2,6 +2,18 @@
 
 Botbox is a setup and sync tool for multi-agent workflows. It is NOT a runtime — it bootstraps projects and keeps workflow docs in sync.
 
+## CRITICAL: Track ALL Work in Beads BEFORE Starting
+
+**MANDATORY**: Before starting any non-trivial task, create a bead to track it. This is not optional.
+
+1. **Check for existing bead**: `br ready`, `br show <id>`
+2. **Create if missing**: `br create --actor $AGENT --owner $AGENT --title="..." --description="..." --type=task --priority=<1-4>`
+3. **Mark in_progress**: `br update --actor $AGENT <id> --status=in_progress`
+4. **Do the work**, posting progress comments
+5. **Close when done**: `br close --actor $AGENT <id>`
+
+Beads enable crash recovery, handoffs, and resumption. Without beads, work is lost. See the [Beads (MANDATORY)](#beads-mandatory) section below for full details.
+
 ## Repository Structure
 
 ```
