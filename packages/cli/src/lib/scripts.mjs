@@ -23,36 +23,30 @@ const VERSION_FILE = ".scripts-version"
 
 /** @type {Record<string, ScriptEntry>} */
 const SCRIPT_REGISTRY = {
-  "agent-loop.sh": {
+  "agent-loop.mjs": {
     description: "Worker: sequential triage-start-work-finish",
     eligible: (config) =>
       ["beads", "maw", "crit", "botbus"].every((t) =>
         config.tools.includes(t),
       ),
   },
-  "dev-loop.sh": {
+  "dev-loop.mjs": {
     description: "Lead dev: triage, parallel dispatch, merge",
     eligible: (config) =>
       ["beads", "maw", "crit", "botbus"].every((t) =>
         config.tools.includes(t),
       ),
   },
-  "reviewer-loop.sh": {
+  "reviewer-loop.mjs": {
     description: "Reviewer: review loop until queue empty",
     eligible: (config) =>
       ["crit", "botbus"].every((t) => config.tools.includes(t)),
   },
-  "spawn-security-reviewer.sh": {
-    description: "Spawn a security reviewer",
-    eligible: (config) =>
-      config.tools.includes("botbus") &&
-      config.reviewers.includes("security"),
-  },
 }
 
-/** @returns {string[]} List of .sh filenames in the bundled scripts dir */
+/** @returns {string[]} List of .mjs filenames in the bundled scripts dir */
 export function listAllScripts() {
-  return readdirSync(SCRIPTS_DIR).filter((f) => f.endsWith(".sh"))
+  return readdirSync(SCRIPTS_DIR).filter((f) => f.endsWith(".mjs"))
 }
 
 /**

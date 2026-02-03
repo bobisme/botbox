@@ -22,20 +22,19 @@ import {
 } from "./scripts.mjs"
 
 describe("listAllScripts", () => {
-  test("returns an array of .sh filenames", () => {
+  test("returns an array of .mjs filenames", () => {
     let scripts = listAllScripts()
     expect(scripts.length).toBeGreaterThan(0)
     for (let s of scripts) {
-      expect(s).toEndWith(".sh")
+      expect(s).toEndWith(".mjs")
     }
   })
 
   test("includes known scripts", () => {
     let scripts = listAllScripts()
-    expect(scripts).toContain("agent-loop.sh")
-    expect(scripts).toContain("dev-loop.sh")
-    expect(scripts).toContain("reviewer-loop.sh")
-    expect(scripts).toContain("spawn-security-reviewer.sh")
+    expect(scripts).toContain("agent-loop.mjs")
+    expect(scripts).toContain("dev-loop.mjs")
+    expect(scripts).toContain("reviewer-loop.mjs")
   })
 })
 
@@ -45,10 +44,9 @@ describe("listEligibleScripts", () => {
       tools: ["beads", "maw", "crit", "botbus"],
       reviewers: ["security"],
     })
-    expect(eligible).toContain("agent-loop.sh")
-    expect(eligible).toContain("dev-loop.sh")
-    expect(eligible).toContain("reviewer-loop.sh")
-    expect(eligible).toContain("spawn-security-reviewer.sh")
+    expect(eligible).toContain("agent-loop.mjs")
+    expect(eligible).toContain("dev-loop.mjs")
+    expect(eligible).toContain("reviewer-loop.mjs")
   })
 
   test("only reviewer-loop with crit + botbus", () => {
@@ -56,10 +54,9 @@ describe("listEligibleScripts", () => {
       tools: ["crit", "botbus"],
       reviewers: [],
     })
-    expect(eligible).toContain("reviewer-loop.sh")
-    expect(eligible).not.toContain("agent-loop.sh")
-    expect(eligible).not.toContain("dev-loop.sh")
-    expect(eligible).not.toContain("spawn-security-reviewer.sh")
+    expect(eligible).toContain("reviewer-loop.mjs")
+    expect(eligible).not.toContain("agent-loop.mjs")
+    expect(eligible).not.toContain("dev-loop.mjs")
   })
 
   test("no scripts with minimal tools", () => {
@@ -70,31 +67,13 @@ describe("listEligibleScripts", () => {
     expect(eligible).toHaveLength(0)
   })
 
-  test("spawn-security-reviewer requires botbus + security reviewer", () => {
-    let eligible = listEligibleScripts({
-      tools: ["botbus"],
-      reviewers: ["security"],
-    })
-    expect(eligible).toContain("spawn-security-reviewer.sh")
-    expect(eligible).not.toContain("agent-loop.sh")
-  })
-
-  test("spawn-security-reviewer not eligible without security reviewer", () => {
-    let eligible = listEligibleScripts({
-      tools: ["beads", "maw", "crit", "botbus"],
-      reviewers: [],
-    })
-    expect(eligible).not.toContain("spawn-security-reviewer.sh")
-    expect(eligible).toContain("agent-loop.sh")
-  })
-
   test("agent/dev loops need all four tools", () => {
     let eligible = listEligibleScripts({
       tools: ["beads", "maw", "crit"],
       reviewers: [],
     })
-    expect(eligible).not.toContain("agent-loop.sh")
-    expect(eligible).not.toContain("dev-loop.sh")
+    expect(eligible).not.toContain("agent-loop.mjs")
+    expect(eligible).not.toContain("dev-loop.mjs")
   })
 })
 
@@ -117,7 +96,7 @@ describe("copyScripts", () => {
       reviewers: ["security"],
     })
 
-    expect(copied.length).toBe(4)
+    expect(copied.length).toBe(3)
     for (let file of copied) {
       expect(existsSync(join(target, file))).toBe(true)
     }
@@ -174,14 +153,14 @@ describe("updateExistingScripts", () => {
     let target = join(tempDir, "scripts")
     mkdirSync(target, { recursive: true })
     // Create a dummy file for one script
-    writeFileSync(join(target, "reviewer-loop.sh"), "old content")
+    writeFileSync(join(target, "reviewer-loop.mjs"), "old content")
 
     let updated = updateExistingScripts(target)
-    expect(updated).toContain("reviewer-loop.sh")
-    expect(updated).not.toContain("agent-loop.sh")
+    expect(updated).toContain("reviewer-loop.mjs")
+    expect(updated).not.toContain("agent-loop.mjs")
 
     // Verify content was actually updated
-    let content = readFileSync(join(target, "reviewer-loop.sh"), "utf-8")
+    let content = readFileSync(join(target, "reviewer-loop.mjs"), "utf-8")
     expect(content).not.toBe("old content")
   })
 
