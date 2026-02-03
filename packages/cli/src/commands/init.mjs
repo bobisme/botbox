@@ -157,7 +157,7 @@ export async function init(opts) {
   console.log("Copied workflow docs")
 
   // Copy loop scripts
-  let scriptsDir = join(projectDir, "scripts")
+  let scriptsDir = join(agentsDir, "scripts")
   let copied = copyScripts(scriptsDir, { tools, reviewers })
   if (copied.length > 0) {
     writeScriptsVersionMarker(scriptsDir)
@@ -360,7 +360,7 @@ async function registerSpawnHook(projectDir, name) {
 
   try {
     execSync(
-      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bash scripts/dev-loop.sh ${name} ${agent}`,
+      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bash .agents/botbox/scripts/dev-loop.sh ${name} ${agent}`,
       { cwd: projectDir, stdio: "inherit", env: process.env },
     )
     console.log("Registered auto-spawn hook for dev agent")

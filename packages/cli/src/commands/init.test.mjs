@@ -197,7 +197,7 @@ describe("init (non-interactive)", () => {
       interactive: false,
     })
 
-    let scriptsDir = join(tempDir, "scripts")
+    let scriptsDir = join(tempDir, ".agents", "botbox", "scripts")
     expect(existsSync(scriptsDir)).toBe(true)
     let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".sh"))
     expect(scripts).toContain("agent-loop.sh")
@@ -215,7 +215,7 @@ describe("init (non-interactive)", () => {
       interactive: false,
     })
 
-    let scriptsDir = join(tempDir, "scripts")
+    let scriptsDir = join(tempDir, ".agents", "botbox", "scripts")
     expect(existsSync(scriptsDir)).toBe(true)
     let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".sh"))
     expect(scripts).toContain("reviewer-loop.sh")
