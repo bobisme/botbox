@@ -1,6 +1,15 @@
-# Install dependencies
+# Build (no build step for JS, but run checks)
+build:
+    just check
+    just lint
+
+# Run tests
+test:
+    cd packages/cli && bun test
+
+# Install globally (link for development)
 install:
-    cd packages/cli && bun install
+    cd packages/cli && bun link
 
 # Lint with oxlint
 lint:
