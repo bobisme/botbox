@@ -80,9 +80,12 @@ If stuck:
 After completing the implementation:
 
 - Describe the change: `maw ws jj $WS describe -m "<bead-id>: <summary>"`
-- Create a crit review: `crit reviews create --agent $AGENT --title "<bead-title>" --description "<summary of changes>"`
+- Create a crit review with bead context: `crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary of changes, what was done, why>"`
+  - Always include the bead ID in the description so reviewers have context
+  - Explain what changed and why, not just a summary
 - Add a comment to the bead: `br comments add --actor $AGENT --author $AGENT <bead-id> "Review requested: <review-id>, workspace: $WS ($WS_PATH)"`
-- Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>: <bead-title>" -L review-request`
+- Spawn a reviewer: `botty spawn reviewer --project $BOTBOX_PROJECT`
+- Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>: <bead-title>, spawned reviewer" -L review-request`
 - **STOP this iteration.** Do NOT close the bead, merge the workspace, or release claims. The reviewer will process the review, and you will resume in the next iteration via step 0.
 
 See [review-request](review-request.md) for full details.

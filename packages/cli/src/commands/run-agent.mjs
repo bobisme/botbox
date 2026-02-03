@@ -38,8 +38,7 @@ export async function runAgent(agentType, options) {
 		let output = '';
 		let resultReceived = false;
 		let timeoutKiller = null;
-
-		console.log(); // Blank line before output
+		let overallTimeout = null;
 
 		// Parse JSON stream line-by-line
 		proc.stdout?.on('data', (data) => {
@@ -55,11 +54,10 @@ export async function runAgent(agentType, options) {
 					// Detect completion signal
 					if (parsed.type === 'result') {
 						resultReceived = true;
-						console.log(`\n${GREEN}✓${RESET} Agent completed\n`);
 
 						// Give 2s grace period, then kill if hung
 						timeoutKiller = setTimeout(() => {
-							console.log('Warning: Process hung after completion, killing...');
+							console.error('Warning: Process hung after completion, killing...');
 							proc.kill('SIGKILL');
 						}, 2000);
 					}
@@ -79,6 +77,7 @@ export async function runAgent(agentType, options) {
 
 		proc.on('close', (code) => {
 			if (timeoutKiller) clearTimeout(timeoutKiller);
+			if (overallTimeout) clearTimeout(overallTimeout);
 
 			if (resultReceived) {
 				resolve({ output, code: 0 });
@@ -91,11 +90,12 @@ export async function runAgent(agentType, options) {
 
 		proc.on('error', (err) => {
 			if (timeoutKiller) clearTimeout(timeoutKiller);
+			if (overallTimeout) clearTimeout(overallTimeout);
 			reject(err);
 		});
 
 		// Overall timeout
-		setTimeout(() => {
+		overallTimeout = setTimeout(() => {
 			if (!resultReceived) {
 				console.error(`Timeout after ${timeout}s`);
 				proc.kill('SIGKILL');
@@ -166,7 +166,7 @@ function prettyPrint(event) {
 						const toolName = item.name;
 						const truncatedInput = JSON.stringify(item.input || {}).slice(0, 80);
 						const args = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
-						console.log(`▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
+						console.log(`\n▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
 					}
 				}
 			}

@@ -64,7 +64,6 @@ program
       model: options.model,
       timeout: parseInt(options.timeout, 10),
     })
-    process.exit(0)
   })
 
 try {
