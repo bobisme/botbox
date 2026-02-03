@@ -11,3 +11,6 @@ bun.lockb
 
 # Logs
 *.log
+
+# Runtime iteration state
+.agents/botbox/last-iteration.txt

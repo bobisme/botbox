@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
-import { readFile } from 'fs/promises';
+import { readFile, writeFile, stat } from 'fs/promises';
 import { existsSync } from 'fs';
 import { parseArgs } from 'util';
 
@@ -150,24 +150,48 @@ async function hasWork() {
 	}
 }
 
+// --- Read previous iteration summary ---
+async function readLastIteration() {
+	const path = '.agents/botbox/last-iteration.txt';
+	if (!existsSync(path)) return null;
+
+	try {
+		const content = await readFile(path, 'utf-8');
+		const stats = await stat(path);
+		const ageMs = Date.now() - stats.mtime.getTime();
+		const ageMinutes = Math.floor(ageMs / 60000);
+		const ageHours = Math.floor(ageMinutes / 60);
+		const ageStr = ageHours > 0 ? `${ageHours}h ago` : `${ageMinutes}m ago`;
+		return { content: content.trim(), age: ageStr };
+	} catch {
+		return null;
+	}
+}
+
 // --- Build dev lead prompt ---
-function buildPrompt() {
+function buildPrompt(lastIteration) {
 	const pushMainStep = PUSH_MAIN
 		? '\n  14. Push to GitHub: jj bookmark set main -r @- && jj git push (if fails, announce issue).'
 		: '';
 
 	const reviewInstructions = REVIEW ? 'REVIEW is true' : 'REVIEW is false';
 
+	const previousContext = lastIteration
+		? `\n\n## PREVIOUS ITERATION (${lastIteration.age}, may be stale)\n\n${lastIteration.content}\n`
+		: '';
+
 	return `You are lead dev agent "${AGENT}" for project "${PROJECT}".
 
 IMPORTANT: Use --agent ${AGENT} on ALL bus and crit commands. Use --actor ${AGENT} on ALL mutating br commands. Use --author ${AGENT} on br comments add. Set BOTBOX_PROJECT=${PROJECT}. ${reviewInstructions}.
-
+${previousContext}
 Execute exactly ONE dev cycle. Triage inbox, assess ready beads, either work on one yourself
 or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
 
-At the end of your work, output exactly one of these completion signals:
-- <promise>COMPLETE</promise> if you completed work or determined no work available
-- <promise>END_OF_STORY</promise> if iteration done but more work remains
+At the end of your work, output:
+1. A summary for the next iteration: <iteration-summary>Brief summary of what you did: beads worked on, workers dispatched, reviews processed, etc.</iteration-summary>
+2. Completion signal:
+   - <promise>COMPLETE</promise> if you completed work or determined no work available
+   - <promise>END_OF_STORY</promise> if iteration done but more work remains
 
 ## 1. RESUME CHECK (do this FIRST)
 
@@ -440,7 +464,8 @@ async function main() {
 
 		// Run Claude
 		try {
-			const prompt = buildPrompt();
+			const lastIteration = await readLastIteration();
+			const prompt = buildPrompt(lastIteration);
 			const result = await runClaude(prompt);
 
 			// Check for completion signals
@@ -451,6 +476,16 @@ async function main() {
 				console.log('✓ Iteration complete - more work remains');
 			} else {
 				console.log('Warning: No completion signal found in output');
+			}
+
+			// Extract and save iteration summary for next time
+			try {
+				const summaryMatch = result.output.match(/<iteration-summary>([\s\S]*?)<\/iteration-summary>/);
+				if (summaryMatch) {
+					await writeFile('.agents/botbox/last-iteration.txt', summaryMatch[1].trim());
+				}
+			} catch (err) {
+				console.error('Warning: Failed to save iteration summary:', err.message);
 			}
 		} catch (err) {
 			console.error('Error running Claude:', err.message);
