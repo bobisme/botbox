@@ -11,6 +11,7 @@ MODEL=opus
 REVIEW=false
 PROJECT=""
 AGENT=""
+PUSH_MAIN=false
 
 # --- Load config from .botbox.json if available ---
 if [ -f .botbox.json ] && command -v jq >/dev/null 2>&1; then
@@ -21,6 +22,7 @@ if [ -f .botbox.json ] && command -v jq >/dev/null 2>&1; then
 	CLAUDE_TIMEOUT=$(jq -r '.agents.dev.timeout // 900' .botbox.json)
 	WORKER_MODEL=$(jq -r '.agents.worker.model // "haiku"' .botbox.json)
 	WORKER_TIMEOUT=$(jq -r '.agents.worker.timeout // 600' .botbox.json)
+	PUSH_MAIN=$(jq -r '.pushMain // false' .botbox.json)
 fi
 
 # --- Usage ---
@@ -280,8 +282,9 @@ If REVIEW is false:
   10. Merge: maw ws merge \$WS --destroy
   11. br close --actor $AGENT <id> --reason="Completed"
   12. bus claims release --agent $AGENT --all
-  13. br sync --flush-only
-  14. bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done
+  13. br sync --flush-only$([ "$PUSH_MAIN" = "true" ] && echo '
+  14. Push to GitHub: jj bookmark set main -r @- && jj git push (if fails, announce issue)')
+  $([ "$PUSH_MAIN" = "true" ] && echo "15" || echo "14"). bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done
 
 ## 4b. PARALLEL DISPATCH (2+ beads)
 
@@ -361,7 +364,8 @@ For each completed worker:
 4. bus claims release --agent $AGENT "bead://$PROJECT/<id>"
 5. bus send --agent $AGENT $PROJECT "Merged <id>: <title>" -L mesh -L task-done
 
-After all merges: br sync --flush-only
+After all merges: br sync --flush-only$([ "$PUSH_MAIN" = "true" ] && echo '
+Then push to GitHub: jj bookmark set main -r @- && jj git push (if fails, announce issue)')
 
 ## 7. REVIEW (if REVIEW=true)
 

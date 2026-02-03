@@ -298,6 +298,17 @@ describe("init (non-interactive)", () => {
     expect(content).toContain("`botty`")
   })
 
+  test("generates .botbox.json with pushMain field", async () => {
+    await init({
+      name: "push-test",
+      type: "api",
+      interactive: false,
+    })
+
+    let config = JSON.parse(readFileSync(join(tempDir, ".botbox.json"), "utf-8"))
+    expect(config.pushMain).toBe(false)
+  })
+
   test("runs maw init when maw is in tools", async () => {
     let hasMaw = false
     try {

@@ -203,6 +203,7 @@ export async function init(opts) {
         enabled: reviewers.length > 0,
         reviewers,
       },
+      pushMain: false,
       agents: {
         dev: {
           model: "opus",

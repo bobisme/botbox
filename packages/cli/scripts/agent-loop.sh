@@ -8,11 +8,13 @@ CLAUDE_TIMEOUT=600
 MODEL=""
 PROJECT=""
 AGENT=""
+PUSH_MAIN=false
 
 # --- Load config from .botbox.json if available ---
 if [ -f .botbox.json ] && command -v jq >/dev/null 2>&1; then
 	MODEL=$(jq -r '.agents.worker.model // ""' .botbox.json)
 	CLAUDE_TIMEOUT=$(jq -r '.agents.worker.timeout // 600' .botbox.json)
+	PUSH_MAIN=$(jq -r '.pushMain // false' .botbox.json)
 fi
 
 # --- Usage ---
@@ -235,7 +237,8 @@ then STOP. Do not start a second task — the outer loop handles iteration.
    br close --actor $AGENT <id> --reason="Completed" --suggest-next.
    maw ws merge \$WS --destroy (if conflict, preserve and announce).
    bus claims release --agent $AGENT --all.
-   br sync --flush-only.
+   br sync --flush-only.$([ "$PUSH_MAIN" = "true" ] && echo '
+   Push to GitHub: jj bookmark set main -r @- && jj git push (if fails, announce issue).')
    bus send --agent $AGENT $PROJECT "Completed <id>: <title>" -L mesh -L task-done.
 
 Key rules:
