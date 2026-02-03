@@ -104,15 +104,27 @@ CLAUDE_MODEL=haiku bash scripts/agent-loop.sh my-project
 
 The script handles agent leases, work detection (`has_work()`), one-bead-per-iteration discipline, and cleanup on exit. Each iteration spawns a `claude -p` session that executes one triage-start-work-finish cycle.
 
-## Stack
+## Ecosystem
 
-| Tool       | Purpose                         | Key commands                                  |
-| ---------- | ------------------------------- | --------------------------------------------- |
-| **bus** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` |
-| **maw**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         |
-| **br/bv**  | Work tracking + triage          | `ready`, `create`, `close`, `--robot-next`    |
-| **crit**   | Code review                     | `review`, `comment`, `lgtm`, `block`          |
-| **botty**  | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           |
+Botbox coordinates five specialized Rust tools that work together to enable multi-agent workflows:
+
+| Tool       | Purpose                         | Key commands                                  | Repository |
+| ---------- | ------------------------------- | --------------------------------------------- | ---------- |
+| **[botbus](https://github.com/StandardInput/botbus)** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` | Pub/sub messaging, resource locking, agent registry |
+| **[maw](https://github.com/StandardInput/maw)**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         | Concurrent work isolation with Jujutsu VCS |
+| **[beads](https://github.com/StandardInput/beads)**  | Work tracking + triage          | `ready`, `create`, `close`, `--robot-next`    | Issue tracker optimized for agent triage |
+| **[crit](https://github.com/StandardInput/crit)**   | Code review                     | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow |
+| **[botty](https://github.com/StandardInput/botty)**  | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops |
+
+### How they work together
+
+1. **botbus** provides the communication layer: agents send messages, claim resources (beads, workspaces), and discover each other
+2. **beads** tracks work items and priorities, exposing a triage interface (`br ready`, `bv --robot-next`)
+3. **maw** creates isolated workspaces so multiple agents can work concurrently without conflicts
+4. **crit** enables code review: agents request reviews, reviewers comment, and changes merge after approval
+5. **botty** spawns and manages agent processes, handling crashes and lifecycle
+
+**botbox** doesn't run these tools—it configures projects to use them and keeps workflow docs synchronized.
 
 ## Cross-project feedback
 
