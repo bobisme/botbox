@@ -207,7 +207,7 @@ export async function init(opts) {
         dev: {
           model: "opus",
           max_loops: 20,
-          pause: 60,
+          pause: 2,
           timeout: 900,
         },
         worker: {
@@ -217,7 +217,7 @@ export async function init(opts) {
         reviewer: {
           model: "opus",
           max_loops: 20,
-          pause: 10,
+          pause: 2,
           timeout: 600,
         },
       },

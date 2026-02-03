@@ -3,7 +3,7 @@ set -euo pipefail
 
 # --- Defaults ---
 MAX_LOOPS=20
-LOOP_PAUSE=5
+LOOP_PAUSE=2
 CLAUDE_TIMEOUT=600
 MODEL=""
 PROJECT=""

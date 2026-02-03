@@ -3,7 +3,7 @@ set -euo pipefail
 
 # --- Defaults ---
 MAX_LOOPS=20
-LOOP_PAUSE=10
+LOOP_PAUSE=2
 CLAUDE_TIMEOUT=600
 MODEL=""
 PROJECT=""
@@ -13,7 +13,7 @@ AGENT=""
 if [ -f .botbox.json ] && command -v jq >/dev/null 2>&1; then
 	MODEL=$(jq -r '.agents.reviewer.model // ""' .botbox.json)
 	MAX_LOOPS=$(jq -r '.agents.reviewer.max_loops // 20' .botbox.json)
-	LOOP_PAUSE=$(jq -r '.agents.reviewer.pause // 10' .botbox.json)
+	LOOP_PAUSE=$(jq -r '.agents.reviewer.pause // 2' .botbox.json)
 	CLAUDE_TIMEOUT=$(jq -r '.agents.reviewer.timeout // 600' .botbox.json)
 fi
 
