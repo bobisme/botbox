@@ -366,7 +366,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
 
   // Register reviewer hooks (mention-based)
   for (let role of reviewers) {
-    let reviewerAgent = `${role}-reviewer`
+    let reviewerAgent = `${name}-${role}`
     let scriptName = role === "security" ? "spawn-security-reviewer.sh" : "reviewer-loop.sh"
 
     try {
