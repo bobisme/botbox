@@ -84,8 +84,13 @@ After completing the implementation:
   - Always include the bead ID in the description so reviewers have context
   - Explain what changed and why, not just a summary
 - Add a comment to the bead: `br comments add --actor $AGENT --author $AGENT <bead-id> "Review requested: <review-id>, workspace: $WS ($WS_PATH)"`
-- Spawn a reviewer: `botty spawn reviewer --project $BOTBOX_PROJECT`
-- Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>: <bead-title>, spawned reviewer" -L review-request`
+- **If requesting a specialist reviewer** (e.g., security):
+  - Assign them: `crit reviews request <review-id> --reviewers <reviewer> --agent $AGENT`
+  - Announce with @mention: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>, @<reviewer>" -L review-request`
+  - The @mention triggers auto-spawn hooks
+- **If requesting a general code review**:
+  - Spawn a subagent to perform the review
+  - Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>, spawned subagent for review" -L review-request`
 - **STOP this iteration.** Do NOT close the bead, merge the workspace, or release claims. The reviewer will process the review, and you will resume in the next iteration via step 0.
 
 See [review-request](review-request.md) for full details.
