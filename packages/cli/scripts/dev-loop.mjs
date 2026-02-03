@@ -82,7 +82,7 @@ Arguments:
 // --- Helper: run command and get output ---
 async function runCommand(cmd, args = []) {
 	return new Promise((resolve, reject) => {
-		const proc = spawn(cmd, args, { shell: true });
+		const proc = spawn(cmd, args);
 		let stdout = '';
 		let stderr = '';
 
