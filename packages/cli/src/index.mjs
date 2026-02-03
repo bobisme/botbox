@@ -5,6 +5,7 @@ import { Command } from "commander"
 import { doctor } from "./commands/doctor.mjs"
 import { init } from "./commands/init.mjs"
 import { sync } from "./commands/sync.mjs"
+import { runAgent } from "./commands/run-agent.mjs"
 import { ExitError } from "./lib/errors.mjs"
 
 const require = createRequire(import.meta.url)
@@ -50,6 +51,21 @@ program
   .command("doctor")
   .description("Check toolchain health and configuration")
   .action(doctor)
+
+program
+  .command("run-agent <type>")
+  .description("Run an agent with pretty real-time output (e.g., claude)")
+  .option("-p, --prompt <text>", "Prompt text for the agent")
+  .option("-m, --model <name>", "Model to use (e.g., opus, sonnet, haiku)")
+  .option("-t, --timeout <seconds>", "Timeout in seconds", "600")
+  .action(async (type, options) => {
+    await runAgent(type, {
+      prompt: options.prompt,
+      model: options.model,
+      timeout: parseInt(options.timeout, 10),
+    })
+    process.exit(0)
+  })
 
 try {
   await program.parseAsync()

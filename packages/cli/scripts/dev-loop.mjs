@@ -299,130 +299,39 @@ Key rules:
 - Output completion signal at end`;
 }
 
-// --- ANSI formatting ---
-const BOLD = '\x1b[1m';
-const DIM = '\x1b[2m';
-const RESET = '\x1b[0m';
-const GREEN = '\x1b[32m';
-
-// --- Pretty print JSON stream events ---
-function prettyPrint(event) {
-	switch (event.type) {
-		case 'tool_use':
-			const toolName = event.name;
-			const truncatedInput = JSON.stringify(event.input || {}).slice(0, 80);
-			const args = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
-			// TODO: Custom formatting for known tools (Edit, Read, Write, Bash, etc.)
-			console.log(`▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
-			break;
-
-		case 'tool_result':
-			const content = event.content || '';
-			const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
-			const truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
-			const resultText = contentStr.length > 100 ? truncated + '...' : truncated;
-			console.log(`  ${GREEN}✓${RESET} ${DIM}${resultText}${RESET}`);
-			break;
-
-		case 'text':
-			// Thinking or response text - show first line only
-			if (event.text) {
-				const firstLine = event.text.split('\n')[0].slice(0, 120);
-				if (firstLine.trim()) {
-					const text = event.text.length > 120 ? firstLine + '...' : firstLine;
-					console.log(`${DIM}• ${text}${RESET}`);
-				}
-			}
-			break;
-
-		case 'result':
-			// Handled separately
-			break;
-
-		default:
-			// Unknown event type, skip
-			break;
-	}
-}
-
-// --- Run claude with stream-json and hang workaround ---
+// --- Run agent via botbox run-agent ---
 async function runClaude(prompt) {
 	return new Promise((resolve, reject) => {
-		const args = [
-			'--dangerously-skip-permissions',
-			'--allow-dangerously-skip-permissions',
-			'--output-format',
-			'stream-json',
-		];
-		if (MODEL) args.push('--model', MODEL);
-		args.push('-p', prompt);
+		const args = ['run-agent', 'claude', '-p', prompt];
+		if (MODEL) {
+			args.push('-m', MODEL);
+		}
+		args.push('-t', CLAUDE_TIMEOUT.toString());
 
-		const proc = spawn('claude', args);
+		const proc = spawn('botbox', args);
 		let output = '';
-		let resultReceived = false;
-		let timeoutKiller = null;
 
-		console.log(); // Blank line before output
-
-		// Parse JSON stream line-by-line
 		proc.stdout?.on('data', (data) => {
-			const lines = data.toString().split('\n');
-			for (const line of lines) {
-				if (!line.trim()) continue;
-				output += line + '\n';
-
-				try {
-					const parsed = JSON.parse(line);
-
-					// Pretty print the event
-					prettyPrint(parsed);
-
-					// Detect completion signal
-					if (parsed.type === 'result') {
-						resultReceived = true;
-						console.log('\n✓ Claude completed');
-
-						// Give 2s grace period, then kill if hung
-						timeoutKiller = setTimeout(() => {
-							console.log('Warning: Process hung after completion, killing...');
-							proc.kill('SIGKILL');
-						}, 2000);
-					}
-				} catch {
-					// Not valid JSON, skip
-				}
-			}
+			const chunk = data.toString();
+			output += chunk;
+			process.stdout.write(chunk); // Pass through to stdout
 		});
 
 		proc.stderr?.on('data', (data) => {
-			console.error(data.toString());
+			process.stderr.write(data); // Pass through to stderr
 		});
 
 		proc.on('close', (code) => {
-			if (timeoutKiller) clearTimeout(timeoutKiller);
-
-			if (resultReceived) {
+			if (code === 0) {
 				resolve({ output, code: 0 });
-			} else if (code === 0) {
-				resolve({ output, code });
 			} else {
-				reject(new Error(`Claude exited with code ${code}`));
+				reject(new Error(`botbox run-agent exited with code ${code}`));
 			}
 		});
 
 		proc.on('error', (err) => {
-			if (timeoutKiller) clearTimeout(timeoutKiller);
 			reject(err);
 		});
-
-		// Overall timeout
-		setTimeout(() => {
-			if (!resultReceived) {
-				console.error(`Timeout after ${CLAUDE_TIMEOUT}s`);
-				proc.kill('SIGKILL');
-				reject(new Error(`Timeout after ${CLAUDE_TIMEOUT}s`));
-			}
-		}, CLAUDE_TIMEOUT * 1000);
 	});
 }
 

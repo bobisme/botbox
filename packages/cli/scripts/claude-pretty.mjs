@@ -12,22 +12,6 @@ const GREEN = '\x1b[32m';
 // --- Pretty print JSON stream events ---
 function prettyPrint(event) {
 	switch (event.type) {
-		case 'tool_use':
-			const toolName = event.name;
-			const truncatedInput = JSON.stringify(event.input || {}).slice(0, 80);
-			const args = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
-			// TODO: Custom formatting for known tools (Edit, Read, Write, Bash, etc.)
-			console.log(`▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
-			break;
-
-		case 'tool_result':
-			const content = event.content || '';
-			const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
-			const truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
-			const resultText = contentStr.length > 100 ? truncated + '...' : truncated;
-			console.log(`  ${GREEN}✓${RESET} ${DIM}${resultText}${RESET}`);
-			break;
-
 		case 'text':
 			// Thinking or response text - show first line only
 			if (event.text) {
@@ -35,6 +19,37 @@ function prettyPrint(event) {
 				if (firstLine.trim()) {
 					const text = event.text.length > 120 ? firstLine + '...' : firstLine;
 					console.log(`${DIM}• ${text}${RESET}`);
+				}
+			}
+			break;
+
+		case 'assistant':
+			// Assistant messages can contain text, tool_use, or both
+			if (event.message?.content) {
+				for (const item of event.message.content) {
+					if (item.type === 'text' && item.text) {
+						console.log(`\n${BOLD}Response:${RESET} ${item.text}`);
+					} else if (item.type === 'tool_use') {
+						const toolName = item.name;
+						const truncatedInput = JSON.stringify(item.input || {}).slice(0, 80);
+						const args = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
+						console.log(`▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
+					}
+				}
+			}
+			break;
+
+		case 'user':
+			// User messages contain tool results
+			if (event.message?.content) {
+				for (const item of event.message.content) {
+					if (item.type === 'tool_result') {
+						const content = item.content || '';
+						const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+						const truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
+						const resultText = contentStr.length > 100 ? truncated + '...' : truncated;
+						console.log(`  ${GREEN}✓${RESET} ${DIM}${resultText}${RESET}`);
+					}
 				}
 			}
 			break;
@@ -55,13 +70,18 @@ function runClaude(prompt, model = null, timeout = 600) {
 		const args = [
 			'--dangerously-skip-permissions',
 			'--allow-dangerously-skip-permissions',
+			'--verbose',
 			'--output-format',
 			'stream-json',
 		];
 		if (model) args.push('--model', model);
 		args.push('-p', prompt);
 
+		console.error(`[DEBUG] Spawning: claude ${args.join(' ')}`);
 		const proc = spawn('claude', args);
+		proc.stdin?.end(); // Close stdin immediately
+		console.error(`[DEBUG] Process spawned with PID: ${proc.pid}`);
+
 		let output = '';
 		let resultReceived = false;
 		let timeoutKiller = null;
@@ -70,6 +90,7 @@ function runClaude(prompt, model = null, timeout = 600) {
 
 		// Parse JSON stream line-by-line
 		proc.stdout?.on('data', (data) => {
+			console.error(`[DEBUG] Received ${data.length} bytes of stdout`);
 			const lines = data.toString().split('\n');
 			for (const line of lines) {
 				if (!line.trim()) continue;
@@ -99,10 +120,12 @@ function runClaude(prompt, model = null, timeout = 600) {
 		});
 
 		proc.stderr?.on('data', (data) => {
-			console.error(data.toString());
+			console.error(`[DEBUG] Stderr: ${data.toString()}`);
 		});
 
 		proc.on('close', (code) => {
+			console.error(`[DEBUG] Process closed with code ${code}`);
+
 			if (timeoutKiller) clearTimeout(timeoutKiller);
 
 			if (resultReceived) {
@@ -179,8 +202,12 @@ Examples:
 	const model = values.model || null;
 	const timeout = values.timeout ? parseInt(values.timeout, 10) : 600;
 
+	console.error(`[DEBUG] Running claude with model=${model || 'default'}, timeout=${timeout}s`);
+	console.error(`[DEBUG] Prompt length: ${prompt.length} chars`);
+
 	try {
 		await runClaude(prompt, model, timeout);
+		process.exit(0);
 	} catch (err) {
 		console.error('Error:', err.message);
 		process.exit(1);
