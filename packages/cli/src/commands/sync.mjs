@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync, renameSync } from "node:fs"
 import { join } from "node:path"
 import {
   copyWorkflowDocs,
@@ -44,6 +44,18 @@ export function sync(opts) {
     managedSectionContent = readFileSync(agentsMdPath, "utf-8")
     managedSectionUpdated = updateManagedSection(managedSectionContent)
     managedSectionNeedsUpdate = managedSectionContent !== managedSectionUpdated
+  }
+
+  // Migrate scripts from old location to new location
+  let oldScriptsDir = join(projectDir, "scripts")
+  let newScriptsDir = join(agentsDir, "scripts")
+  if (existsSync(oldScriptsDir) && !existsSync(newScriptsDir)) {
+    try {
+      renameSync(oldScriptsDir, newScriptsDir)
+      console.log("Migrated scripts/ to .agents/botbox/scripts/")
+    } catch (err) {
+      console.warn(`Warning: Failed to migrate scripts: ${err.message}`)
+    }
   }
 
   // Check if scripts need updating

@@ -1,5 +1,6 @@
 import { describe, expect, test, beforeEach, afterEach } from "bun:test"
 import {
+  existsSync,
   mkdtempSync,
   mkdirSync,
   rmSync,
@@ -290,5 +291,30 @@ describe("sync", () => {
 
     // Should not throw — malformed config is ignored
     sync({ check: false })
+  })
+
+  test("migrates scripts from old location to new location", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    // Create scripts in old location
+    let oldScriptsDir = join(tempDir, "scripts")
+    copyScripts(oldScriptsDir, {
+      tools: ["crit", "botbus"],
+      reviewers: [],
+    })
+    writeFileSync(join(oldScriptsDir, ".scripts-version"), "test-version")
+
+    sync({ check: false })
+
+    // Scripts should now be in new location
+    let newScriptsDir = join(agentsDir, "scripts")
+    expect(existsSync(newScriptsDir)).toBe(true)
+    expect(existsSync(join(newScriptsDir, "reviewer-loop.sh"))).toBe(true)
+    expect(existsSync(join(newScriptsDir, ".scripts-version"))).toBe(true)
+
+    // Old location should be gone
+    expect(existsSync(oldScriptsDir)).toBe(false)
   })
 })
