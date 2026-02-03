@@ -165,6 +165,42 @@ Key rules:
 - Always output <promise>COMPLETE</promise> or <promise>BLOCKED</promise> at the end.`;
 }
 
+// --- Pretty print JSON stream events ---
+function prettyPrint(event) {
+	switch (event.type) {
+		case 'tool_use':
+			const toolName = event.name;
+			const truncatedInput = JSON.stringify(event.input || {}).slice(0, 80);
+			console.log(`▶ ${toolName} ${truncatedInput}${truncatedInput.length >= 80 ? '...' : ''}`);
+			break;
+
+		case 'tool_result':
+			const content = event.content || '';
+			const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+			const truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
+			console.log(`  ✓ ${truncated}${contentStr.length > 100 ? '...' : ''}`);
+			break;
+
+		case 'text':
+			// Thinking or response text - show first line only
+			if (event.text) {
+				const firstLine = event.text.split('\n')[0].slice(0, 120);
+				if (firstLine.trim()) {
+					console.log(`• ${firstLine}${event.text.length > 120 ? '...' : ''}`);
+				}
+			}
+			break;
+
+		case 'result':
+			// Handled separately
+			break;
+
+		default:
+			// Unknown event type, skip
+			break;
+	}
+}
+
 // --- Run claude with stream-json and hang workaround ---
 async function runClaude(prompt) {
 	return new Promise((resolve, reject) => {
@@ -182,6 +218,8 @@ async function runClaude(prompt) {
 		let resultReceived = false;
 		let timeoutKiller = null;
 
+		console.log(); // Blank line before output
+
 		// Parse JSON stream line-by-line
 		proc.stdout?.on('data', (data) => {
 			const lines = data.toString().split('\n');
@@ -191,6 +229,9 @@ async function runClaude(prompt) {
 
 				try {
 					const parsed = JSON.parse(line);
+
+					// Pretty print the event
+					prettyPrint(parsed);
 
 					// Detect completion signal
 					if (parsed.type === 'result') {
