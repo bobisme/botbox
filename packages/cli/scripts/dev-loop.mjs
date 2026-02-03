@@ -299,20 +299,29 @@ Key rules:
 - Output completion signal at end`;
 }
 
+// --- ANSI formatting ---
+const BOLD = '\x1b[1m';
+const DIM = '\x1b[2m';
+const RESET = '\x1b[0m';
+const GREEN = '\x1b[32m';
+
 // --- Pretty print JSON stream events ---
 function prettyPrint(event) {
 	switch (event.type) {
 		case 'tool_use':
 			const toolName = event.name;
 			const truncatedInput = JSON.stringify(event.input || {}).slice(0, 80);
-			console.log(`▶ ${toolName} ${truncatedInput}${truncatedInput.length >= 80 ? '...' : ''}`);
+			const args = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
+			// TODO: Custom formatting for known tools (Edit, Read, Write, Bash, etc.)
+			console.log(`▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
 			break;
 
 		case 'tool_result':
 			const content = event.content || '';
 			const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
 			const truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
-			console.log(`  ✓ ${truncated}${contentStr.length > 100 ? '...' : ''}`);
+			const resultText = contentStr.length > 100 ? truncated + '...' : truncated;
+			console.log(`  ${GREEN}✓${RESET} ${DIM}${resultText}${RESET}`);
 			break;
 
 		case 'text':
@@ -320,7 +329,8 @@ function prettyPrint(event) {
 			if (event.text) {
 				const firstLine = event.text.split('\n')[0].slice(0, 120);
 				if (firstLine.trim()) {
-					console.log(`• ${firstLine}${event.text.length > 120 ? '...' : ''}`);
+					const text = event.text.length > 120 ? firstLine + '...' : firstLine;
+					console.log(`${DIM}• ${text}${RESET}`);
 				}
 			}
 			break;
