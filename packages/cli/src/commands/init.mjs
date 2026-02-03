@@ -289,7 +289,7 @@ export async function init(opts) {
 
   // Register auto-spawn hook for the project channel
   if (tools.includes("botbus")) {
-    await registerSpawnHook(projectDir, name)
+    await registerSpawnHook(projectDir, name, reviewers)
   }
 
   // Generate .gitignore
@@ -324,11 +324,12 @@ function missingFlag(flag) {
 }
 
 /**
- * Register an auto-spawn hook so the dev agent starts when messages arrive.
+ * Register auto-spawn hooks for dev agent and specialist reviewers.
  * @param {string} projectDir - Project root directory
  * @param {string} name - Project name
+ * @param {string[]} reviewers - Reviewer roles (e.g., ["security", "correctness"])
  */
-async function registerSpawnHook(projectDir, name) {
+async function registerSpawnHook(projectDir, name, reviewers) {
   let { execSync } = await import("node:child_process")
   let absPath = resolve(projectDir)
   let agent = `${name}-dev`
@@ -341,7 +342,7 @@ async function registerSpawnHook(projectDir, name) {
     return
   }
 
-  // Check for existing hook on this channel to avoid duplicates
+  // Register dev agent hook (channel-based)
   try {
     let existing = execSync("bus hooks list --format json", {
       encoding: "utf-8",
@@ -350,22 +351,49 @@ async function registerSpawnHook(projectDir, name) {
     })
     let hooks = JSON.parse(existing)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
-    if (arr.some((/** @type {any} */ h) => h.channel === name && h.active)) {
+    if (arr.some((/** @type {any} */ h) => h.channel === name && h.active && !h.mention)) {
       console.log("Auto-spawn hook already exists, skipping")
-      return
+    } else {
+      execSync(
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bash .agents/botbox/scripts/dev-loop.sh ${name} ${agent}`,
+        { cwd: projectDir, stdio: "inherit", env: process.env },
+      )
+      console.log("Registered auto-spawn hook for dev agent")
     }
   } catch {
-    // Parse failure — proceed to add
+    console.warn("Warning: Failed to register auto-spawn hook for dev agent")
   }
 
-  try {
-    execSync(
-      `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bash .agents/botbox/scripts/dev-loop.sh ${name} ${agent}`,
-      { cwd: projectDir, stdio: "inherit", env: process.env },
-    )
-    console.log("Registered auto-spawn hook for dev agent")
-  } catch {
-    console.warn("Warning: Failed to register auto-spawn hook")
+  // Register reviewer hooks (mention-based)
+  for (let role of reviewers) {
+    let reviewerAgent = `${role}-reviewer`
+    let scriptName = role === "security" ? "spawn-security-reviewer.sh" : "reviewer-loop.sh"
+
+    try {
+      let existing = execSync("bus hooks list --format json", {
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        env: process.env,
+      })
+      let hooks = JSON.parse(existing)
+      let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
+      if (arr.some((/** @type {any} */ h) => h.mention === `@${reviewerAgent}` && h.active)) {
+        console.log(`Mention hook for @${reviewerAgent} already exists, skipping`)
+        continue
+      }
+    } catch {
+      // Parse failure — proceed to add
+    }
+
+    try {
+      execSync(
+        `bus hooks add --agent ${agent} --channel ${name} --mention "@${reviewerAgent}" --claim-owner ${reviewerAgent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${reviewerAgent} --cwd ${absPath} -- bash .agents/botbox/scripts/${scriptName}`,
+        { cwd: projectDir, stdio: "inherit", env: process.env },
+      )
+      console.log(`Registered mention hook for @${reviewerAgent}`)
+    } catch (err) {
+      console.warn(`Warning: Failed to register mention hook for @${reviewerAgent}: ${err.message}`)
+    }
   }
 }
 
