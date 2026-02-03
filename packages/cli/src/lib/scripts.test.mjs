@@ -82,7 +82,7 @@ describe("listEligibleScripts", () => {
   test("spawn-security-reviewer not eligible without security reviewer", () => {
     let eligible = listEligibleScripts({
       tools: ["beads", "maw", "crit", "botbus"],
-      reviewers: ["correctness"],
+      reviewers: [],
     })
     expect(eligible).not.toContain("spawn-security-reviewer.sh")
     expect(eligible).toContain("agent-loop.sh")

@@ -29,7 +29,7 @@ program
   )
   .option(
     "--reviewers <roles>",
-    "Reviewer roles (comma-separated: security,correctness)",
+    "Reviewer roles (e.g., security)",
   )
   .option(
     "--language <language>",

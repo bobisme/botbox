@@ -14,7 +14,7 @@ import { parseAgentsMdHeader, renderAgentsMd } from "../lib/templates.mjs"
 
 export const PROJECT_TYPES = ["api", "cli", "frontend", "library", "monorepo", "tui"]
 export const AVAILABLE_TOOLS = ["beads", "maw", "crit", "botbus", "botty"]
-export const REVIEWER_ROLES = ["security", "correctness"]
+export const REVIEWER_ROLES = ["security"]
 export const LANGUAGES = ["rust", "python", "node", "go", "typescript", "java"]
 export const BOTBOX_CONFIG_VERSION = "1.0.0"
 
@@ -328,7 +328,7 @@ function missingFlag(flag) {
  * Register auto-spawn hooks for dev agent and specialist reviewers.
  * @param {string} projectDir - Project root directory
  * @param {string} name - Project name
- * @param {string[]} reviewers - Reviewer roles (e.g., ["security", "correctness"])
+ * @param {string[]} reviewers - Reviewer roles (e.g., ["security"])
  */
 async function registerSpawnHook(projectDir, name, reviewers) {
   let { execSync } = await import("node:child_process")

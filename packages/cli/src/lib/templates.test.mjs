@@ -43,9 +43,9 @@ describe("renderAgentsMd", () => {
       name: "test",
       type: "api",
       tools: ["beads"],
-      reviewers: ["security", "correctness"],
+      reviewers: ["security"],
     })
-    expect(result).toContain("Reviewer roles: security, correctness")
+    expect(result).toContain("Reviewer roles: security")
   })
 
   test("omits reviewer section when empty", () => {
@@ -302,9 +302,9 @@ describe("parseAgentsMdHeader", () => {
 
   test("parses reviewer roles", () => {
     let result = parseAgentsMdHeader(
-      "# test\n\nProject type: api\nTools: `beads`\nReviewer roles: security, correctness\n",
+      "# test\n\nProject type: api\nTools: `beads`\nReviewer roles: security\n",
     )
-    expect(result.reviewers).toEqual(["security", "correctness"])
+    expect(result.reviewers).toEqual(["security"])
   })
 
   test("returns empty reviewers when line absent", () => {
