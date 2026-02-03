@@ -15,6 +15,7 @@ import {
 } from "../lib/docs.mjs"
 import { ExitError } from "../lib/errors.mjs"
 import { copyScripts, currentScriptsVersion } from "../lib/scripts.mjs"
+import { BOTBOX_CONFIG_VERSION } from "./init.mjs"
 import { sync } from "./sync.mjs"
 
 describe("sync", () => {
@@ -174,7 +175,7 @@ describe("sync", () => {
     writeVersionMarker(agentsDir)
 
     // Set up scripts dir with stale version
-    let scriptsDir = join(tempDir, "scripts")
+    let scriptsDir = join(agentsDir, "scripts")
     copyScripts(scriptsDir, {
       tools: ["crit", "botbus"],
       reviewers: [],
@@ -195,7 +196,7 @@ describe("sync", () => {
     copyWorkflowDocs(agentsDir)
     writeVersionMarker(agentsDir)
 
-    let scriptsDir = join(tempDir, "scripts")
+    let scriptsDir = join(agentsDir, "scripts")
     copyScripts(scriptsDir, {
       tools: ["crit", "botbus"],
       reviewers: [],
@@ -212,11 +213,82 @@ describe("sync", () => {
     writeVersionMarker(agentsDir)
 
     // Create scripts dir without version marker
-    let scriptsDir = join(tempDir, "scripts")
-    mkdirSync(scriptsDir)
+    let scriptsDir = join(agentsDir, "scripts")
+    mkdirSync(scriptsDir, { recursive: true })
     writeFileSync(join(scriptsDir, "some-script.sh"), "#!/bin/bash")
 
     // Should not throw — no version marker means not managed by botbox
+    sync({ check: false })
+  })
+
+  test("upgrades config when version is stale", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    // Write a config with an old version
+    let configPath = join(tempDir, ".botbox.json")
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: "0.9.0",
+        project: { name: "test", type: ["api"] },
+      }, null, 2),
+    )
+
+    sync({ check: false })
+
+    let config = JSON.parse(readFileSync(configPath, "utf-8"))
+    expect(config.version).toBe(BOTBOX_CONFIG_VERSION)
+    expect(config.project.name).toBe("test")
+  })
+
+  test("--check fails when config is stale", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    let configPath = join(tempDir, ".botbox.json")
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: "0.9.0",
+        project: { name: "test", type: ["api"] },
+      }, null, 2),
+    )
+
+    expect(() => sync({ check: true })).toThrow(ExitError)
+    expect(() => sync({ check: true })).toThrow(/Stale:.*\.botbox\.json/)
+  })
+
+  test("treats missing version field as 0.0.0", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    let configPath = join(tempDir, ".botbox.json")
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: { name: "test", type: ["api"] },
+      }, null, 2),
+    )
+
+    sync({ check: false })
+
+    let config = JSON.parse(readFileSync(configPath, "utf-8"))
+    expect(config.version).toBe(BOTBOX_CONFIG_VERSION)
+  })
+
+  test("skips config check on malformed JSON", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    let configPath = join(tempDir, ".botbox.json")
+    writeFileSync(configPath, "{ invalid json")
+
+    // Should not throw — malformed config is ignored
     sync({ check: false })
   })
 })
