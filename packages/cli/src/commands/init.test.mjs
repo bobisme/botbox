@@ -199,11 +199,10 @@ describe("init (non-interactive)", () => {
 
     let scriptsDir = join(tempDir, ".agents", "botbox", "scripts")
     expect(existsSync(scriptsDir)).toBe(true)
-    let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".sh"))
-    expect(scripts).toContain("agent-loop.sh")
-    expect(scripts).toContain("dev-loop.sh")
-    expect(scripts).toContain("reviewer-loop.sh")
-    expect(scripts).toContain("spawn-security-reviewer.sh")
+    let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".mjs"))
+    expect(scripts).toContain("agent-loop.mjs")
+    expect(scripts).toContain("dev-loop.mjs")
+    expect(scripts).toContain("reviewer-loop.mjs")
     expect(existsSync(join(scriptsDir, ".scripts-version"))).toBe(true)
   })
 
@@ -217,11 +216,10 @@ describe("init (non-interactive)", () => {
 
     let scriptsDir = join(tempDir, ".agents", "botbox", "scripts")
     expect(existsSync(scriptsDir)).toBe(true)
-    let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".sh"))
-    expect(scripts).toContain("reviewer-loop.sh")
-    expect(scripts).not.toContain("agent-loop.sh")
-    expect(scripts).not.toContain("dev-loop.sh")
-    expect(scripts).not.toContain("spawn-security-reviewer.sh")
+    let scripts = readdirSync(scriptsDir).filter((f) => f.endsWith(".mjs"))
+    expect(scripts).toContain("reviewer-loop.mjs")
+    expect(scripts).not.toContain("agent-loop.mjs")
+    expect(scripts).not.toContain("dev-loop.mjs")
   })
 
   test("does not create scripts dir when no scripts are eligible", async () => {

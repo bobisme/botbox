@@ -1,8 +1,55 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
 import { readFile } from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { parseArgs } from 'util';
+
+// --- Inline prompt utilities (scripts must be self-contained) ---
+
+/**
+ * Derive the reviewer role from an agent name.
+ * e.g., "myproject-security" -> "security", "myproject-dev" -> null
+ */
+function deriveRoleFromAgentName(agentName, knownRoles = ['security']) {
+	for (const role of knownRoles) {
+		if (agentName.endsWith(`-${role}`)) {
+			return role;
+		}
+	}
+	return null;
+}
+
+/**
+ * Get the prompt name for a reviewer based on role.
+ */
+function getReviewerPromptName(role) {
+	if (role) {
+		return `reviewer-${role}`;
+	}
+	return 'reviewer';
+}
+
+/**
+ * Load a prompt template and substitute variables.
+ */
+function loadPrompt(promptName, variables, promptsDir) {
+	const filePath = join(promptsDir, `${promptName}.md`);
+
+	if (!existsSync(filePath)) {
+		throw new Error(`Prompt template not found: ${filePath}`);
+	}
+
+	let template = readFileSync(filePath, 'utf-8');
+
+	// Simple {{VARIABLE}} substitution
+	for (const [key, value] of Object.entries(variables)) {
+		const pattern = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
+		template = template.replace(pattern, value);
+	}
+
+	return template;
+}
 
 // --- Defaults ---
 let MAX_LOOPS = 20;
@@ -17,10 +64,19 @@ async function loadConfig() {
 	if (existsSync('.botbox.json')) {
 		try {
 			const config = JSON.parse(await readFile('.botbox.json', 'utf-8'));
-			MODEL = config.agents?.reviewer?.model || '';
-			MAX_LOOPS = config.agents?.reviewer?.max_loops || 20;
-			LOOP_PAUSE = config.agents?.reviewer?.pause || 2;
-			CLAUDE_TIMEOUT = config.agents?.reviewer?.timeout || 600;
+			const project = config.project || {};
+			const agents = config.agents || {};
+			const reviewer = agents.reviewer || {};
+
+			// Project identity (can be overridden by CLI args)
+			PROJECT = project.channel || project.name || '';
+			// Reviewer agent name is typically passed via CLI (e.g., maw-security)
+
+			// Agent settings
+			MODEL = reviewer.model || '';
+			MAX_LOOPS = reviewer.max_loops || 20;
+			LOOP_PAUSE = reviewer.pause || 2;
+			CLAUDE_TIMEOUT = reviewer.timeout || 600;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
 		}
@@ -52,8 +108,8 @@ Options:
   -h, --help      Show this help
 
 Arguments:
-  project         Project name (required)
-  agent-name      Agent identity (required)`);
+  project         Project name (default: from .botbox.json)
+  agent-name      Agent identity (required - determines reviewer role)`);
 		process.exit(0);
 	}
 
@@ -61,14 +117,30 @@ Arguments:
 	if (values.pause) LOOP_PAUSE = parseInt(values.pause, 10);
 	if (values.model) MODEL = values.model;
 
-	if (positionals.length < 2) {
-		console.error('Error: Project name and agent name required');
-		console.error('Usage: reviewer-loop.mjs [options] <project> <agent-name>');
+	// CLI args override config values
+	if (positionals.length >= 1) {
+		PROJECT = positionals[0];
+	}
+	if (positionals.length >= 2) {
+		AGENT = positionals[1];
+	} else if (positionals.length === 1) {
+		// If only one arg provided, treat it as agent name (project from config)
+		AGENT = positionals[0];
+	}
+
+	// Require project
+	if (!PROJECT) {
+		console.error('Error: Project name required (provide as argument or configure in .botbox.json)');
+		console.error('Usage: reviewer-loop.mjs [options] [project] <agent-name>');
 		process.exit(1);
 	}
 
-	PROJECT = positionals[0];
-	AGENT = positionals[1];
+	// Require agent name
+	if (!AGENT) {
+		console.error('Error: Agent name required (determines reviewer role)');
+		console.error('Usage: reviewer-loop.mjs [options] [project] <agent-name>');
+		process.exit(1);
+	}
 }
 
 // --- Helper: run command and get output ---
@@ -105,64 +177,27 @@ async function hasWork() {
 
 // --- Build reviewer prompt ---
 function buildPrompt() {
-	return `You are reviewer agent "${AGENT}" for project "${PROJECT}".
+	// Derive role from agent name (e.g., "myproject-security" -> "security")
+	const role = deriveRoleFromAgentName(AGENT);
+	const promptName = getReviewerPromptName(role);
 
-IMPORTANT: Use --agent ${AGENT} on ALL bus and crit commands. Set BOTBOX_PROJECT=${PROJECT}.
+	// Use project-local prompts
+	const promptsDir = join(process.cwd(), '.agents', 'botbox', 'prompts');
 
-Execute exactly ONE review cycle, then STOP. Do not process multiple reviews.
-
-At the end of your work, output exactly one of these completion signals:
-- <promise>COMPLETE</promise> if you completed a review or determined no reviews exist
-- <promise>BLOCKED</promise> if you encountered an error
-
-1. INBOX:
-   Run: bus inbox --agent ${AGENT} --channels ${PROJECT} --mark-read
-   Note any review-request or review-response messages. Ignore task-claim, task-done, spawn-ack, etc.
-
-2. FIND REVIEWS:
-   Run: crit reviews list --format json
-   Look for open reviews (status: "open"). Pick one to process.
-   If no open reviews exist, say "NO_REVIEWS_PENDING" and stop.
-   bus statuses set --agent ${AGENT} "Review: <review-id>" --ttl 30m
-
-3. REVIEW (follow .agents/botbox/review-loop.md):
-   a. Read the review and diff: crit review <id> and crit diff <id>
-   b. Read the full source files changed in the diff — use absolute paths
-   c. Check project config (e.g., Cargo.toml, package.json) for dependencies and settings
-   d. Run static analysis if applicable (e.g., cargo clippy, oxlint) — cite warnings in comments
-   e. Cross-file consistency: compare similar functions across files for uniform security/validation.
-      If one function does it right and another doesn't, that's a bug.
-   f. Boundary checks: trace user-supplied values through to where they're used.
-      Check arithmetic for edge cases: 0, 1, MAX, negative, empty.
-   g. For each issue found, comment with severity:
-      - CRITICAL: Security vulnerabilities, data loss, crashes in production
-      - HIGH: Correctness bugs, race conditions, resource leaks
-      - MEDIUM: Error handling gaps, missing validation at boundaries
-      - LOW: Code quality, naming, structure
-      - INFO: Suggestions, style preferences, minor improvements
-      Use: crit comment <id> "SEVERITY: <feedback>" --file <path> --line <line-or-range>
-   h. Vote:
-      - crit block <id> --reason "..." if any CRITICAL or HIGH issues exist
-      - crit lgtm <id> if no CRITICAL or HIGH issues
-
-4. ANNOUNCE:
-   bus send --agent ${AGENT} ${PROJECT} "Review complete: <review-id> — <LGTM|BLOCKED>" -L review-done
-
-5. RE-REVIEW (if a review-response message indicates the author addressed feedback):
-   The author's fixes are in their workspace, not the main branch.
-   Check the review-response bus message for the workspace path.
-   Read files from the workspace path (e.g., .workspaces/\$WS/src/...).
-   Verify fixes against original issues — read actual code, don't just trust replies.
-   Run static analysis in the workspace: cd <workspace-path> && <analysis-command>
-   If all resolved: crit lgtm <id>. If not: reply on threads explaining what's still wrong.
-
-Key rules:
-- Process exactly one review per cycle, then STOP.
-- Focus on security and correctness. Ground findings in evidence — compiler output,
-  documentation, or source code — not assumptions about API behavior.
-- All bus and crit commands use --agent ${AGENT}.
-- STOP after completing one review. Do not loop.
-- Always output <promise>COMPLETE</promise> or <promise>BLOCKED</promise> at the end.`;
+	try {
+		return loadPrompt(promptName, { AGENT, PROJECT }, promptsDir);
+	} catch (err) {
+		// Fall back to base reviewer if specialized prompt not found
+		if (role && promptName !== 'reviewer') {
+			console.warn(`Warning: ${promptName}.md not found, using base reviewer prompt`);
+			try {
+				return loadPrompt('reviewer', { AGENT, PROJECT }, promptsDir);
+			} catch {
+				// If even base fails, throw original error
+			}
+		}
+		throw err;
+	}
 }
 
 // --- Run agent via botbox run-agent ---

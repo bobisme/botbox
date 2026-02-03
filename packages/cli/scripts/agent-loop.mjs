@@ -18,8 +18,17 @@ async function loadConfig() {
 	if (existsSync('.botbox.json')) {
 		try {
 			const config = JSON.parse(await readFile('.botbox.json', 'utf-8'));
-			MODEL = config.agents?.worker?.model || '';
-			CLAUDE_TIMEOUT = config.agents?.worker?.timeout || 600;
+			const project = config.project || {};
+			const agents = config.agents || {};
+			const worker = agents.worker || {};
+
+			// Project identity (can be overridden by CLI args)
+			PROJECT = project.channel || project.name || '';
+			// Workers get auto-generated names by default (AGENT stays empty)
+
+			// Agent settings
+			MODEL = worker.model || '';
+			CLAUDE_TIMEOUT = worker.timeout || 600;
 			PUSH_MAIN = config.pushMain || false;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
@@ -52,7 +61,7 @@ Options:
   -h, --help      Show this help
 
 Arguments:
-  project         Project name (required)
+  project         Project name (default: from .botbox.json)
   agent-name      Agent identity (default: auto-generated)`);
 		process.exit(0);
 	}
@@ -61,14 +70,20 @@ Arguments:
 	if (values.pause) LOOP_PAUSE = parseInt(values.pause, 10);
 	if (values.model) MODEL = values.model;
 
-	if (positionals.length < 1) {
-		console.error('Error: Project name required');
+	// CLI args override config values
+	if (positionals.length >= 1) {
+		PROJECT = positionals[0];
+	}
+	if (positionals.length >= 2) {
+		AGENT = positionals[1];
+	}
+
+	// Require project (either from CLI or config)
+	if (!PROJECT) {
+		console.error('Error: Project name required (provide as argument or configure in .botbox.json)');
 		console.error('Usage: agent-loop.mjs [options] <project> [agent-name]');
 		process.exit(1);
 	}
-
-	PROJECT = positionals[0];
-	AGENT = positionals[1] || null;
 }
 
 // --- Helper: run command and get output ---
@@ -106,6 +121,7 @@ async function hasWork() {
 		// Check claims
 		const claimsResult = await runCommand('bus', [
 			'claims',
+			'list',
 			'--agent',
 			AGENT,
 			'--mine',
@@ -160,7 +176,7 @@ At the end of your work, output exactly one of these completion signals:
 - <promise>BLOCKED</promise> if you are stuck and cannot proceed
 
 0. RESUME CHECK (do this FIRST):
-   Run: bus claims --agent ${AGENT} --mine
+   Run: bus claims list --agent ${AGENT} --mine
    If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
    - Run: br comments <bead-id> to understand what was done before and what remains.
    - Look for workspace info in comments (workspace name and path).

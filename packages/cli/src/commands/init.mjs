@@ -9,14 +9,16 @@ import {
 import { join, resolve } from "node:path"
 import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
+import { copyPrompts, writePromptsVersionMarker } from "../lib/prompts.mjs"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
 import { parseAgentsMdHeader, renderAgentsMd } from "../lib/templates.mjs"
+import { currentMigrationVersion } from "../migrations/index.mjs"
 
 export const PROJECT_TYPES = ["api", "cli", "frontend", "library", "monorepo", "tui"]
 export const AVAILABLE_TOOLS = ["beads", "maw", "crit", "botbus", "botty"]
 export const REVIEWER_ROLES = ["security"]
 export const LANGUAGES = ["rust", "python", "node", "go", "typescript", "java"]
-export const BOTBOX_CONFIG_VERSION = "1.0.0"
+export const BOTBOX_CONFIG_VERSION = currentMigrationVersion()
 
 /**
  * @param {object} opts
@@ -156,6 +158,14 @@ export async function init(opts) {
   writeVersionMarker(agentsDir)
   console.log("Copied workflow docs")
 
+  // Copy prompt templates
+  let promptsDir = join(agentsDir, "prompts")
+  let copiedPrompts = copyPrompts(promptsDir)
+  if (copiedPrompts.length > 0) {
+    writePromptsVersionMarker(promptsDir)
+    console.log("Copied prompt templates")
+  }
+
   // Copy loop scripts
   let scriptsDir = join(agentsDir, "scripts")
   let copied = copyScripts(scriptsDir, { tools, reviewers })
@@ -191,6 +201,8 @@ export async function init(opts) {
         name,
         type: types,
         languages: languages.length > 0 ? languages : undefined,
+        default_agent: `${name}-dev`,
+        channel: name,
       },
       tools: {
         beads: tools.includes("beads"),
@@ -356,7 +368,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
       console.log("Auto-spawn hook already exists, skipping")
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bash .agents/botbox/scripts/dev-loop.sh ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/dev-loop.mjs ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log("Registered auto-spawn hook for dev agent")
@@ -368,7 +380,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
   // Register reviewer hooks (mention-based)
   for (let role of reviewers) {
     let reviewerAgent = `${name}-${role}`
-    let scriptName = role === "security" ? "spawn-security-reviewer.sh" : "reviewer-loop.sh"
+    let scriptName = "reviewer-loop.mjs"
 
     try {
       let existing = execSync("bus hooks list --format json", {
@@ -388,7 +400,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
 
     try {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --mention "@${reviewerAgent}" --claim-owner ${reviewerAgent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${reviewerAgent} --cwd ${absPath} -- bash .agents/botbox/scripts/${scriptName}`,
+        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim-owner ${reviewerAgent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${reviewerAgent} --cwd ${absPath} -- bun .agents/botbox/scripts/${scriptName}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log(`Registered mention hook for @${reviewerAgent}`)

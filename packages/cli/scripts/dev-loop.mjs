@@ -20,9 +20,19 @@ async function loadConfig() {
 	if (existsSync('.botbox.json')) {
 		try {
 			const config = JSON.parse(await readFile('.botbox.json', 'utf-8'));
-			MODEL = config.agents?.dev?.model || '';
-			WORKER_MODEL = config.agents?.worker?.model || '';
-			CLAUDE_TIMEOUT = config.agents?.dev?.timeout || 600;
+			const project = config.project || {};
+			const agents = config.agents || {};
+			const dev = agents.dev || {};
+			const worker = agents.worker || {};
+
+			// Project identity (can be overridden by CLI args)
+			PROJECT = project.channel || project.name || '';
+			AGENT = project.default_agent || '';
+
+			// Agent settings
+			MODEL = dev.model || '';
+			WORKER_MODEL = worker.model || '';
+			CLAUDE_TIMEOUT = dev.timeout || 600;
 			PUSH_MAIN = config.pushMain || false;
 			REVIEW = config.review ?? true;
 		} catch (err) {
@@ -59,8 +69,8 @@ Options:
   -h, --help      Show this help
 
 Arguments:
-  project         Project name (required)
-  agent-name      Agent identity (default: auto-generated)`);
+  project         Project name (default: from .botbox.json)
+  agent-name      Agent identity (default: from .botbox.json or auto-generated)`);
 		process.exit(0);
 	}
 
@@ -69,14 +79,20 @@ Arguments:
 	if (values.model) MODEL = values.model;
 	if (values.review !== undefined) REVIEW = values.review;
 
-	if (positionals.length < 1) {
-		console.error('Error: Project name required');
+	// CLI args override config values
+	if (positionals.length >= 1) {
+		PROJECT = positionals[0];
+	}
+	if (positionals.length >= 2) {
+		AGENT = positionals[1];
+	}
+
+	// Require project (either from CLI or config)
+	if (!PROJECT) {
+		console.error('Error: Project name required (provide as argument or configure in .botbox.json)');
 		console.error('Usage: dev-loop.mjs [options] <project> [agent-name]');
 		process.exit(1);
 	}
-
-	PROJECT = positionals[0];
-	AGENT = positionals[1] || null;
 }
 
 // --- Helper: run command and get output ---
@@ -116,6 +132,7 @@ async function hasWork() {
 			'claims',
 			'--agent',
 			AGENT,
+			'list',
 			'--mine',
 			'--format',
 			'json',
@@ -195,7 +212,7 @@ At the end of your work, output:
 
 ## 1. RESUME CHECK (do this FIRST)
 
-Run: bus claims --agent ${AGENT} --mine
+Run: bus claims list --agent ${AGENT} --mine
 
 If you hold any claims:
 - bead:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.

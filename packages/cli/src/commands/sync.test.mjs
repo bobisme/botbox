@@ -311,10 +311,54 @@ describe("sync", () => {
     // Scripts should now be in new location
     let newScriptsDir = join(agentsDir, "scripts")
     expect(existsSync(newScriptsDir)).toBe(true)
-    expect(existsSync(join(newScriptsDir, "reviewer-loop.sh"))).toBe(true)
+    expect(existsSync(join(newScriptsDir, "reviewer-loop.mjs"))).toBe(true)
     expect(existsSync(join(newScriptsDir, ".scripts-version"))).toBe(true)
 
     // Old location should be gone
     expect(existsSync(oldScriptsDir)).toBe(false)
+
+    let config = JSON.parse(readFileSync(join(tempDir, ".botbox.json"), "utf-8"))
+    expect(config.version).toBe(BOTBOX_CONFIG_VERSION)
+  })
+
+  test("replaces .sh scripts with .mjs scripts", () => {
+    let agentsDir = join(tempDir, ".agents", "botbox")
+    copyWorkflowDocs(agentsDir)
+    writeVersionMarker(agentsDir)
+
+    // Create .sh scripts in new location (simulating pre-migration state)
+    let scriptsDir = join(agentsDir, "scripts")
+    mkdirSync(scriptsDir, { recursive: true })
+    writeFileSync(join(scriptsDir, "agent-loop.sh"), "#!/bin/bash\necho old")
+    writeFileSync(join(scriptsDir, "dev-loop.sh"), "#!/bin/bash\necho old")
+    writeFileSync(join(scriptsDir, "reviewer-loop.sh"), "#!/bin/bash\necho old")
+    writeFileSync(join(scriptsDir, ".scripts-version"), "old-version")
+
+    // Create config at version 1.0.1 (before .sh → .mjs migration)
+    let configPath = join(tempDir, ".botbox.json")
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        version: "1.0.1",
+        project: { name: "test", type: ["cli"] },
+        tools: { beads: true, maw: true, crit: true, botbus: true },
+        review: { reviewers: [] },
+      }, null, 2),
+    )
+
+    sync({ check: false })
+
+    // .sh scripts should be gone
+    expect(existsSync(join(scriptsDir, "agent-loop.sh"))).toBe(false)
+    expect(existsSync(join(scriptsDir, "dev-loop.sh"))).toBe(false)
+    expect(existsSync(join(scriptsDir, "reviewer-loop.sh"))).toBe(false)
+
+    // .mjs scripts should be present
+    expect(existsSync(join(scriptsDir, "agent-loop.mjs"))).toBe(true)
+    expect(existsSync(join(scriptsDir, "dev-loop.mjs"))).toBe(true)
+    expect(existsSync(join(scriptsDir, "reviewer-loop.mjs"))).toBe(true)
+
+    let config = JSON.parse(readFileSync(configPath, "utf-8"))
+    expect(config.version).toBe(BOTBOX_CONFIG_VERSION)
   })
 })
