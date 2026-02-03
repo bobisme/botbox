@@ -1,0 +1,511 @@
+#!/usr/bin/env node
+import { spawn } from 'child_process';
+import { readFile } from 'fs/promises';
+import { existsSync } from 'fs';
+import { parseArgs } from 'util';
+
+// --- Defaults ---
+let MAX_LOOPS = 20;
+let LOOP_PAUSE = 2;
+let CLAUDE_TIMEOUT = 600;
+let MODEL = '';
+let WORKER_MODEL = '';
+let PROJECT = '';
+let AGENT = '';
+let PUSH_MAIN = false;
+let REVIEW = true;
+
+// --- Load config from .botbox.json ---
+async function loadConfig() {
+	if (existsSync('.botbox.json')) {
+		try {
+			const config = JSON.parse(await readFile('.botbox.json', 'utf-8'));
+			MODEL = config.agents?.dev?.model || '';
+			WORKER_MODEL = config.agents?.worker?.model || '';
+			CLAUDE_TIMEOUT = config.agents?.dev?.timeout || 600;
+			PUSH_MAIN = config.pushMain || false;
+			REVIEW = config.review ?? true;
+		} catch (err) {
+			console.error('Warning: Failed to load .botbox.json:', err.message);
+		}
+	}
+}
+
+// --- Parse CLI args ---
+function parseCliArgs() {
+	const { values, positionals } = parseArgs({
+		options: {
+			'max-loops': { type: 'string' },
+			pause: { type: 'string' },
+			model: { type: 'string' },
+			review: { type: 'boolean' },
+			help: { type: 'boolean', short: 'h' },
+		},
+		allowPositionals: true,
+	});
+
+	if (values.help) {
+		console.log(`Usage: dev-loop.mjs [options] <project> [agent-name]
+
+Lead dev agent. Triages inbox, dispatches work to multiple workers in parallel
+when appropriate, monitors progress, merges completed work.
+
+Options:
+  --max-loops N   Max iterations (default: ${MAX_LOOPS})
+  --pause N       Seconds between iterations (default: ${LOOP_PAUSE})
+  --model M       Model for the lead dev (default: system default)
+  --review        Enable code review (default: ${REVIEW})
+  --no-review     Disable code review
+  -h, --help      Show this help
+
+Arguments:
+  project         Project name (required)
+  agent-name      Agent identity (default: auto-generated)`);
+		process.exit(0);
+	}
+
+	if (values['max-loops']) MAX_LOOPS = parseInt(values['max-loops'], 10);
+	if (values.pause) LOOP_PAUSE = parseInt(values.pause, 10);
+	if (values.model) MODEL = values.model;
+	if (values.review !== undefined) REVIEW = values.review;
+
+	if (positionals.length < 1) {
+		console.error('Error: Project name required');
+		console.error('Usage: dev-loop.mjs [options] <project> [agent-name]');
+		process.exit(1);
+	}
+
+	PROJECT = positionals[0];
+	AGENT = positionals[1] || null;
+}
+
+// --- Helper: run command and get output ---
+async function runCommand(cmd, args = []) {
+	return new Promise((resolve, reject) => {
+		const proc = spawn(cmd, args, { shell: true });
+		let stdout = '';
+		let stderr = '';
+
+		proc.stdout?.on('data', (data) => (stdout += data));
+		proc.stderr?.on('data', (data) => (stderr += data));
+
+		proc.on('close', (code) => {
+			if (code === 0) resolve({ stdout: stdout.trim(), stderr: stderr.trim() });
+			else reject(new Error(`${cmd} exited with code ${code}: ${stderr}`));
+		});
+	});
+}
+
+// --- Helper: generate agent name if not provided ---
+async function getAgentName() {
+	if (AGENT) return AGENT;
+	try {
+		const { stdout } = await runCommand('bus', ['generate-name']);
+		return stdout.trim();
+	} catch (err) {
+		console.error('Error generating agent name:', err.message);
+		process.exit(1);
+	}
+}
+
+// --- Helper: check if there is work ---
+async function hasWork() {
+	try {
+		// Check claims (dispatched workers or in-progress beads)
+		const claimsResult = await runCommand('bus', [
+			'claims',
+			'--agent',
+			AGENT,
+			'--mine',
+			'--format',
+			'json',
+		]);
+		const claims = JSON.parse(claimsResult.stdout || '{}');
+		if (claims.claims && claims.claims.length > 0) return true;
+
+		// Check inbox
+		const inboxResult = await runCommand('bus', [
+			'inbox',
+			'--agent',
+			AGENT,
+			'--channels',
+			PROJECT,
+			'--count-only',
+			'--format',
+			'json',
+		]);
+		const inbox = JSON.parse(inboxResult.stdout || '{}');
+		if (inbox.total_unread > 0) return true;
+
+		// Check ready beads
+		const readyResult = await runCommand('br', ['ready', '--json']);
+		const ready = JSON.parse(readyResult.stdout || '[]');
+		const readyCount = Array.isArray(ready) ? ready.length : ready.issues?.length || ready.beads?.length || 0;
+		if (readyCount > 0) return true;
+
+		return false;
+	} catch (err) {
+		console.error('Error checking for work:', err.message);
+		return false;
+	}
+}
+
+// --- Build dev lead prompt ---
+function buildPrompt() {
+	const pushMainStep = PUSH_MAIN
+		? '\n  14. Push to GitHub: jj bookmark set main -r @- && jj git push (if fails, announce issue).'
+		: '';
+
+	const reviewInstructions = REVIEW ? 'REVIEW is true' : 'REVIEW is false';
+
+	return `You are lead dev agent "${AGENT}" for project "${PROJECT}".
+
+IMPORTANT: Use --agent ${AGENT} on ALL bus and crit commands. Use --actor ${AGENT} on ALL mutating br commands. Use --author ${AGENT} on br comments add. Set BOTBOX_PROJECT=${PROJECT}. ${reviewInstructions}.
+
+Execute exactly ONE dev cycle. Triage inbox, assess ready beads, either work on one yourself
+or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
+
+At the end of your work, output exactly one of these completion signals:
+- <promise>COMPLETE</promise> if you completed work or determined no work available
+- <promise>END_OF_STORY</promise> if iteration done but more work remains
+
+## 1. RESUME CHECK (do this FIRST)
+
+Run: bus claims --agent ${AGENT} --mine
+
+If you hold any claims:
+- bead:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.
+- bead:// claim without review: Complete the work, then review or finish.
+- workspace:// claims: These are dispatched workers. Skip to step 6 (MONITOR).
+
+If no claims: proceed to step 2 (INBOX).
+
+## 2. INBOX
+
+Run: bus inbox --agent ${AGENT} --channels ${PROJECT} --mark-read
+
+Process each message:
+- Task requests (-L task-request): create beads with br create
+- Status/questions: reply on bus
+- Feedback (-L feedback): triage and respond
+- Announcements ("Working on...", "Completed...", "online"): ignore, no action
+- Duplicate requests: note existing bead, don't create another
+
+## 3. TRIAGE
+
+Run: br ready --json
+
+Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promise> and stop.
+
+GROOM each ready bead:
+- br show <id> — ensure clear title, description, acceptance criteria, priority
+- Comment what you changed: br comments add --actor ${AGENT} --author ${AGENT} <id> "..."
+- If bead is claimed (check bus claims), skip it
+
+Assess bead count:
+- 0 ready beads (but dispatched workers pending): just monitor, skip to step 6.
+- 1 ready bead: do it yourself sequentially (follow steps 4a below).
+- 2+ ready beads: dispatch workers in parallel (follow steps 4b below).
+
+## 4a. SEQUENTIAL (1 bead — do it yourself)
+
+Same as the standard worker loop:
+1. br update --actor ${AGENT} <id> --status=in_progress
+2. bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "<id>"
+3. maw ws create --random — note workspace NAME and absolute PATH
+4. bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<id>"
+5. br comments add --actor ${AGENT} --author ${AGENT} <id> "Started in workspace \$WS (\$WS_PATH)"
+6. bus statuses set --agent ${AGENT} "Working: <id>" --ttl 30m
+7. Announce: bus send --agent ${AGENT} ${PROJECT} "Working on <id>: <title>" -L task-claim
+8. Implement the task. All file operations use absolute WS_PATH.
+   For jj: maw ws jj \$WS <args>. Do NOT cd into workspace and stay there.
+9. br comments add --actor ${AGENT} --author ${AGENT} <id> "Progress: ..."
+10. Describe: maw ws jj \$WS describe -m "<id>: <summary>"
+
+If REVIEW is true:
+  11. Create review: crit reviews create --agent ${AGENT} --title "<title>" --description "<summary>"
+  12. br comments add --actor ${AGENT} --author ${AGENT} <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)"
+  13. bus statuses set --agent ${AGENT} "Review: <review-id>"
+  14. bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id>" -L review-request
+  15. STOP this iteration — wait for reviewer.
+
+If REVIEW is false:
+  11. Merge: maw ws merge \$WS --destroy
+  12. br close --actor ${AGENT} <id> --reason="Completed"
+  13. bus claims release --agent ${AGENT} --all
+  14. br sync --flush-only${pushMainStep}
+  ${PUSH_MAIN ? '15' : '14'}. bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+
+## 4b. PARALLEL DISPATCH (2+ beads)
+
+For EACH independent ready bead, assess and dispatch:
+
+### Model Selection
+Read each bead (br show <id>) and select a model based on complexity:
+- **${WORKER_MODEL || 'default'}**: Use for most tasks unless signals suggest otherwise.
+- **haiku**: Clear acceptance criteria, small scope (<~50 lines), well-groomed. E.g., add endpoint, fix typo, update config.
+- **sonnet**: Multiple files, design decisions, moderate complexity. E.g., refactor module, add feature with tests.
+- **opus**: Deep debugging, architecture changes, subtle correctness issues. E.g., fix race condition, redesign data flow.
+
+### For each bead being dispatched:
+1. maw ws create --random — note NAME and PATH
+2. bus generate-name — get a worker identity
+3. br update --actor ${AGENT} <id> --status=in_progress
+4. bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "dispatched to <worker-name>"
+5. bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<id>"
+6. br comments add --actor ${AGENT} --author ${AGENT} <id> "Dispatched worker <worker-name> (model: <model>) in workspace \$WS (\$WS_PATH)"
+7. bus statuses set --agent ${AGENT} "Dispatch: <id>" --ttl 5m
+8. bus send --agent ${AGENT} ${PROJECT} "Dispatching <worker-name> for <id>: <title>" -L task-claim
+
+DO NOT actually spawn background processes — that's handled by bash/botty. Instead, just note:
+"Workers would be spawned here in production. For now, skip to monitoring."
+
+## 5. MONITOR (if workers are dispatched)
+
+Check for completion messages:
+- bus inbox --agent ${AGENT} --channels ${PROJECT} -n 20
+- Look for task-done messages from workers
+- Check workspace status: maw ws list
+
+For each completed worker:
+- Read their progress comments: br comments <id>
+- Verify the work looks reasonable (spot check key files)
+
+## 6. FINISH (merge completed work)
+
+For each completed bead with a workspace:
+
+If REVIEW is true:
+  1. crit reviews create --agent ${AGENT} --title "<title>" --description "<summary of changes>"
+  2. br comments add --actor ${AGENT} --author ${AGENT} <id> "Review requested: <review-id>"
+  3. bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id>" -L review-request
+  4. STOP — wait for reviewer
+
+If REVIEW is false:
+  1. maw ws merge \$WS --destroy
+  2. br close --actor ${AGENT} <id>
+  3. br sync --flush-only${pushMainStep}
+  4. bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+
+After finishing all ready work:
+  bus claims release --agent ${AGENT} --all
+  Output: <promise>END_OF_STORY</promise> if more beads remain, else <promise>COMPLETE</promise>
+
+Key rules:
+- Triage first, then decide: sequential vs parallel
+- Monitor dispatched workers, merge when ready
+- All bus/crit commands use --agent ${AGENT}
+- For parallel dispatch, note limitations of this prompt-based approach
+- Output completion signal at end`;
+}
+
+// --- Run claude with stream-json and hang workaround ---
+async function runClaude(prompt) {
+	return new Promise((resolve, reject) => {
+		const args = [
+			'--dangerously-skip-permissions',
+			'--allow-dangerously-skip-permissions',
+			'--output-format',
+			'stream-json',
+		];
+		if (MODEL) args.push('--model', MODEL);
+		args.push('-p', prompt);
+
+		const proc = spawn('claude', args);
+		let output = '';
+		let resultReceived = false;
+		let timeoutKiller = null;
+
+		// Parse JSON stream line-by-line
+		proc.stdout?.on('data', (data) => {
+			const lines = data.toString().split('\n');
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				output += line + '\n';
+
+				try {
+					const parsed = JSON.parse(line);
+
+					// Detect completion signal
+					if (parsed.type === 'result') {
+						resultReceived = true;
+						console.log('\n✓ Claude completed');
+
+						// Give 2s grace period, then kill if hung
+						timeoutKiller = setTimeout(() => {
+							console.log('Warning: Process hung after completion, killing...');
+							proc.kill('SIGKILL');
+						}, 2000);
+					}
+				} catch {
+					// Not valid JSON, skip
+				}
+			}
+		});
+
+		proc.stderr?.on('data', (data) => {
+			console.error(data.toString());
+		});
+
+		proc.on('close', (code) => {
+			if (timeoutKiller) clearTimeout(timeoutKiller);
+
+			if (resultReceived) {
+				resolve({ output, code: 0 });
+			} else if (code === 0) {
+				resolve({ output, code });
+			} else {
+				reject(new Error(`Claude exited with code ${code}`));
+			}
+		});
+
+		proc.on('error', (err) => {
+			if (timeoutKiller) clearTimeout(timeoutKiller);
+			reject(err);
+		});
+
+		// Overall timeout
+		setTimeout(() => {
+			if (!resultReceived) {
+				console.error(`Timeout after ${CLAUDE_TIMEOUT}s`);
+				proc.kill('SIGKILL');
+				reject(new Error(`Timeout after ${CLAUDE_TIMEOUT}s`));
+			}
+		}, CLAUDE_TIMEOUT * 1000);
+	});
+}
+
+// --- Cleanup handler ---
+async function cleanup() {
+	console.log('Cleaning up...');
+	try {
+		await runCommand('bus', ['statuses', 'clear', '--agent', AGENT]);
+	} catch {}
+	try {
+		await runCommand('bus', ['claims', 'release', '--agent', AGENT, `agent://${AGENT}`]);
+	} catch {}
+	try {
+		await runCommand('bus', ['claims', 'release', '--agent', AGENT, '--all']);
+	} catch {}
+	try {
+		await runCommand('br', ['sync', '--flush-only']);
+	} catch {}
+	console.log(`Cleanup complete for ${AGENT}.`);
+}
+
+process.on('SIGINT', async () => {
+	await cleanup();
+	process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+	await cleanup();
+	process.exit(0);
+});
+
+// --- Main ---
+async function main() {
+	await loadConfig();
+	parseCliArgs();
+
+	AGENT = await getAgentName();
+
+	console.log(`Agent:     ${AGENT}`);
+	console.log(`Project:   ${PROJECT}`);
+	console.log(`Max loops: ${MAX_LOOPS}`);
+	console.log(`Pause:     ${LOOP_PAUSE}s`);
+	console.log(`Model:     ${MODEL || 'system default'}`);
+	console.log(`Review:    ${REVIEW}`);
+
+	// Confirm identity
+	try {
+		await runCommand('bus', ['whoami', '--agent', AGENT]);
+	} catch (err) {
+		console.error('Error confirming agent identity:', err.message);
+		process.exit(1);
+	}
+
+	// Refresh or stake agent lease
+	try {
+		await runCommand('bus', ['claims', 'refresh', '--agent', AGENT, `agent://${AGENT}`]);
+	} catch {
+		try {
+			await runCommand('bus', [
+				'claims',
+				'stake',
+				'--agent',
+				AGENT,
+				`agent://${AGENT}`,
+				'-m',
+				`dev-loop for ${PROJECT}`,
+			]);
+		} catch (err) {
+			console.log(`Claim denied. Agent ${AGENT} is already running.`);
+			process.exit(0);
+		}
+	}
+
+	// Announce
+	await runCommand('bus', [
+		'send',
+		'--agent',
+		AGENT,
+		PROJECT,
+		`Dev agent ${AGENT} online, starting dev loop`,
+		'-L',
+		'spawn-ack',
+	]);
+
+	// Set starting status
+	await runCommand('bus', ['statuses', 'set', '--agent', AGENT, 'Starting loop', '--ttl', '10m']);
+
+	// Main loop
+	for (let i = 1; i <= MAX_LOOPS; i++) {
+		console.log(`\n--- Dev loop ${i}/${MAX_LOOPS} ---`);
+
+		if (!(await hasWork())) {
+			await runCommand('bus', ['statuses', 'set', '--agent', AGENT, 'Idle']);
+			console.log('No work available. Exiting cleanly.');
+			await runCommand('bus', [
+				'send',
+				'--agent',
+				AGENT,
+				PROJECT,
+				`No work remaining. Dev agent ${AGENT} signing off.`,
+				'-L',
+				'agent-idle',
+			]);
+			break;
+		}
+
+		// Run Claude
+		try {
+			const prompt = buildPrompt();
+			const result = await runClaude(prompt);
+
+			// Check for completion signals
+			if (result.output.includes('<promise>COMPLETE</promise>')) {
+				console.log('✓ Dev cycle complete - no more work');
+				break;
+			} else if (result.output.includes('<promise>END_OF_STORY</promise>')) {
+				console.log('✓ Iteration complete - more work remains');
+			} else {
+				console.log('Warning: No completion signal found in output');
+			}
+		} catch (err) {
+			console.error('Error running Claude:', err.message);
+			// Continue to next iteration on error
+		}
+
+		if (i < MAX_LOOPS) {
+			await new Promise((resolve) => setTimeout(resolve, LOOP_PAUSE * 1000));
+		}
+	}
+
+	await cleanup();
+}
+
+main().catch((err) => {
+	console.error('Fatal error:', err);
+	cleanup().finally(() => process.exit(1));
+});
