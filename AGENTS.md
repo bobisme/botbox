@@ -39,6 +39,28 @@ bun test        # run tests (packages/cli/)
 
 All source is `.mjs` with JSDoc type annotations — no build step. Types are enforced by `tsc --checkJs` with strict settings.
 
+## Testing
+
+**Automated tests**: Run `bun test` - these use isolated environments automatically.
+
+**Manual testing**: ALWAYS use isolated data directories to avoid polluting actual project data:
+
+```bash
+# Use temporary botbus data directory
+BOTBUS_DATA_DIR=/tmp/test-botbus botbox init --name test --type cli --tools beads,maw,crit,botbus --no-interactive
+
+# Also isolate other tools during testing
+BOTBUS_DATA_DIR=/tmp/test-botbus bus hooks list
+BOTBUS_DATA_DIR=/tmp/test-botbus bus send ...
+
+# Clean up after testing
+rm -rf /tmp/test-botbus
+```
+
+**Why this matters**: Without isolation, manual tests create hooks, claims, and messages in your actual botbus data directory, mixing test artifacts with real project data.
+
+**Applies to**: Any manual testing with bus, botty, crit, maw, or br commands during development.
+
 ## CLI Architecture
 
 Entry point: `packages/cli/src/index.mjs`
