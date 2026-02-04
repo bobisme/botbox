@@ -40,12 +40,14 @@ program
   .option("--install-command <cmd>", "Command to install locally after releases (e.g., 'just install')")
   .option("--force", "Overwrite existing AGENTS.md")
   .option("--no-interactive", "Skip interactive prompts (use flags only)")
+  .option("--no-commit", "Skip auto-commit after initialization")
   .action(init)
 
 program
   .command("sync")
   .description("Sync workflow docs and managed AGENTS.md sections")
   .option("--check", "Check for staleness without writing")
+  .option("--no-commit", "Skip auto-commit after sync")
   .action(sync)
 
 program

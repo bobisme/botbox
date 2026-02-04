@@ -7,6 +7,7 @@ import {
   writeVersionMarker,
 } from "../lib/docs.mjs"
 import { ExitError } from "../lib/errors.mjs"
+import { commit, hasUncommittedChanges, isJjRepo } from "../lib/jj.mjs"
 import {
   copyPrompts,
   currentPromptsVersion,
@@ -28,8 +29,10 @@ import {
 /**
  * @param {object} opts
  * @param {boolean} [opts.check]
+ * @param {boolean} [opts.commit] - Auto-commit changes (default: true)
  */
 export function sync(opts) {
+  let shouldCommit = opts.commit !== false
   const projectDir = process.cwd()
   const agentsDir = join(projectDir, ".agents", "botbox")
 
@@ -190,6 +193,34 @@ export function sync(opts) {
     !ranMigrations
   ) {
     console.log("Already up to date.")
+  }
+
+  // Auto-commit if changes were made
+  let madeChanges =
+    docsNeedUpdate ||
+    managedSectionNeedsUpdate ||
+    scriptsNeedUpdate ||
+    promptsNeedUpdate ||
+    ranMigrations
+  if (madeChanges && shouldCommit && isJjRepo()) {
+    // Check if there were pre-existing uncommitted changes
+    // (we can't easily distinguish, so just commit if we made changes)
+    let parts = []
+    if (docsNeedUpdate) parts.push("docs")
+    if (managedSectionNeedsUpdate) parts.push("AGENTS.md")
+    if (scriptsNeedUpdate) parts.push("scripts")
+    if (promptsNeedUpdate) parts.push("prompts")
+    if (ranMigrations) parts.push("migrations")
+
+    let fromVer = installed ?? installedConfigVer ?? "0.0.0"
+    let toVer = latest
+    let message = `chore: upgrade botbox from ${fromVer} to ${toVer}\n\nUpdated: ${parts.join(", ")}`
+
+    if (commit(message)) {
+      console.log(`Committed: chore: upgrade botbox from ${fromVer} to ${toVer}`)
+    } else {
+      console.warn("Warning: Failed to auto-commit (jj error)")
+    }
   }
 }
 

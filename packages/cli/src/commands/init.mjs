@@ -9,6 +9,7 @@ import {
 import { join, resolve } from "node:path"
 import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
+import { commit, isJjRepo } from "../lib/jj.mjs"
 import { copyPrompts, writePromptsVersionMarker } from "../lib/prompts.mjs"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
 import { parseAgentsMdHeader, renderAgentsMd } from "../lib/templates.mjs"
@@ -32,9 +33,11 @@ export const BOTBOX_CONFIG_VERSION = currentMigrationVersion()
  * @param {string} [opts.installCommand]
  * @param {boolean} [opts.force]
  * @param {boolean} [opts.interactive]
+ * @param {boolean} [opts.commit] - Auto-commit changes (default: true)
  */
 export async function init(opts) {
   const interactive = opts.interactive !== false
+  const shouldCommit = opts.commit !== false
   const projectDir = process.cwd()
 
   try {
@@ -334,6 +337,16 @@ export async function init(opts) {
     }
   } else if (languages.length > 0 && existsSync(gitignorePath)) {
     console.log(".gitignore already exists, skipping generation")
+  }
+
+  // Auto-commit if this is a new init (not a re-init) and in a jj repo
+  if (!isReinit && shouldCommit && isJjRepo()) {
+    let message = `chore: initialize botbox v${BOTBOX_CONFIG_VERSION}`
+    if (commit(message)) {
+      console.log(`Committed: ${message}`)
+    } else {
+      console.warn("Warning: Failed to auto-commit (jj error)")
+    }
   }
 
     console.log("Done.")
