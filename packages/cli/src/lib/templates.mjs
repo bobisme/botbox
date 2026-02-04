@@ -9,6 +9,7 @@ const MANAGED_END = "<!-- botbox:managed-end -->"
  * @property {string} type
  * @property {string[]} tools
  * @property {string[]} reviewers
+ * @property {string} [installCommand] - Command to install locally after release (e.g., "just install")
  */
 
 /**
@@ -31,7 +32,7 @@ Tools: ${toolList}${reviewerLine}
 <!-- Add project-specific context below: architecture, conventions, key files, etc. -->
 
 ${MANAGED_START}
-${renderManagedSection()}
+${renderManagedSection({ installCommand: config.installCommand })}
 ${MANAGED_END}
 `
 }
@@ -52,10 +53,16 @@ const DOC_DESCRIPTIONS = {
 }
 
 /**
+ * @typedef {object} ManagedSectionConfig
+ * @property {string} [installCommand] - Command to install locally after release
+ */
+
+/**
  * Render the managed section content.
+ * @param {ManagedSectionConfig} [config]
  * @returns {string}
  */
-function renderManagedSection() {
+function renderManagedSection(config = {}) {
   let lifecycleLinks = listWorkflowDocs()
     .sort()
     .map((doc) => {
@@ -97,7 +104,7 @@ br ready
 - Reference bead IDs in all bus messages.
 - Sync on session end: \`br sync --flush-only\`.
 - **Always push to main** after completing beads (see [finish.md](.agents/botbox/finish.md)).
-- **Release after features/fixes**: If the batch includes user-visible changes (not just chores), follow the project's release process (version bump → tag → announce).
+- **Release after features/fixes**: If the batch includes user-visible changes (not just chores), follow the project's release process (version bump → tag → announce).${config.installCommand ? `\n- **Install locally** after releasing: \`${config.installCommand}\`` : ""}
 
 ### Mesh Protocol
 
@@ -206,13 +213,14 @@ export function parseAgentsMdHeader(content) {
 /**
  * Replace the managed section in an existing AGENTS.md.
  * @param {string} content
+ * @param {ManagedSectionConfig} [config]
  * @returns {string}
  */
-export function updateManagedSection(content) {
+export function updateManagedSection(content, config = {}) {
   const startIdx = content.indexOf(MANAGED_START)
   const endIdx = content.indexOf(MANAGED_END)
 
-  const managed = `${MANAGED_START}\n${renderManagedSection()}\n${MANAGED_END}`
+  const managed = `${MANAGED_START}\n${renderManagedSection(config)}\n${MANAGED_END}`
 
   if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
     // Missing markers, only one marker, or markers out of order — strip any

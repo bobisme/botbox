@@ -43,32 +43,7 @@ export function sync(opts) {
   // Check if docs need updating (don't update yet, just check)
   const docsNeedUpdate = installed !== latest
 
-  // Check if managed section needs updating (don't update yet, just check)
-  const agentsMdPath = join(projectDir, "AGENTS.md")
-  let managedSectionNeedsUpdate = false
-  let managedSectionContent = ""
-  let managedSectionUpdated = ""
-
-  if (existsSync(agentsMdPath)) {
-    managedSectionContent = readFileSync(agentsMdPath, "utf-8")
-    managedSectionUpdated = updateManagedSection(managedSectionContent)
-    managedSectionNeedsUpdate = managedSectionContent !== managedSectionUpdated
-  }
-
-  let scriptsState = getScriptsUpdateState(agentsDir)
-  let scriptsDir = scriptsState.scriptsDir
-  let scriptsNeedUpdate = scriptsState.scriptsNeedUpdate
-  let installedScriptsVer = scriptsState.installedScriptsVer
-  let latestScriptsVer = scriptsState.latestScriptsVer
-
-  // Check if prompts need updating
-  let promptsState = getPromptsUpdateState(agentsDir)
-  let promptsDir = promptsState.promptsDir
-  let promptsNeedUpdate = promptsState.promptsNeedUpdate
-  let installedPromptsVer = promptsState.installedPromptsVer
-  let latestPromptsVer = promptsState.latestPromptsVer
-
-  // Check if config needs migrations
+  // Read config first (needed for managed section generation)
   let configPath = join(projectDir, ".botbox.json")
   let configNeedsUpdate = false
   let installedConfigVer = null
@@ -92,6 +67,36 @@ export function sync(opts) {
     pendingMigrations = getPendingMigrations(installedConfigVer)
     configNeedsUpdate = pendingMigrations.length > 0
   }
+
+  // Extract managed section config from project config
+  let managedConfig = {
+    installCommand: config?.project?.installCommand,
+  }
+
+  // Check if managed section needs updating (don't update yet, just check)
+  const agentsMdPath = join(projectDir, "AGENTS.md")
+  let managedSectionNeedsUpdate = false
+  let managedSectionContent = ""
+  let managedSectionUpdated = ""
+
+  if (existsSync(agentsMdPath)) {
+    managedSectionContent = readFileSync(agentsMdPath, "utf-8")
+    managedSectionUpdated = updateManagedSection(managedSectionContent, managedConfig)
+    managedSectionNeedsUpdate = managedSectionContent !== managedSectionUpdated
+  }
+
+  let scriptsState = getScriptsUpdateState(agentsDir)
+  let scriptsDir = scriptsState.scriptsDir
+  let scriptsNeedUpdate = scriptsState.scriptsNeedUpdate
+  let installedScriptsVer = scriptsState.installedScriptsVer
+  let latestScriptsVer = scriptsState.latestScriptsVer
+
+  // Check if prompts need updating
+  let promptsState = getPromptsUpdateState(agentsDir)
+  let promptsDir = promptsState.promptsDir
+  let promptsNeedUpdate = promptsState.promptsNeedUpdate
+  let installedPromptsVer = promptsState.installedPromptsVer
+  let latestPromptsVer = promptsState.latestPromptsVer
 
   // Validate in --check mode (after all checks, before any writes)
   if (
@@ -145,7 +150,7 @@ export function sync(opts) {
 
     if (existsSync(agentsMdPath)) {
       managedSectionContent = readFileSync(agentsMdPath, "utf-8")
-      managedSectionUpdated = updateManagedSection(managedSectionContent)
+      managedSectionUpdated = updateManagedSection(managedSectionContent, managedConfig)
       managedSectionNeedsUpdate = managedSectionContent !== managedSectionUpdated
     }
   }
