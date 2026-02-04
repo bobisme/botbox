@@ -161,7 +161,7 @@ IMPORTANT:
 - If you need to check something (files, beads, etc.), do so
 - After responding, the conversation may continue - keep context in mind
 
-RESPOND using: bus send --agent ${AGENT} ${channel} "your response here"
+RESPOND using: bus send --agent ${AGENT} ${channel} "your response here" (no -L label needed)
 
 Be helpful but brief. Do NOT create beads or workspaces - this is a conversational response, not a work task.
 
