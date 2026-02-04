@@ -415,7 +415,8 @@ export const migrations = [
             addCmd.push("--agent", agent)
           }
           if (hook.channel) {
-            addCmd.push("--channel", hook.channel)
+            // Quote to prevent shell glob expansion (e.g., "*")
+            addCmd.push("--channel", `"${hook.channel}"`)
           }
           if (hook.cwd) {
             addCmd.push("--cwd", hook.cwd)
