@@ -59,9 +59,17 @@ describe("listEligibleScripts", () => {
     expect(eligible).not.toContain("dev-loop.mjs")
   })
 
-  test("no scripts with minimal tools", () => {
+  test("triage script only with beads", () => {
     let eligible = listEligibleScripts({
       tools: ["beads"],
+      reviewers: [],
+    })
+    expect(eligible).toEqual(["triage.mjs"])
+  })
+
+  test("no scripts with empty tools", () => {
+    let eligible = listEligibleScripts({
+      tools: [],
       reviewers: [],
     })
     expect(eligible).toHaveLength(0)
@@ -96,7 +104,7 @@ describe("copyScripts", () => {
       reviewers: ["security"],
     })
 
-    expect(copied.length).toBe(3)
+    expect(copied.length).toBe(4)
     for (let file of copied) {
       expect(existsSync(join(target, file))).toBe(true)
     }
@@ -129,7 +137,7 @@ describe("copyScripts", () => {
   test("returns empty array when no scripts eligible", () => {
     let target = join(tempDir, "scripts")
     let copied = copyScripts(target, {
-      tools: ["beads"],
+      tools: [],
       reviewers: [],
     })
     expect(copied).toHaveLength(0)

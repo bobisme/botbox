@@ -42,6 +42,10 @@ const SCRIPT_REGISTRY = {
     eligible: (config) =>
       ["crit", "botbus"].every((t) => config.tools.includes(t)),
   },
+  "triage.mjs": {
+    description: "Token-efficient bead triage output",
+    eligible: (config) => config.tools.includes("beads"),
+  },
 }
 
 /** @returns {string[]} List of .mjs filenames in the bundled scripts dir */
