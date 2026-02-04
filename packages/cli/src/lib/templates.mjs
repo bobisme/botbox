@@ -1,4 +1,5 @@
 import { listWorkflowDocs } from "./docs.mjs"
+import { listEligibleDesignDocs } from "./design-docs.mjs"
 
 const MANAGED_START = "<!-- botbox:managed-start -->"
 const MANAGED_END = "<!-- botbox:managed-end -->"
@@ -24,6 +25,8 @@ export function renderAgentsMd(config) {
       ? `\nReviewer roles: ${config.reviewers.join(", ")}`
       : ""
 
+  let projectTypes = Array.isArray(config.type) ? config.type : [config.type]
+
   return `# ${config.name}
 
 Project type: ${config.type}
@@ -32,7 +35,7 @@ Tools: ${toolList}${reviewerLine}
 <!-- Add project-specific context below: architecture, conventions, key files, etc. -->
 
 ${MANAGED_START}
-${renderManagedSection({ installCommand: config.installCommand })}
+${renderManagedSection({ installCommand: config.installCommand, projectTypes })}
 ${MANAGED_END}
 `
 }
@@ -52,9 +55,15 @@ const DOC_DESCRIPTIONS = {
   "report-issue.md": "Report bugs/features to other projects",
 }
 
+/** @type {Record<string, string>} */
+const DESIGN_DOC_DESCRIPTIONS = {
+  "cli-conventions.md": "CLI tool design for humans, agents, and machines",
+}
+
 /**
  * @typedef {object} ManagedSectionConfig
  * @property {string} [installCommand] - Command to install locally after release
+ * @property {string[]} [projectTypes] - Project types (for design doc indexing)
  */
 
 /**
@@ -70,6 +79,31 @@ function renderManagedSection(config = {}) {
       return `- [${desc}](.agents/botbox/${doc})`
     })
     .join("\n")
+
+  // Collect eligible design docs across all project types
+  let designDocs = new Set()
+  for (let projectType of config.projectTypes ?? []) {
+    for (let doc of listEligibleDesignDocs(projectType)) {
+      designDocs.add(doc)
+    }
+  }
+
+  let designDocsSection = ""
+  if (designDocs.size > 0) {
+    let designDocLinks = [...designDocs]
+      .sort()
+      .map((doc) => {
+        let desc = DESIGN_DOC_DESCRIPTIONS[doc] ?? doc.replace(".md", "")
+        return `- [${desc}](.agents/botbox/design/${doc})`
+      })
+      .join("\n")
+    designDocsSection = `
+
+### Design Guidelines
+
+${designDocLinks}
+`
+  }
 
   return `## Botbox Workflow
 
@@ -180,7 +214,7 @@ Scripts in \`.agents/botbox/scripts/\` automate agent loops:
 | \`dev-loop.mjs\` | Lead dev: triage, parallel dispatch, merge |
 | \`reviewer-loop.mjs\` | Reviewer: review loop until queue empty |
 
-Usage: \`bun .agents/botbox/scripts/<script>.mjs <project-name> [agent-name]\``
+Usage: \`bun .agents/botbox/scripts/<script>.mjs <project-name> [agent-name]\`${designDocsSection}`
 }
 
 /**

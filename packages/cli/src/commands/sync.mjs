@@ -86,8 +86,11 @@ export function sync(opts) {
   }
 
   // Extract managed section config from project config
+  let projectTypes = config?.project?.type ?? []
+  if (!Array.isArray(projectTypes)) projectTypes = [projectTypes]
   let managedConfig = {
     installCommand: config?.project?.installCommand,
+    projectTypes,
   }
 
   // Check if managed section needs updating (don't update yet, just check)
