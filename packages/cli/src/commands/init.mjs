@@ -29,6 +29,7 @@ export const BOTBOX_CONFIG_VERSION = currentMigrationVersion()
  * @param {string} [opts.language]
  * @param {boolean} [opts.initBeads]
  * @param {boolean} [opts.seedWork]
+ * @param {string} [opts.installCommand]
  * @param {boolean} [opts.force]
  * @param {boolean} [opts.interactive]
  */
@@ -149,6 +150,21 @@ export async function init(opts) {
       ? await confirm({ message: "Seed initial work beads?", default: false })
       : false)
 
+  // Ask about local install command (for CLI tools)
+  let installCommand = opts.installCommand ?? null
+  if (interactive && installCommand === null) {
+    const wantsInstall = await confirm({
+      message: "Install locally after releases? (for CLI tools)",
+      default: false,
+    })
+    if (wantsInstall) {
+      installCommand = await input({
+        message: "Install command:",
+        default: "just install",
+      })
+    }
+  }
+
   // Create .agents/botbox/
   mkdirSync(agentsDir, { recursive: true })
   console.log("Created .agents/botbox/")
@@ -180,7 +196,7 @@ export async function init(opts) {
       "AGENTS.md already exists. Use --force to overwrite, or run `botbox sync` to update.",
     )
   } else {
-    const content = renderAgentsMd({ name, type: types, tools, reviewers })
+    const content = renderAgentsMd({ name, type: types, tools, reviewers, installCommand })
     writeFileSync(agentsMdPath, content)
     console.log("Generated AGENTS.md")
   }
@@ -203,6 +219,7 @@ export async function init(opts) {
         languages: languages.length > 0 ? languages : undefined,
         default_agent: `${name}-dev`,
         channel: name,
+        installCommand: installCommand || undefined,
       },
       tools: {
         beads: tools.includes("beads"),

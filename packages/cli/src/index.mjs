@@ -37,6 +37,7 @@ program
   )
   .option("--init-beads", "Initialize beads issue tracker")
   .option("--seed-work", "Create initial beads by scouting the repo")
+  .option("--install-command <cmd>", "Command to install locally after releases (e.g., 'just install')")
   .option("--force", "Overwrite existing AGENTS.md")
   .option("--no-interactive", "Skip interactive prompts (use flags only)")
   .action(init)
