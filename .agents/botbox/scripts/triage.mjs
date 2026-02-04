@@ -10,6 +10,23 @@
 
 import { execSync } from "node:child_process"
 
+// ANSI colors
+let C = {
+  reset: "\x1b[0m",
+  bold: "\x1b[1m",
+  dim: "\x1b[2m",
+  cyan: "\x1b[36m",
+  green: "\x1b[32m",
+  yellow: "\x1b[33m",
+  white: "\x1b[37m",
+}
+
+// Styled output helpers
+let h1 = (s) => `${C.bold}${C.cyan}● ${s}${C.reset}`
+let h2 = (s) => `${C.bold}${C.green}▸ ${s}${C.reset}`
+let warn = (s) => `${C.bold}${C.yellow}▲ ${s}${C.reset}`
+let hint = (s) => `${C.dim}→ ${s}${C.reset}`
+
 try {
   // Run bv --robot-triage and capture output
   let output = execSync("bv --robot-triage", {
@@ -22,13 +39,13 @@ try {
 
   // Extract quick ref
   let qr = triage.quick_ref
-  console.log(`📊 Triage Summary`)
+  console.log(h1("Triage Summary"))
   console.log(`   Open: ${qr.open_count} | Actionable: ${qr.actionable_count} | Blocked: ${qr.blocked_count} | In Progress: ${qr.in_progress_count}`)
   console.log()
 
   // Top picks
   if (qr.top_picks && qr.top_picks.length > 0) {
-    console.log(`🎯 Top Picks`)
+    console.log(h2("Top Picks"))
     for (let pick of qr.top_picks.slice(0, 5)) {
       let score = (pick.score * 100).toFixed(1)
       let unblocks = pick.unblocks > 0 ? ` (unblocks ${pick.unblocks})` : ""
@@ -40,7 +57,7 @@ try {
 
   // Blockers to clear (if any)
   if (triage.blockers_to_clear && triage.blockers_to_clear.length > 0) {
-    console.log(`🚧 Blockers to Clear`)
+    console.log(warn("Blockers to Clear"))
     for (let blocker of triage.blockers_to_clear.slice(0, 5)) {
       console.log(`   ${blocker.id}: ${blocker.title} (blocks ${blocker.blocks_count})`)
     }
@@ -49,7 +66,7 @@ try {
 
   // Quick wins
   if (triage.quick_wins && triage.quick_wins.length > 0) {
-    console.log(`⚡ Quick Wins`)
+    console.log(h2("Quick Wins"))
     for (let win of triage.quick_wins.slice(0, 3)) {
       console.log(`   ${win.id}: ${win.title}`)
     }
@@ -58,7 +75,7 @@ try {
 
   // Recommendations with minimal detail
   if (triage.recommendations && triage.recommendations.length > 0) {
-    console.log(`📋 Recommendations`)
+    console.log(h2("Recommendations"))
     for (let rec of triage.recommendations.slice(0, 6)) {
       let labels = rec.labels ? ` [${rec.labels.join(", ")}]` : ""
       let priority = `P${rec.priority}`
@@ -73,7 +90,7 @@ try {
   // Health summary
   let health = triage.project_health
   if (health) {
-    console.log(`📈 Project Health`)
+    console.log(h2("Project Health"))
     console.log(`   Total: ${health.counts.total} | Closed: ${health.counts.closed} | Open: ${health.counts.open}`)
     if (health.velocity) {
       let v = health.velocity
@@ -83,7 +100,7 @@ try {
 
   // Command hint
   console.log()
-  console.log(`💡 Claim top: br update --actor $AGENT ${qr.top_picks[0]?.id} --status in_progress`)
+  console.log(hint(`Claim top: br update --actor $AGENT ${qr.top_picks[0]?.id} --status in_progress`))
 
 } catch (err) {
   if (err.stderr) {
