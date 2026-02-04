@@ -27,6 +27,3 @@ check:
 publish:
     cd packages/cli && bun publish --access public
     cd packages/botbox && bun publish
-
-install:
-    cd packages/cli && bun link
