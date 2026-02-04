@@ -14,6 +14,30 @@ Botbox is a setup and sync tool for multi-agent workflows. It is NOT a runtime �
 
 Beads enable crash recovery, handoffs, and resumption. Without beads, work is lost. See the [Beads (MANDATORY)](#beads-mandatory) section below for full details.
 
+## How botbox sync Works
+
+`botbox sync` keeps projects up to date with latest docs, scripts, conventions, and hooks. It manages:
+
+- **Workflow docs** (`.agents/botbox/*.md`) — copied from bundled source
+- **AGENTS.md managed section** — regenerated from templates
+- **Loop scripts** (`.agents/botbox/scripts/*.mjs`) — copied based on enabled tools
+- **Claude Code hooks** (`.agents/botbox/hooks/*.sh`) — shell scripts for Claude Code events
+- **Design docs** (`.agents/botbox/design/*.md`) — copied based on project type
+- **Config migrations** (`.botbox.json`) — runs pending migrations
+
+### Migrations
+
+**Botbus hooks** (registered via `bus hooks add`) and other runtime changes are managed through **migrations**, not direct sync logic.
+
+Migrations live in `src/migrations/index.mjs`. Each has:
+- `id`: Semantic version (e.g., "1.0.5")
+- `title`: Short description
+- `up(ctx)`: Migration function with access to projectDir, config, etc.
+
+Migrations run automatically during `botbox sync` when the config version is behind. **When adding new botbus hook types or changing runtime behavior, add a migration.**
+
+Example: Migration 1.0.5 adds the respond hook for `@<project>-dev` mentions.
+
 ## Botbox Release Process
 
 Changes to workflow docs, scripts, prompts, or templates require a release:
