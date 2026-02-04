@@ -331,6 +331,123 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.6",
+    title: "Add --pass-env to botty spawn hooks",
+    description: "Updates all botbus hooks using botty spawn to pass BOTBUS_* env vars.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping hook update")
+        return
+      }
+
+      // Get all hooks
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping hook update")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping hook update")
+        return
+      }
+
+      // Find hooks for this project that use botty spawn without --pass-env
+      let projectHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          Array.isArray(h.command) &&
+          h.command.includes("botty") &&
+          h.command.includes("spawn") &&
+          !h.command.includes("--pass-env"),
+      )
+
+      if (projectHooks.length === 0) {
+        ctx.log("No hooks need updating")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? `${name}-dev` : null
+
+      for (let hook of projectHooks) {
+        // Build new command with --pass-env inserted after "spawn"
+        let newCommand = []
+        for (let i = 0; i < hook.command.length; i++) {
+          newCommand.push(hook.command[i])
+          if (hook.command[i] === "spawn") {
+            newCommand.push("--pass-env", "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID")
+          }
+        }
+
+        // Remove old hook and re-add with updated command
+        let removed = false
+        try {
+          execSync(`bus hooks remove ${hook.id}`, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          // Re-add with updated command
+          let addCmd = ["bus", "hooks", "add"]
+          if (agent) {
+            addCmd.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addCmd.push("--channel", hook.channel)
+          }
+          if (hook.cwd) {
+            addCmd.push("--cwd", hook.cwd)
+          }
+          let condition = hook.condition || {}
+          if (condition.type === "claim_available" && condition.pattern) {
+            addCmd.push("--claim", `"${condition.pattern}"`)
+            let claimOwner = hook.claim_owner || condition.pattern.replace(/^agent:\/\//, "")
+            addCmd.push("--claim-owner", claimOwner)
+            addCmd.push("--ttl", "600")
+          }
+          if (condition.type === "mention_received" && condition.agent) {
+            let mentionAgent = condition.agent.replace(/^@/, "")
+            addCmd.push("--mention", `"${mentionAgent}"`)
+            addCmd.push("--release-on-exit")
+          }
+          addCmd.push("--", ...newCommand)
+
+          try {
+            execSync(addCmd.join(" "), {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: added --pass-env`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            ctx.warn(`Could not re-add hook ${hook.id}: ${message}`)
+          }
+        }
+      }
+    },
+  },
 ]
 
 /**
