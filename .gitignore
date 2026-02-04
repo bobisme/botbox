@@ -14,3 +14,6 @@ bun.lockb
 
 # Runtime iteration state
 .agents/botbox/last-iteration.txt
+
+# maw agent workspaces
+.workspaces/
