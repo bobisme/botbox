@@ -76,9 +76,13 @@ Examples:
   # Create with full details
   tool items create --title "Add OAuth" --desc "Support Google OAuth" --priority 1
 
-  # Agent workflow: create and capture ID
-  ID=$(tool items create --title "Task" --format json | jq -r '.id')
-  tool items update $ID --status in_progress
+  # Agent workflow: create then update (two separate calls)
+  # Call 1 - create returns the ID:
+  tool items create --title "Task" --format json
+  # {"id": "item-123", "title": "Task", "status": "open"}
+
+  # Call 2 - agent parses output and uses ID in next call:
+  tool items update item-123 --status in_progress
 ```
 
 **Key principle:** Agents have no memory of previous tool usage. They will guess at flags and syntax. Design help to make correct usage obvious and incorrect usage fail fast with helpful errors.
@@ -322,23 +326,28 @@ Synced 42 items.
 
 ## Token Efficiency
 
-Agents pay per token. Design output to be information-dense:
+Agents pay per token, but they also have no memory of previous commands. Balance conciseness with actionable next steps:
 
 ```bash
-# Wasteful
+# Wasteful - verbose prose, buries the useful info
 The item with ID 'item-123' has been successfully created.
 You can view it by running 'tool items show item-123'.
+For more information about items, see the documentation at...
 
-# Efficient
+# Better - tl;dr with next step
 Created: item-123
+Next: tool items update item-123 --status in_progress
 ```
 
-The `toon` format should aggressively minimize tokens while preserving:
+**Don't assume agents have read help.** Give them the command to run next. Be a tl;dr, not a man page.
+
+The `toon` format should minimize tokens while preserving:
 - IDs and references needed for follow-up commands
 - Status and error information
 - Key data fields
+- **Suggested next commands** when there's an obvious workflow
 
 Omit:
-- Decorative text
+- Decorative prose ("Successfully completed!")
 - Redundant confirmations
-- Verbose explanations (put in --help instead)
+- Lengthy explanations (put those in --help)
