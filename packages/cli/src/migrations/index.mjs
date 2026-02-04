@@ -250,6 +250,87 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.5",
+    title: "Add respond hook for @dev mentions",
+    description: "Registers botbus hook for @<project>-dev mentions to enable conversational responses.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping respond hook registration")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      if (!name) {
+        ctx.warn("No project.name in config, skipping respond hook")
+        return
+      }
+
+      let agent = `${name}-dev`
+
+      // Check if respond hook already exists
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping respond hook")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping respond hook")
+        return
+      }
+
+      // Check for existing mention hook for dev agent (respond hook)
+      let hasRespondHook = hooks.some(
+        (/** @type {any} */ h) =>
+          h.condition?.type === "mention_received" &&
+          h.condition?.agent === agent &&
+          h.active,
+      )
+
+      if (hasRespondHook) {
+        ctx.log(`Respond hook for @${agent} already exists`)
+        return
+      }
+
+      // Register respond hook
+      let addCmd = [
+        "bus", "hooks", "add",
+        "--agent", agent,
+        "--mention", `"${agent}"`,
+        "--cwd", ctx.projectDir,
+        "--release-on-exit",
+        "--",
+        "botty", "spawn", "--name", agent, "--cwd", ctx.projectDir,
+        "--", "bun", ".agents/botbox/scripts/respond.mjs", name, agent,
+      ]
+
+      try {
+        execSync(addCmd.join(" "), {
+          stdio: "pipe",
+          env: process.env,
+        })
+        ctx.log(`Registered respond hook for @${agent} mentions`)
+      } catch (error) {
+        let message = error instanceof Error ? error.message : String(error)
+        ctx.warn(`Could not register respond hook: ${message}`)
+      }
+    },
+  },
 ]
 
 /**
