@@ -27,6 +27,13 @@ import {
   updateExistingHooks,
   writeHooksVersionMarker,
 } from "../lib/hooks.mjs"
+import {
+  currentDesignDocsVersion,
+  listEligibleDesignDocs,
+  readDesignDocsVersionMarker,
+  syncDesignDocs,
+  writeDesignDocsVersionMarker,
+} from "../lib/design-docs.mjs"
 import { updateManagedSection } from "../lib/templates.mjs"
 import {
   currentMigrationVersion,
@@ -115,10 +122,17 @@ export function sync(opts) {
   let installedHooksVer = hooksState.installedHooksVer
   let latestHooksVer = hooksState.latestHooksVer
 
+  // Check if design docs need updating
+  let designDocsState = getDesignDocsUpdateState(agentsDir, config)
+  let designDocsDir = designDocsState.designDocsDir
+  let designDocsNeedUpdate = designDocsState.designDocsNeedUpdate
+  let installedDesignDocsVer = designDocsState.installedDesignDocsVer
+  let latestDesignDocsVer = designDocsState.latestDesignDocsVer
+
   // Validate in --check mode (after all checks, before any writes)
   if (
     opts.check &&
-    (docsNeedUpdate || managedSectionNeedsUpdate || scriptsNeedUpdate || promptsNeedUpdate || hooksNeedUpdate || configNeedsUpdate)
+    (docsNeedUpdate || managedSectionNeedsUpdate || scriptsNeedUpdate || promptsNeedUpdate || hooksNeedUpdate || designDocsNeedUpdate || configNeedsUpdate)
   ) {
     let parts = []
     if (docsNeedUpdate) {
@@ -142,6 +156,11 @@ export function sync(opts) {
     if (hooksNeedUpdate) {
       parts.push(
         `hooks (${installedHooksVer} → ${latestHooksVer})`,
+      )
+    }
+    if (designDocsNeedUpdate) {
+      parts.push(
+        `design docs (${installedDesignDocsVer} → ${latestDesignDocsVer})`,
       )
     }
     if (configNeedsUpdate) {
@@ -221,6 +240,31 @@ export function sync(opts) {
     console.log(`Updated hooks: ${updated.join(", ")}`)
   }
 
+  if (designDocsNeedUpdate) {
+    // Get project types from config
+    let projectTypes = config?.project?.type ?? []
+    if (!Array.isArray(projectTypes)) projectTypes = [projectTypes]
+
+    let allUpdated = []
+    let allAdded = []
+    for (let projectType of projectTypes) {
+      let { updated, added } = syncDesignDocs(designDocsDir, projectType)
+      allUpdated.push(...updated)
+      allAdded.push(...added)
+    }
+    // Deduplicate
+    allUpdated = [...new Set(allUpdated)]
+    allAdded = [...new Set(allAdded.filter((a) => !allUpdated.includes(a)))]
+
+    writeDesignDocsVersionMarker(designDocsDir)
+    let parts = []
+    if (allUpdated.length > 0) parts.push(`updated: ${allUpdated.join(", ")}`)
+    if (allAdded.length > 0) parts.push(`added: ${allAdded.join(", ")}`)
+    if (parts.length > 0) {
+      console.log(`Synced design docs (${parts.join("; ")})`)
+    }
+  }
+
   // Summary output
   if (docsNeedUpdate) {
     console.log(`Synced: ${installed ?? "(none)"} → ${latest}`)
@@ -229,6 +273,7 @@ export function sync(opts) {
     !scriptsNeedUpdate &&
     !promptsNeedUpdate &&
     !hooksNeedUpdate &&
+    !designDocsNeedUpdate &&
     !configNeedsUpdate &&
     !ranMigrations
   ) {
@@ -242,6 +287,7 @@ export function sync(opts) {
     scriptsNeedUpdate ||
     promptsNeedUpdate ||
     hooksNeedUpdate ||
+    designDocsNeedUpdate ||
     ranMigrations
   if (madeChanges && shouldCommit && isJjRepo()) {
     // Check if there were pre-existing uncommitted changes
@@ -252,6 +298,7 @@ export function sync(opts) {
     if (scriptsNeedUpdate) parts.push("scripts")
     if (promptsNeedUpdate) parts.push("prompts")
     if (hooksNeedUpdate) parts.push("hooks")
+    if (designDocsNeedUpdate) parts.push("design-docs")
     if (ranMigrations) parts.push("migrations")
 
     let fromVer = installed ?? installedConfigVer ?? "0.0.0"
@@ -400,5 +447,57 @@ function getHooksUpdateState(agentsDir) {
     hooksNeedUpdate,
     installedHooksVer,
     latestHooksVer,
+  }
+}
+
+/**
+ * @param {string} agentsDir
+ * @param {any} config
+ */
+function getDesignDocsUpdateState(agentsDir, config) {
+  let designDocsDir = join(agentsDir, "design")
+  let designDocsNeedUpdate = false
+  let installedDesignDocsVer = null
+  let latestDesignDocsVer = currentDesignDocsVersion()
+
+  // Get project types from config
+  let projectTypes = config?.project?.type ?? []
+  if (!Array.isArray(projectTypes)) projectTypes = [projectTypes]
+
+  if (existsSync(designDocsDir)) {
+    installedDesignDocsVer = readDesignDocsVersionMarker(designDocsDir)
+    if (installedDesignDocsVer !== null) {
+      designDocsNeedUpdate = installedDesignDocsVer !== latestDesignDocsVer
+
+      // Also check for missing eligible docs
+      if (!designDocsNeedUpdate && projectTypes.length > 0) {
+        for (let projectType of projectTypes) {
+          let eligible = listEligibleDesignDocs(projectType)
+          for (let doc of eligible) {
+            if (!existsSync(join(designDocsDir, doc))) {
+              designDocsNeedUpdate = true
+              break
+            }
+          }
+          if (designDocsNeedUpdate) break
+        }
+      }
+    }
+  } else {
+    // Design docs directory doesn't exist - check if there are eligible docs
+    for (let projectType of projectTypes) {
+      if (listEligibleDesignDocs(projectType).length > 0) {
+        designDocsNeedUpdate = true
+        installedDesignDocsVer = "(none)"
+        break
+      }
+    }
+  }
+
+  return {
+    designDocsDir,
+    designDocsNeedUpdate,
+    installedDesignDocsVer,
+    latestDesignDocsVer,
   }
 }

@@ -11,6 +11,10 @@ import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
 import { commit, isJjRepo } from "../lib/jj.mjs"
 import { copyPrompts, writePromptsVersionMarker } from "../lib/prompts.mjs"
+import {
+  copyDesignDocs,
+  writeDesignDocsVersionMarker,
+} from "../lib/design-docs.mjs"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
 import {
   copyHooks,
@@ -188,6 +192,20 @@ export async function init(opts) {
   if (copiedPrompts.length > 0) {
     writePromptsVersionMarker(promptsDir)
     console.log("Copied prompt templates")
+  }
+
+  // Copy design docs based on project type
+  let designDocsDir = join(agentsDir, "design")
+  let allCopiedDesignDocs = new Set()
+  for (let projectType of types) {
+    let copiedDocs = copyDesignDocs(designDocsDir, projectType)
+    for (let doc of copiedDocs) {
+      allCopiedDesignDocs.add(doc)
+    }
+  }
+  if (allCopiedDesignDocs.size > 0) {
+    writeDesignDocsVersionMarker(designDocsDir)
+    console.log(`Copied design docs: ${[...allCopiedDesignDocs].join(", ")}`)
   }
 
   // Copy loop scripts
