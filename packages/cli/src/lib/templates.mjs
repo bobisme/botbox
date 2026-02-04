@@ -96,6 +96,8 @@ br ready
 - Update status as you progress: \`open\` → \`in_progress\` → \`closed\`.
 - Reference bead IDs in all bus messages.
 - Sync on session end: \`br sync --flush-only\`.
+- **Always push to main** after completing beads (see [finish.md](.agents/botbox/finish.md)).
+- **Release after features/fixes**: If the batch includes user-visible changes (not just chores), follow the project's release process (version bump → tag → announce).
 
 ### Mesh Protocol
 
