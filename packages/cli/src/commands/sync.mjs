@@ -16,8 +16,9 @@ import {
 } from "../lib/prompts.mjs"
 import {
   currentScriptsVersion,
+  listEligibleScripts,
   readScriptsVersionMarker,
-  updateExistingScripts,
+  syncScripts,
   writeScriptsVersionMarker,
 } from "../lib/scripts.mjs"
 import {
@@ -94,7 +95,7 @@ export function sync(opts) {
     managedSectionNeedsUpdate = managedSectionContent !== managedSectionUpdated
   }
 
-  let scriptsState = getScriptsUpdateState(agentsDir)
+  let scriptsState = getScriptsUpdateState(agentsDir, config)
   let scriptsDir = scriptsState.scriptsDir
   let scriptsNeedUpdate = scriptsState.scriptsNeedUpdate
   let installedScriptsVer = scriptsState.installedScriptsVer
@@ -163,7 +164,7 @@ export function sync(opts) {
     ranMigrations = true
     configNeedsUpdate = false
 
-    scriptsState = getScriptsUpdateState(agentsDir)
+    scriptsState = getScriptsUpdateState(agentsDir, config)
     scriptsDir = scriptsState.scriptsDir
     scriptsNeedUpdate = scriptsState.scriptsNeedUpdate
     installedScriptsVer = scriptsState.installedScriptsVer
@@ -189,9 +190,23 @@ export function sync(opts) {
   }
 
   if (scriptsNeedUpdate) {
-    let updated = updateExistingScripts(scriptsDir)
+    // Extract enabled tools from config
+    let enabledTools = []
+    if (config?.tools) {
+      for (let [tool, enabled] of Object.entries(config.tools)) {
+        if (enabled) enabledTools.push(tool)
+      }
+    }
+    let reviewers = config?.review?.reviewers ?? []
+
+    let { updated, added } = syncScripts(scriptsDir, { tools: enabledTools, reviewers })
     writeScriptsVersionMarker(scriptsDir)
-    console.log(`Updated loop scripts: ${updated.join(", ")}`)
+    let parts = []
+    if (updated.length > 0) parts.push(`updated: ${updated.join(", ")}`)
+    if (added.length > 0) parts.push(`added: ${added.join(", ")}`)
+    if (parts.length > 0) {
+      console.log(`Synced scripts (${parts.join("; ")})`)
+    }
   }
 
   if (promptsNeedUpdate) {
@@ -253,8 +268,9 @@ export function sync(opts) {
 
 /**
  * @param {string} agentsDir
+ * @param {any} config
  */
-function getScriptsUpdateState(agentsDir) {
+function getScriptsUpdateState(agentsDir, config) {
   let scriptsDir = join(agentsDir, "scripts")
   let scriptsNeedUpdate = false
   let installedScriptsVer = null
@@ -265,6 +281,21 @@ function getScriptsUpdateState(agentsDir) {
     if (installedScriptsVer !== null) {
       latestScriptsVer = currentScriptsVersion()
       scriptsNeedUpdate = installedScriptsVer !== latestScriptsVer
+
+      // Also check for missing eligible scripts
+      if (!scriptsNeedUpdate && config?.tools) {
+        let enabledTools = Object.entries(config.tools)
+          .filter(([, enabled]) => enabled)
+          .map(([tool]) => tool)
+        let reviewers = config?.review?.reviewers ?? []
+        let eligible = listEligibleScripts({ tools: enabledTools, reviewers })
+        for (let script of eligible) {
+          if (!existsSync(join(scriptsDir, script))) {
+            scriptsNeedUpdate = true
+            break
+          }
+        }
+      }
     }
   }
 

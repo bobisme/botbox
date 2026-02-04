@@ -105,6 +105,37 @@ export function updateExistingScripts(targetDir) {
 }
 
 /**
+ * Sync scripts: update existing AND add new eligible scripts.
+ * @param {string} targetDir
+ * @param {{ tools: string[], reviewers: string[] }} config
+ * @returns {{ updated: string[], added: string[] }}
+ */
+export function syncScripts(targetDir, config) {
+  let updated = []
+  let added = []
+  let eligible = listEligibleScripts(config)
+
+  // Ensure directory exists if we have eligible scripts
+  if (eligible.length > 0 && !existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true })
+  }
+
+  for (let file of eligible) {
+    let dest = join(targetDir, file)
+    let existed = existsSync(dest)
+    copyFileSync(join(SCRIPTS_DIR, file), dest)
+    chmodSync(dest, 0o755)
+    if (existed) {
+      updated.push(file)
+    } else {
+      added.push(file)
+    }
+  }
+
+  return { updated, added }
+}
+
+/**
  * Compute a version hash from all bundled scripts.
  * @returns {string}
  */
