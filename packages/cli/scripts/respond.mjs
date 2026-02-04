@@ -161,10 +161,11 @@ IMPORTANT:
 - If you need to check something (files, beads, etc.), do so
 - After responding, the conversation may continue - keep context in mind
 
-Respond to the mention/question. Be helpful but brief.
-Do NOT create beads or workspaces - this is a conversational response, not a work task.
+RESPOND using: bus send --agent ${AGENT} ${channel} "your response here"
 
-After your response, output: <promise>RESPONDED</promise>`
+Be helpful but brief. Do NOT create beads or workspaces - this is a conversational response, not a work task.
+
+After posting your response, output: <promise>RESPONDED</promise>`
 }
 
 // --- Run agent via botbox run-agent ---
