@@ -81,30 +81,26 @@ describe("renderAgentsMd", () => {
     expect(result).toContain(".agents/botbox/worker-loop.md")
   })
 
-  test("managed section contains stack reference table", () => {
+  test("managed section contains tool help note", () => {
     let result = renderAgentsMd({
       name: "test",
       type: "api",
       tools: [],
       reviewers: [],
     })
-    expect(result).toContain("| bus |")
-    expect(result).toContain("| maw |")
-    expect(result).toContain("| br/bv |")
-    expect(result).toContain("| crit |")
-    expect(result).toContain("| botty |")
+    expect(result).toContain("All tools have `--help`")
   })
 
-  test("managed section contains quick start", () => {
+  test("managed section contains beads quick reference table", () => {
     let result = renderAgentsMd({
       name: "test",
       type: "api",
       tools: [],
       reviewers: [],
     })
-    expect(result).toContain("### Quick Start")
-    expect(result).toContain("bus generate-name")
-    expect(result).toContain("br ready")
+    expect(result).toContain("### Beads Quick Reference")
+    expect(result).toContain("`br ready`")
+    expect(result).toContain("| Close |")
   })
 
   test("managed section contains beads conventions", () => {
@@ -118,29 +114,16 @@ describe("renderAgentsMd", () => {
     expect(result).toContain("br sync --flush-only")
   })
 
-  test("managed section contains mesh protocol", () => {
+  test("managed section contains claims", () => {
     let result = renderAgentsMd({
       name: "test",
       type: "api",
       tools: [],
       reviewers: [],
     })
-    expect(result).toContain("### Mesh Protocol")
-    expect(result).toContain("-L mesh")
+    expect(result).toContain("### Claims")
     expect(result).toContain("bus claims stake")
     expect(result).toContain("bus claims release")
-  })
-
-  test("managed section contains spawning agents", () => {
-    let result = renderAgentsMd({
-      name: "test",
-      type: "api",
-      tools: [],
-      reviewers: [],
-    })
-    expect(result).toContain("### Spawning Agents")
-    expect(result).toContain("bus agents")
-    expect(result).toContain("-L spawn-ack")
   })
 
   test("managed section contains reviews", () => {
@@ -155,15 +138,14 @@ describe("renderAgentsMd", () => {
     expect(result).toContain("@<project>-<role>")
   })
 
-  test("managed section contains cross-project feedback", () => {
+  test("managed section contains cross-project communication", () => {
     let result = renderAgentsMd({
       name: "test",
       type: "api",
       tools: [],
       reviewers: [],
     })
-    expect(result).toContain("### Cross-Project Feedback")
-    expect(result).toContain("#projects")
+    expect(result).toContain("### Cross-Project Communication")
     expect(result).toContain("report-issue.md")
     expect(result).toContain("-L feedback")
   })
