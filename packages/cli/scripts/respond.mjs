@@ -293,10 +293,9 @@ async function main() {
       `${WAIT_TIMEOUT + 60}`,
     ])
     console.log(`Claimed: ${claimPattern}`)
-  } catch (err) {
-    // Claim already held - another instance is running
-    console.log(`Claim ${claimPattern} not available, exiting`)
-    process.exit(0)
+  } catch {
+    // Claim already held - another agent is orchestrating, continue
+    console.log(`Claim ${claimPattern} held by another agent, continuing`)
   }
 
   // Set status
