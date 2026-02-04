@@ -310,51 +310,45 @@ async function main() {
     "10m",
   ])
 
-  // Get unread messages from the channel to find the triggering message
-  let inboxResult
+  // Get recent messages from the channel to find the triggering message
+  // Use history (not inbox) because inbox only shows unread messages,
+  // and the triggering message may have been marked read already
+  let historyResult
   try {
-    inboxResult = await runCommand("bus", [
-      "inbox",
+    historyResult = await runCommand("bus", [
+      "history",
+      channel,
       "--agent",
       AGENT,
-      "--channels",
-      channel,
       "--format",
       "json",
       "-n",
-      "5",
+      "20",
     ])
   } catch (err) {
-    console.error("Error reading inbox:", err.message)
+    console.error("Error reading history:", err.message)
     process.exit(1)
   }
 
-  let inbox = JSON.parse(inboxResult.stdout || "{}")
-  let messages = []
-
-  // Extract messages from inbox structure
-  for (let ch of inbox.channels || []) {
-    if (ch.channel === channel) {
-      messages = ch.messages || []
-      break
-    }
-  }
+  let messages = JSON.parse(historyResult.stdout || "[]")
 
   if (messages.length === 0) {
-    console.log("No unread messages in channel")
+    console.log("No messages in channel")
     await cleanup()
     process.exit(0)
   }
 
-  // Find the triggering message (most recent, or by ID if available)
+  // Find the triggering message by ID (passed via hook env)
   let targetMessageId = process.env.BOTBUS_MESSAGE_ID
   let triggerMessage = targetMessageId
     ? messages.find((m) => m.id === targetMessageId)
-    : messages[messages.length - 1]
+    : null
 
   if (!triggerMessage) {
-    // Fallback to most recent
-    triggerMessage = messages[messages.length - 1]
+    console.error(`Could not find triggering message: ${targetMessageId}`)
+    console.error("Available message IDs:", messages.map((m) => m.id).join(", "))
+    await cleanup()
+    process.exit(1)
   }
 
   console.log(`Trigger: ${triggerMessage.agent}: ${triggerMessage.body.slice(0, 50)}...`)
