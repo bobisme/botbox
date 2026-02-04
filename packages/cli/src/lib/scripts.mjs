@@ -37,6 +37,10 @@ const SCRIPT_REGISTRY = {
         config.tools.includes(t),
       ),
   },
+  "respond.mjs": {
+    description: "Conversational responder for @mentions and questions",
+    eligible: (config) => config.tools.includes("botbus"),
+  },
   "reviewer-loop.mjs": {
     description: "Reviewer: review loop until queue empty",
     eligible: (config) =>

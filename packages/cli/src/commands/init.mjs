@@ -459,6 +459,35 @@ async function registerSpawnHook(projectDir, name, reviewers) {
     console.warn("Warning: Failed to register auto-spawn hook for dev agent")
   }
 
+  // Register respond hook for dev agent mentions (question answering)
+  try {
+    let existing = execSync("bus hooks list --format json", {
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+      env: process.env,
+    })
+    let hooks = JSON.parse(existing)
+    let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
+    // Check for existing mention hook for dev agent (respond hook)
+    let hasRespondHook = arr.some(
+      (/** @type {any} */ h) =>
+        h.condition?.type === "mention_received" &&
+        h.condition?.agent === agent &&
+        h.active,
+    )
+    if (hasRespondHook) {
+      console.log(`Respond hook for @${agent} already exists, skipping`)
+    } else {
+      execSync(
+        `bus hooks add --agent ${agent} --mention "${agent}" --cwd ${absPath} --release-on-exit -- botty spawn --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/respond.mjs ${name} ${agent}`,
+        { cwd: projectDir, stdio: "inherit", env: process.env },
+      )
+      console.log(`Registered respond hook for @${agent} mentions`)
+    }
+  } catch {
+    console.warn(`Warning: Failed to register respond hook for @${agent}`)
+  }
+
   // Register reviewer hooks (mention-based)
   for (let role of reviewers) {
     let reviewerAgent = `${name}-${role}`
@@ -472,7 +501,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
       })
       let hooks = JSON.parse(existing)
       let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
-      if (arr.some((/** @type {any} */ h) => h.mention === `@${reviewerAgent}` && h.active)) {
+      if (arr.some((/** @type {any} */ h) => h.condition?.agent === reviewerAgent && h.active)) {
         console.log(`Mention hook for @${reviewerAgent} already exists, skipping`)
         continue
       }
@@ -482,7 +511,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
 
     try {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim-owner ${reviewerAgent} --cwd ${absPath} --ttl 600 -- botty spawn --name ${reviewerAgent} --cwd ${absPath} -- bun .agents/botbox/scripts/${scriptName}`,
+        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --cwd ${absPath} --release-on-exit -- botty spawn --name ${reviewerAgent} --cwd ${absPath} -- bun .agents/botbox/scripts/${scriptName} ${name} ${reviewerAgent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log(`Registered mention hook for @${reviewerAgent}`)

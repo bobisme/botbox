@@ -34,6 +34,7 @@ describe("listAllScripts", () => {
     let scripts = listAllScripts()
     expect(scripts).toContain("agent-loop.mjs")
     expect(scripts).toContain("dev-loop.mjs")
+    expect(scripts).toContain("respond.mjs")
     expect(scripts).toContain("reviewer-loop.mjs")
   })
 })
@@ -49,12 +50,13 @@ describe("listEligibleScripts", () => {
     expect(eligible).toContain("reviewer-loop.mjs")
   })
 
-  test("only reviewer-loop with crit + botbus", () => {
+  test("reviewer-loop and respond with crit + botbus", () => {
     let eligible = listEligibleScripts({
       tools: ["crit", "botbus"],
       reviewers: [],
     })
     expect(eligible).toContain("reviewer-loop.mjs")
+    expect(eligible).toContain("respond.mjs")
     expect(eligible).not.toContain("agent-loop.mjs")
     expect(eligible).not.toContain("dev-loop.mjs")
   })
@@ -104,7 +106,8 @@ describe("copyScripts", () => {
       reviewers: ["security"],
     })
 
-    expect(copied.length).toBe(4)
+    // 5 scripts: agent-loop, dev-loop, respond, reviewer-loop, triage
+    expect(copied.length).toBe(5)
     for (let file of copied) {
       expect(existsSync(join(target, file))).toBe(true)
     }
