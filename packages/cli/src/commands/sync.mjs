@@ -20,6 +20,12 @@ import {
   updateExistingScripts,
   writeScriptsVersionMarker,
 } from "../lib/scripts.mjs"
+import {
+  currentHooksVersion,
+  readHooksVersionMarker,
+  updateExistingHooks,
+  writeHooksVersionMarker,
+} from "../lib/hooks.mjs"
 import { updateManagedSection } from "../lib/templates.mjs"
 import {
   currentMigrationVersion,
@@ -101,10 +107,17 @@ export function sync(opts) {
   let installedPromptsVer = promptsState.installedPromptsVer
   let latestPromptsVer = promptsState.latestPromptsVer
 
+  // Check if hooks need updating
+  let hooksState = getHooksUpdateState(agentsDir)
+  let hooksDir = hooksState.hooksDir
+  let hooksNeedUpdate = hooksState.hooksNeedUpdate
+  let installedHooksVer = hooksState.installedHooksVer
+  let latestHooksVer = hooksState.latestHooksVer
+
   // Validate in --check mode (after all checks, before any writes)
   if (
     opts.check &&
-    (docsNeedUpdate || managedSectionNeedsUpdate || scriptsNeedUpdate || promptsNeedUpdate || configNeedsUpdate)
+    (docsNeedUpdate || managedSectionNeedsUpdate || scriptsNeedUpdate || promptsNeedUpdate || hooksNeedUpdate || configNeedsUpdate)
   ) {
     let parts = []
     if (docsNeedUpdate) {
@@ -123,6 +136,11 @@ export function sync(opts) {
     if (promptsNeedUpdate) {
       parts.push(
         `prompt templates (${installedPromptsVer} → ${latestPromptsVer})`,
+      )
+    }
+    if (hooksNeedUpdate) {
+      parts.push(
+        `hooks (${installedHooksVer} → ${latestHooksVer})`,
       )
     }
     if (configNeedsUpdate) {
@@ -182,6 +200,12 @@ export function sync(opts) {
     console.log("Updated prompt templates")
   }
 
+  if (hooksNeedUpdate) {
+    let updated = updateExistingHooks(hooksDir)
+    writeHooksVersionMarker(hooksDir)
+    console.log(`Updated hooks: ${updated.join(", ")}`)
+  }
+
   // Summary output
   if (docsNeedUpdate) {
     console.log(`Synced: ${installed ?? "(none)"} → ${latest}`)
@@ -189,6 +213,7 @@ export function sync(opts) {
     !managedSectionNeedsUpdate &&
     !scriptsNeedUpdate &&
     !promptsNeedUpdate &&
+    !hooksNeedUpdate &&
     !configNeedsUpdate &&
     !ranMigrations
   ) {
@@ -201,6 +226,7 @@ export function sync(opts) {
     managedSectionNeedsUpdate ||
     scriptsNeedUpdate ||
     promptsNeedUpdate ||
+    hooksNeedUpdate ||
     ranMigrations
   if (madeChanges && shouldCommit && isJjRepo()) {
     // Check if there were pre-existing uncommitted changes
@@ -210,6 +236,7 @@ export function sync(opts) {
     if (managedSectionNeedsUpdate) parts.push("AGENTS.md")
     if (scriptsNeedUpdate) parts.push("scripts")
     if (promptsNeedUpdate) parts.push("prompts")
+    if (hooksNeedUpdate) parts.push("hooks")
     if (ranMigrations) parts.push("migrations")
 
     let fromVer = installed ?? installedConfigVer ?? "0.0.0"
@@ -317,5 +344,30 @@ function applyMigrations({
 
   if (pendingMigrations.length > 0) {
     console.log(`Updated .botbox.json: ${startVersion} → ${config.version}`)
+  }
+}
+
+/**
+ * @param {string} agentsDir
+ */
+function getHooksUpdateState(agentsDir) {
+  let hooksDir = join(agentsDir, "hooks")
+  let hooksNeedUpdate = false
+  let installedHooksVer = null
+  let latestHooksVer = null
+
+  if (existsSync(hooksDir)) {
+    installedHooksVer = readHooksVersionMarker(hooksDir)
+    if (installedHooksVer !== null) {
+      latestHooksVer = currentHooksVersion()
+      hooksNeedUpdate = installedHooksVer !== latestHooksVer
+    }
+  }
+
+  return {
+    hooksDir,
+    hooksNeedUpdate,
+    installedHooksVer,
+    latestHooksVer,
   }
 }

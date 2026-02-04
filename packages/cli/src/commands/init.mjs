@@ -12,6 +12,11 @@ import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
 import { commit, isJjRepo } from "../lib/jj.mjs"
 import { copyPrompts, writePromptsVersionMarker } from "../lib/prompts.mjs"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
+import {
+  copyHooks,
+  generateHooksConfig,
+  writeHooksVersionMarker,
+} from "../lib/hooks.mjs"
 import { parseAgentsMdHeader, renderAgentsMd } from "../lib/templates.mjs"
 import { currentMigrationVersion } from "../migrations/index.mjs"
 
@@ -191,6 +196,35 @@ export async function init(opts) {
   if (copied.length > 0) {
     writeScriptsVersionMarker(scriptsDir)
     console.log(`Copied loop scripts: ${copied.join(", ")}`)
+  }
+
+  // Copy Claude Code hooks
+  let hooksDir = join(agentsDir, "hooks")
+  let copiedHooks = copyHooks(hooksDir, { tools })
+  if (copiedHooks.length > 0) {
+    writeHooksVersionMarker(hooksDir)
+    console.log(`Copied hooks: ${copiedHooks.join(", ")}`)
+
+    // Write .claude/settings.json with hooks config
+    let claudeDir = join(projectDir, ".claude")
+    let settingsPath = join(claudeDir, "settings.json")
+    mkdirSync(claudeDir, { recursive: true })
+
+    let settings = {}
+    if (existsSync(settingsPath)) {
+      try {
+        settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
+      } catch {
+        // Ignore parse errors
+      }
+    }
+
+    // Generate hooks config with absolute paths
+    let absHooksDir = resolve(hooksDir)
+    settings.hooks = generateHooksConfig(absHooksDir, copiedHooks)
+
+    writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n")
+    console.log("Generated .claude/settings.json with hooks config")
   }
 
   // Generate AGENTS.md
