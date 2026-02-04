@@ -215,7 +215,8 @@ async function waitForFollowUp(channel) {
     channel,
     "--timeout",
     WAIT_TIMEOUT.toString(),
-    "--json", // Use deprecated flag - --format json doesn't work for wait
+    "--format",
+    "json",
   ]
   console.log(`Running: bus ${args.join(" ")}`)
   try {
