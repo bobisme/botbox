@@ -36,11 +36,13 @@ When you've completed multiple beads in a session (or a significant single bead)
 
 **Features or fixes** (user-visible changes):
 - Follow the project's release process:
-  1. Bump version (Cargo.toml, package.json, etc.)
+  1. Bump version (Cargo.toml, package.json, etc.) using **semantic versioning**
   2. Update changelog/release notes if the project has one
   3. Push to main
   4. Tag the release (`jj tag set vX.Y.Z -r main && git push origin vX.Y.Z`)
   5. Announce on botbus: `bus send --agent $AGENT $BOTBOX_PROJECT "<project> vX.Y.Z released - <summary>" -L release`
+
+Use **conventional commits** (`feat:`, `fix:`, `docs:`, `chore:`, etc.) for clear history.
 
 A "release" = user-visible changes shipped with a version tag. When in doubt, release — it's better to ship small incremental versions than batch up large changes.
 
