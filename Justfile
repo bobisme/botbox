@@ -28,5 +28,5 @@ publish:
     cd packages/cli && bun publish --access public
     cd packages/botbox && bun publish
 
-link:
+install:
     cd packages/cli && bun link

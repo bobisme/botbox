@@ -14,6 +14,19 @@ Botbox is a setup and sync tool for multi-agent workflows. It is NOT a runtime �
 
 Beads enable crash recovery, handoffs, and resumption. Without beads, work is lost. See the [Beads (MANDATORY)](#beads-mandatory) section below for full details.
 
+## Botbox Release Process
+
+Changes to workflow docs, scripts, prompts, or templates require a release:
+
+1. **Make changes** in `packages/cli/`
+2. **Add migration** if behavior changes (see `src/migrations/index.mjs`)
+3. **Run tests**: `bun test` — version hashes auto-update
+4. **Commit and push** to main
+5. **Tag**: `jj tag create vX.Y.Z -r main && jj git push --remote origin`
+6. **Install locally**: `just install`
+
+Use semantic versioning and conventional commits. See [packages/cli/AGENTS.md](packages/cli/AGENTS.md) for component details.
+
 ## Repository Structure
 
 ```
@@ -222,6 +235,7 @@ br ready
 - Sync on session end: `br sync --flush-only`.
 - **Always push to main** after completing beads (see [finish.md](.agents/botbox/finish.md)).
 - **Release after features/fixes**: If the batch includes user-visible changes (not just chores), follow the project's release process (version bump → tag → announce).
+- **Install locally** after releasing: `just install`
 
 ### Mesh Protocol
 

@@ -6,7 +6,8 @@
       "cli"
     ],
     "default_agent": "botbox-dev",
-    "channel": "botbox"
+    "channel": "botbox",
+    "installCommand": "just install"
   },
   "tools": {
     "beads": true,
