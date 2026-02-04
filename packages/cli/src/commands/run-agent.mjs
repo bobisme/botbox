@@ -67,10 +67,22 @@ export async function runAgent(agentType, options) {
 			}
 		});
 
+		let detectedError = null;
+
 		proc.stderr?.on('data', (data) => {
-			// Only show critical errors, not debug output
 			const stderr = data.toString();
-			if (stderr.includes('Error') || stderr.includes('error')) {
+			// Detect fatal API errors
+			if (stderr.includes('API Error: 5') || stderr.includes('500')) {
+				detectedError = 'API Error: Server error (5xx)';
+				console.error(`\n${YELLOW}FATAL:${RESET} ${detectedError}`);
+			} else if (stderr.includes('rate limit') || stderr.includes('Rate limit') || stderr.includes('429')) {
+				detectedError = 'API Error: Rate limit exceeded';
+				console.error(`\n${YELLOW}FATAL:${RESET} ${detectedError}`);
+			} else if (stderr.includes('overloaded') || stderr.includes('503')) {
+				detectedError = 'API Error: Service overloaded';
+				console.error(`\n${YELLOW}FATAL:${RESET} ${detectedError}`);
+			} else if (stderr.includes('Error') || stderr.includes('error')) {
+				// Show other errors
 				console.error(stderr);
 			}
 		});
@@ -84,7 +96,11 @@ export async function runAgent(agentType, options) {
 			} else if (code === 0) {
 				resolve({ output, code });
 			} else {
-				reject(new Error(`Agent exited with code ${code}`));
+				// Include detected error in rejection message
+				const errorMsg = detectedError
+					? `${detectedError} (exit code ${code})`
+					: `Agent exited with code ${code}`;
+				reject(new Error(errorMsg));
 			}
 		});
 
