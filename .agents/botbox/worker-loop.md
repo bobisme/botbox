@@ -136,6 +136,7 @@ Then proceed with teardown:
 - `br comments add --actor $AGENT --author $AGENT <bead-id> "Completed by $AGENT"`
 - `br close --actor $AGENT <bead-id> --reason="Completed" --suggest-next`
 - `maw ws merge $WS --destroy` (if merge conflict, preserve workspace and announce; maw v0.22.0+ produces linear squashed history and auto-moves main)
+- `maw push` (if pushMain enabled in `.botbox.json`; maw v0.24.0+ handles bookmark and push)
 - `bus claims release --agent $AGENT --all`
 - `br sync --flush-only`
 - `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L task-done`
