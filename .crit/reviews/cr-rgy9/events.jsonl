@@ -1,0 +1,5 @@
+{"ts":"2026-02-01T23:38:27.032492290Z","author":"crystal-anchor","event":"ReviewCreated","data":{"review_id":"cr-rgy9","jj_change_id":"ysnuslpqoqvqolkkkuvtnokzswxmwtwl","initial_commit":"1b6cc11aafbeb4d70e965a9e79e1a52f9824afe0","title":"bd-2g4: Add language selection to botbox init","description":"Add language selection to botbox init with .gitignore generation using gitignore.io API. Supports rust, python, node, go, typescript, java. Skips if .gitignore already exists."}}
+{"ts":"2026-02-01T23:38:44.488400807Z","author":"crystal-anchor","event":"ReviewersRequested","data":{"review_id":"cr-rgy9","reviewers":["onyx-raven"]}}
+{"ts":"2026-02-01T23:43:42.620584704Z","author":"bob","event":"ReviewerVoted","data":{"review_id":"cr-rgy9","vote":"lgtm"}}
+{"ts":"2026-02-01T23:43:58.372783304Z","author":"crystal-anchor","event":"ReviewApproved","data":{"review_id":"cr-rgy9"}}
+{"ts":"2026-02-01T23:43:58.424498963Z","author":"crystal-anchor","event":"ReviewMerged","data":{"review_id":"cr-rgy9","final_commit":"fe5f913d2414af658a730bbfb553d78f6db05868"}}
