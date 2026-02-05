@@ -50,6 +50,11 @@ const SCRIPT_REGISTRY = {
     description: "Token-efficient bead triage output",
     eligible: (config) => config.tools.includes("beads"),
   },
+  "iteration-start.mjs": {
+    description: "Combined status for iteration starts (inbox, beads, reviews)",
+    eligible: (config) =>
+      ["beads", "crit", "botbus"].every((t) => config.tools.includes(t)),
+  },
 }
 
 /** @returns {string[]} List of .mjs filenames in the bundled scripts dir */

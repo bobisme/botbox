@@ -106,8 +106,8 @@ describe("copyScripts", () => {
       reviewers: ["security"],
     })
 
-    // 5 scripts: agent-loop, dev-loop, respond, reviewer-loop, triage
-    expect(copied.length).toBe(5)
+    // 6 scripts: agent-loop, dev-loop, iteration-start, respond, reviewer-loop, triage
+    expect(copied.length).toBe(6)
     for (let file of copied) {
       expect(existsSync(join(target, file))).toBe(true)
     }
