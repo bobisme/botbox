@@ -1,6 +1,23 @@
 # Botbox
 
-Botbox is a setup and sync tool for multi-agent workflows. It is NOT a runtime — it bootstraps projects and keeps workflow docs in sync.
+Botbox is a setup and sync tool for multi-agent workflows. It bootstraps projects with workflow docs, scripts, and hooks that enable multiple AI coding agents to collaborate on the same codebase — triaging work, claiming tasks, reviewing each other's code, and communicating via channels.
+
+Botbox is NOT a runtime. It copies files and regenerates config; the actual coordination happens through the companion tools below.
+
+## Ecosystem
+
+Botbox orchestrates these companion projects (all ours):
+
+| Project | Binary | Purpose |
+|---------|--------|---------|
+| **botbus** | `bus` | Channel-based messaging, claims (advisory locks), agent coordination |
+| **maw** | `maw` | Multi-agent workspaces — isolated jj working copies for concurrent edits |
+| **botcrit** | `crit` | Distributed code review for jj — threads, votes, LGTM/block workflow |
+| **botty** | `botty` | PTY-based agent runtime — spawn, manage, and communicate with agents |
+| **beads-tui** | `bu` | TUI for viewing and managing beads (issues) |
+
+External (not ours, but used heavily):
+- **beads** (`br`) — Issue tracker with crash-recovery-friendly design
 
 ## CRITICAL: Track ALL Work in Beads BEFORE Starting
 
@@ -53,14 +70,21 @@ Use semantic versioning and conventional commits. See [packages/cli/AGENTS.md](p
 
 ## Repository Structure
 
+This is a bun monorepo with two packages:
+
 ```
-packages/cli/       @botbox/cli — the main CLI (commander + inquirer)
-packages/cli/docs/  Workflow docs (source of truth, bundled with npm package)
-packages/botbox/    botbox — npm alias that re-exports @botbox/cli
-scripts/            Shell scripts: agent-loop.sh (worker), reviewer-loop.sh (reviewer), dev-loop.sh (lead dev orchestrator)
-evals/              Behavioral eval framework: rubrics, scripts, and results
-.beads/             Issue tracker (beads)
+packages/cli/          @botbox/cli — the main CLI (commander + inquirer)
+  ├── src/             Commands, lib modules, migrations
+  ├── docs/            Workflow docs (bundled with npm, copied to target projects)
+  └── scripts/         Loop scripts (dev-loop.mjs, agent-loop.mjs, etc.)
+packages/botbox/       botbox — npm alias that re-exports @botbox/cli
+scripts/               Shell launchers for loop scripts (agent-loop.sh, etc.)
+evals/                 Behavioral eval framework: rubrics, scripts, results
+notes/                 Extended docs not needed for daily work
+.beads/                Issue tracker (beads)
 ```
+
+**Why two packages?** `@botbox/cli` is the scoped package with all the code. `botbox` is an unscoped alias so users can run `npx botbox init` without the `@` prefix.
 
 ## Development
 
