@@ -344,6 +344,23 @@ export async function init(opts) {
     } catch {
       console.warn("Warning: crit init failed (is crit installed?)")
     }
+
+    // Create .critignore to exclude botbox-managed and tool files from reviews
+    const critignorePath = join(projectDir, ".critignore")
+    if (!existsSync(critignorePath)) {
+      writeFileSync(critignorePath, `# Ignore botbox-managed files (prompts, scripts, hooks, journals)
+.agents/botbox/
+
+# Ignore tool config and data files
+.beads/
+.crit/
+.maw.toml
+.botbox.json
+.claude/
+opencode.json
+`)
+      console.log("Created .critignore")
+    }
   }
 
   // Register project on botbus #projects channel (skip on re-init)

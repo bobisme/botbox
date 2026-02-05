@@ -268,6 +268,27 @@ export function sync(opts) {
     }
   }
 
+  // Ensure .critignore exists if crit is enabled
+  let critignoreCreated = false
+  if (config?.tools?.crit) {
+    let critignorePath = join(projectDir, ".critignore")
+    if (!existsSync(critignorePath)) {
+      writeFileSync(critignorePath, `# Ignore botbox-managed files (prompts, scripts, hooks, journals)
+.agents/botbox/
+
+# Ignore tool config and data files
+.beads/
+.crit/
+.maw.toml
+.botbox.json
+.claude/
+opencode.json
+`)
+      console.log("Created .critignore")
+      critignoreCreated = true
+    }
+  }
+
   // Summary output
   if (docsNeedUpdate) {
     console.log(`Synced: ${installed ?? "(none)"} → ${latest}`)
@@ -291,6 +312,7 @@ export function sync(opts) {
     promptsNeedUpdate ||
     hooksNeedUpdate ||
     designDocsNeedUpdate ||
+    critignoreCreated ||
     ranMigrations
   if (madeChanges && shouldCommit && isJjRepo()) {
     // Check if there were pre-existing uncommitted changes
