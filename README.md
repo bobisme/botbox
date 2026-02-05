@@ -112,9 +112,14 @@ Botbox coordinates five specialized Rust tools that work together to enable mult
 | ---------- | ------------------------------- | --------------------------------------------- | ---------- |
 | **[botbus](https://github.com/StandardInput/botbus)** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` | Pub/sub messaging, resource locking, agent registry |
 | **[maw](https://github.com/StandardInput/maw)**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         | Concurrent work isolation with Jujutsu VCS |
-| **[beads](https://github.com/StandardInput/beads)**  | Work tracking + triage          | `ready`, `create`, `close`, `--robot-next`    | Issue tracker optimized for agent triage |
+| **[beads](https://github.com/StandardInput/beads)**  | Work tracking (`br`)            | `ready`, `create`, `close`, `update`          | Issue tracker optimized for agent triage |
+| **[beads-tui](https://github.com/Dicklesworthstone/beads_viewer)** | Triage interface (`bv`)         | `--robot-triage`, `--robot-next`              | PageRank-based prioritization, graph analysis |
 | **[crit](https://github.com/StandardInput/crit)**   | Code review                     | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow |
 | **[botty](https://github.com/StandardInput/botty)**  | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops |
+
+### Flywheel connection
+
+Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. Our `triage.mjs` script wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
 
 ### How they work together
 

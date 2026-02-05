@@ -18,6 +18,10 @@ const TOOLS = [
   { name: "jj", check: "jj --version" },
 ]
 
+const OPTIONAL_TOOLS = [
+  { name: "cass", check: "cass --version", description: "for session search" },
+]
+
 export function doctor() {
   const projectDir = process.cwd()
   let issues = 0
@@ -34,6 +38,22 @@ export function doctor() {
     } catch {
       console.log(`  ✗ ${tool.name}: not found`)
       issues++
+    }
+  }
+
+  // Check optional tools
+  console.log("\nOptional Tools:")
+  for (const tool of OPTIONAL_TOOLS) {
+    try {
+      execSync(tool.check, {
+        encoding: "utf-8",
+        timeout: 5000,
+      })
+      console.log(`  ✓ ${tool.name}: available`)
+    } catch {
+      console.log(
+        `  ⚠ ${tool.name}: not installed (optional - ${tool.description})`,
+      )
     }
   }
 

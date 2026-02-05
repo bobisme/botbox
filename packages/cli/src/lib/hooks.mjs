@@ -29,6 +29,11 @@ const HOOK_REGISTRY = {
     description: "Display agent identity from .botbox.json",
     eligible: (config) => config.tools.includes("botbus"),
   },
+  "check-jj.sh": {
+    event: "SessionStart",
+    description: "Remind agent to use jj commands in jj repos",
+    eligible: (config) => config.tools.includes("maw"),
+  },
   "check-bus-inbox.sh": {
     event: "PostToolUse",
     description: "Check for unread bus messages",
@@ -143,6 +148,7 @@ export function readHooksVersionMarker(targetDir) {
 
 /**
  * Generate Claude Code settings.json hooks config for installed hooks.
+ * Uses the new format with matchers: {"event": [{"matcher": {...}, "hooks": [...]}]}
  * @param {string} hooksDir - Absolute path to hooks directory
  * @param {string[]} hookNames - Names of installed hooks
  * @returns {object} Hooks configuration for settings.json
@@ -159,9 +165,15 @@ export function generateHooksConfig(hooksDir, hookNames) {
       hooks[event] = []
     }
 
+    // New format: each entry has a matcher and hooks array
     hooks[event].push({
-      type: "command",
-      command: join(hooksDir, hookName),
+      matcher: {},  // Empty matcher matches all
+      hooks: [
+        {
+          type: "command",
+          command: join(hooksDir, hookName),
+        },
+      ],
     })
   }
 

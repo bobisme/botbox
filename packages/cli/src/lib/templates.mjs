@@ -47,6 +47,9 @@ const DOC_DESCRIPTIONS = {
   "update.md": "Change bead status (open/in_progress/blocked/done)",
   "finish.md": "Close bead, merge workspace, release claims, sync",
   "worker-loop.md": "Full triage-work-finish lifecycle",
+  "planning.md": "Turn specs/PRDs into actionable beads",
+  "scout.md": "Explore unfamiliar code before planning",
+  "proposal.md": "Create and validate proposals before implementation",
   "review-request.md": "Request a review",
   "review-response.md": "Handle reviewer feedback (fix/address/defer)",
   "review-loop.md": "Reviewer agent loop",
@@ -189,6 +192,10 @@ When you have questions, feedback, or issues with tools from other projects:
 3. For bugs/features, create beads in their repo (see [report-issue.md](.agents/botbox/report-issue.md))
 
 This includes: bugs, feature requests, confusion about APIs, UX problems, or just questions.
+
+### Session Search (optional)
+
+Use \`cass search "error or problem"\` to find how similar issues were solved in past sessions.
 
 ${designDocsSection}### Workflow Docs
 

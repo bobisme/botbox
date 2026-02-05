@@ -4,6 +4,7 @@ import { createRequire } from "node:module"
 import { Command } from "commander"
 import { doctor } from "./commands/doctor.mjs"
 import { init } from "./commands/init.mjs"
+import { status } from "./commands/status.mjs"
 import { sync } from "./commands/sync.mjs"
 import { runAgent } from "./commands/run-agent.mjs"
 import { ExitError } from "./lib/errors.mjs"
@@ -54,6 +55,12 @@ program
   .command("doctor")
   .description("Check toolchain health and configuration")
   .action(doctor)
+
+program
+  .command("status")
+  .description("Show status across all botbox tools (beads, workspaces, inbox, agents, claims)")
+  .option("--json", "Output in JSON format")
+  .action(status)
 
 program
   .command("run-agent <type>")

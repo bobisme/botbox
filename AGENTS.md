@@ -154,6 +154,20 @@ Source docs live in `packages/cli/docs/` and get copied to target projects durin
 
 Behavioral eval framework for testing agent protocol compliance. See [notes/eval-framework.md](notes/eval-framework.md) for run history, results, and instructions.
 
+## Proposals
+
+For significant features or changes, use the formal proposal process before implementation.
+
+**Lifecycle**: PROPOSAL → VALIDATING → ACCEPTED/REJECTED
+
+1. Create a bead with `proposal` label and draft doc in `./notes/proposals/<slug>.md`
+2. Validate by investigating open questions, moving answers to "Answered Questions"
+3. Accept (remove label, create implementation beads) or Reject (document why)
+
+Proposal docs include: summary, motivation, proposed design, open/answered questions, alternatives, and implementation plan.
+
+See [proposal.md](.agents/botbox/proposal.md) for full workflow.
+
 <!-- botbox:managed-start -->
 ## Botbox Workflow
 
@@ -241,6 +255,10 @@ When you have questions, feedback, or issues with tools from other projects:
 
 This includes: bugs, feature requests, confusion about APIs, UX problems, or just questions.
 
+### Session Search (optional)
+
+Use `cass search "error or problem"` to find how similar issues were solved in past sessions.
+
 
 ### Design Guidelines
 
@@ -251,11 +269,14 @@ This includes: bugs, feature requests, confusion about APIs, UX problems, or jus
 - [Close bead, merge workspace, release claims, sync](.agents/botbox/finish.md)
 - [groom](.agents/botbox/groom.md)
 - [Verify approval before merge](.agents/botbox/merge-check.md)
+- [Turn specs/PRDs into actionable beads](.agents/botbox/planning.md)
 - [Validate toolchain health](.agents/botbox/preflight.md)
+- [Create and validate proposals before implementation](.agents/botbox/proposal.md)
 - [Report bugs/features to other projects](.agents/botbox/report-issue.md)
 - [Reviewer agent loop](.agents/botbox/review-loop.md)
 - [Request a review](.agents/botbox/review-request.md)
 - [Handle reviewer feedback (fix/address/defer)](.agents/botbox/review-response.md)
+- [Explore unfamiliar code before planning](.agents/botbox/scout.md)
 - [Claim bead, create workspace, announce](.agents/botbox/start.md)
 - [Find work from inbox and beads](.agents/botbox/triage.md)
 - [Change bead status (open/in_progress/blocked/done)](.agents/botbox/update.md)

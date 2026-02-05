@@ -31,6 +31,7 @@ describe("listAllHooks", () => {
   test("includes known hooks", () => {
     let hooks = listAllHooks()
     expect(hooks).toContain("init-agent.sh")
+    expect(hooks).toContain("check-jj.sh")
     expect(hooks).toContain("check-bus-inbox.sh")
   })
 })
@@ -42,8 +43,13 @@ describe("listEligibleHooks", () => {
     expect(eligible).toContain("check-bus-inbox.sh")
   })
 
-  test("no hooks without botbus tool", () => {
-    let eligible = listEligibleHooks({ tools: ["beads", "maw"] })
+  test("hooks eligible with maw tool", () => {
+    let eligible = listEligibleHooks({ tools: ["maw"] })
+    expect(eligible).toContain("check-jj.sh")
+  })
+
+  test("no hooks without botbus or maw", () => {
+    let eligible = listEligibleHooks({ tools: ["beads", "crit"] })
     expect(eligible).toHaveLength(0)
   })
 })
@@ -144,7 +150,7 @@ describe("hooks version markers", () => {
 })
 
 describe("generateHooksConfig", () => {
-  test("generates correct hooks config structure", () => {
+  test("generates correct hooks config structure with new matcher format", () => {
     let config = generateHooksConfig("/abs/path/hooks", [
       "init-agent.sh",
       "check-bus-inbox.sh",
@@ -153,15 +159,25 @@ describe("generateHooksConfig", () => {
     expect(config.SessionStart).toBeDefined()
     expect(config.SessionStart).toHaveLength(1)
     expect(config.SessionStart[0]).toEqual({
-      type: "command",
-      command: "/abs/path/hooks/init-agent.sh",
+      matcher: {},
+      hooks: [
+        {
+          type: "command",
+          command: "/abs/path/hooks/init-agent.sh",
+        },
+      ],
     })
 
     expect(config.PostToolUse).toBeDefined()
     expect(config.PostToolUse).toHaveLength(1)
     expect(config.PostToolUse[0]).toEqual({
-      type: "command",
-      command: "/abs/path/hooks/check-bus-inbox.sh",
+      matcher: {},
+      hooks: [
+        {
+          type: "command",
+          command: "/abs/path/hooks/check-bus-inbox.sh",
+        },
+      ],
     })
   })
 
