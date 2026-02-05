@@ -141,7 +141,25 @@ Then proceed with teardown:
 - `br sync --flush-only`
 - `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L task-done`
 
-### 7. Repeat
+### 7. Release check — ship user-visible changes
+
+Before ending the loop, check if a release is needed:
+
+```bash
+# Check for unreleased commits
+jj log -r 'tags()..main' --no-graph -T 'description.first_line() ++ "\n"'
+```
+
+If any commits start with `feat:` or `fix:` (user-visible changes):
+1. Bump version in Cargo.toml/package.json (semantic versioning)
+2. Update changelog if one exists
+3. `maw push` (if not already pushed)
+4. Tag: `jj tag create vX.Y.Z -r main && jj git push --remote origin`
+5. Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "<project> vX.Y.Z released - <summary>" -L release`
+
+If only `chore:`, `docs:`, `refactor:` commits, no release needed.
+
+### 8. Repeat
 
 Go back to step 0. The loop ends when triage finds no work and no reviews are pending.
 
