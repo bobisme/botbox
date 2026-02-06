@@ -33,6 +33,8 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 | R8-2 | Adversarial Review (v2) | Opus | — | 49/65 (75%) | v2 multi-file: found race + TOCTOU but missed pagination; no cross-file reasoning |
 | R8-3 | Adversarial Review (v2) | Sonnet | — | 41/65 (63%) | v2 multi-file: **FAIL** — TOCTOU missed entirely; pagination missed; quality perfect |
 | R7-1 | Planning (Decomposition + Execution) | Opus | 1+7 | 76/95 (80%) | Diamond DAG (7 subtasks, 3 parallel). Completed 3/7 before context limit. 8 tests pass. |
+| E10-1 | Full Lifecycle (2 projects, 3 agents, 8 phases) | Opus+Sonnet | 2 | 158/160 (99%) | Near-perfect. Security reviewer found 7 issues (2 CRITICAL). All agents followed protocol. |
+| E10-2 | Full Lifecycle (2 projects, 3 agents, 8 phases) | Opus+Sonnet | 2 | 159/160 (99%) | Reproducible. Clean run with no setup workarounds needed. crit FK constraint persists. |
 
 ## Key Learnings
 
@@ -71,6 +73,10 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - **Both models missed pagination in the multi-file layout** — Neither Opus nor Sonnet found `(page - 1) * per_page` underflow when page=0 in list.rs. The "boring" list endpoint got less scrutiny when split into its own file. In v1, Sonnet found it.
 - **Cross-file reasoning doesn't emerge naturally** — Neither model explicitly compared download.rs (correct `&canonical`) vs delete.rs (buggy `&file_path`) when identifying the TOCTOU. Opus found the bug through single-file analysis; Sonnet missed it entirely. The cross-file reasoning rubric category measures something real.
 - **v2 FP rules are better calibrated** — LOW/MEDIUM comments on clean code traps are legitimate reviewer observations that authors can triage. Only penalizing HIGH+ or block citations avoids unfair deductions for valid low-severity nitpicks.
+- **E10 full lifecycle validated at 99%** — 2 Rust projects, 3 agents (Opus + Sonnet), 8 phases, cross-project communication, security review block/fix/LGTM cycle, full finish protocol. Agents gracefully worked around setup bugs (missing bookmark, broken path dependency).
+- **`crit reviews list` FK constraint bug** — Threads created referencing reviews not yet in SQLite index. Manifests as "Failed to apply event (type: ThreadCreated) FOREIGN KEY constraint failed". Needs crit fix. Workaround: grep agent logs for review IDs.
+- **Tool JSON key names are inconsistent** — `maw ws list` omits `path`, `crit reviews list` uses `review_id` not `id`, `crit review` uses `thread_id` not `id`. Eval scripts must match actual JSON schemas.
+- **`agent://` claims are hook-managed** — When hooks fire on announcements, they re-stake `agent://` claims. Verify scripts should only check for work claims (`bead://`, `workspace://`).
 
 ## Upstream Tool Versions (as of 2026-01-31)
 
@@ -154,3 +160,5 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - [R8-2](2026-02-01-review-r8-run2-opus.md)
 - [R8-3](2026-02-01-review-r8-run3-sonnet.md)
 - [R7-1](2026-02-01-planning-r7-run1-opus.md)
+- [E10-1](2026-02-06-e10-run1-opus.md)
+- [E10-2](2026-02-07-e10-run2-opus.md)

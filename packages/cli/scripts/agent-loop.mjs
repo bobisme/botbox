@@ -142,8 +142,9 @@ async function hasWork() {
 			'--format',
 			'json',
 		]);
-		const inbox = JSON.parse(inboxResult.stdout || '{}');
-		if (inbox.total_unread > 0) return true;
+		const inboxParsed = JSON.parse(inboxResult.stdout || '0');
+		const unreadCount = typeof inboxParsed === 'number' ? inboxParsed : (inboxParsed.total_unread ?? 0);
+		if (unreadCount > 0) return true;
 
 		// Check ready beads
 		const readyResult = await runCommand('br', ['ready', '--json']);
@@ -200,7 +201,7 @@ At the end of your work, output exactly one of these completion signals:
    For each message:
    - Task request (-L task-request or asks for work): create a bead with br create.
    - Status check or question: reply on bus, do NOT create a bead.
-   - Feedback (-L feedback): review referenced beads, reply with triage result.
+   - Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bead. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
    - Announcements from other agents ("Working on...", "Completed...", "online"): ignore, no action.
    - Duplicate of existing bead: do NOT create another bead, note it covers the request.
 
@@ -211,7 +212,7 @@ At the end of your work, output exactly one of these completion signals:
    br create + br dep add, then bv --robot-next again. If a bead is claimed
    (bus claims check --agent ${AGENT} "bead://${PROJECT}/<id>"), skip it.
 
-3. START: br update --actor ${AGENT} <id> --status=in_progress.
+3. START: br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}.
    bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "<id>".
    Create workspace: run maw ws create --random. Note the workspace name AND absolute path
    from the output (e.g., name "frost-castle", path "/abs/path/.workspaces/frost-castle").

@@ -34,7 +34,7 @@ async function loadConfig() {
 			WORKER_MODEL = worker.model || '';
 			CLAUDE_TIMEOUT = dev.timeout || 600;
 			PUSH_MAIN = config.pushMain || false;
-			REVIEW = config.review ?? true;
+			REVIEW = config.review?.enabled ?? true;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
 		}
@@ -160,7 +160,7 @@ async function hasWork() {
 		const unfinished = await getUnfinishedBeads();
 		if (unfinished.length > 0) return true;
 
-		// Check claims (dispatched workers or in-progress beads)
+		// Check claims (dispatched workers, in-progress beads, pending reviews)
 		const claimsResult = await runCommand('bus', [
 			'claims',
 			'--agent',
@@ -171,7 +171,14 @@ async function hasWork() {
 			'json',
 		]);
 		const claims = JSON.parse(claimsResult.stdout || '{}');
-		if (claims.claims && claims.claims.length > 0) return true;
+		const claimList = claims.claims || [];
+		// bead:// or workspace:// claims mean active work (don't count agent:// identity claim)
+		const workClaims = claimList.filter(
+			(/** @type {any} */ c) =>
+				Array.isArray(c.patterns) &&
+				c.patterns.some((/** @type {string} */ p) => p.startsWith('bead://') || p.startsWith('workspace://')),
+		);
+		if (workClaims.length > 0) return true;
 
 		// Check inbox
 		const inboxResult = await runCommand('bus', [
@@ -184,8 +191,9 @@ async function hasWork() {
 			'--format',
 			'json',
 		]);
-		const inbox = JSON.parse(inboxResult.stdout || '{}');
-		if (inbox.total_unread > 0) return true;
+		const inboxParsed = JSON.parse(inboxResult.stdout || '0');
+		const unreadCount = typeof inboxParsed === 'number' ? inboxParsed : (inboxParsed.total_unread ?? 0);
+		if (unreadCount > 0) return true;
 
 		// Check ready beads
 		const readyResult = await runCommand('br', ['ready', '--json']);
@@ -291,11 +299,13 @@ For EACH unfinished bead:
 1. Read the bead and its comments: br show <id> and br comments <id>
 2. Check if you still hold claims: bus claims list --agent ${AGENT} --mine
 3. Determine state:
-   - If "Review requested: <review-id>" comment exists:
-     * Check review status: crit review <review-id>
+   - If "Review created: <review-id>" comment exists:
+     * Find the review: crit reviews list --all-workspaces | grep <review-id>
+     * Check review status: crit reviews show <review-id> --path <workspace-path>
      * If LGTM (approved): Proceed to merge/finish (step 6)
      * If BLOCKED (changes requested): Follow review-response.md to fix issues, re-request review, then STOP
      * If PENDING (no votes yet): STOP this iteration — wait for reviewer
+     * If review not found: Check if workspace still exists and create new review if needed
    - If workspace comment exists but no review comment (work was in progress when session died):
      * Extract workspace name and path from comments
      * Verify workspace still exists: maw ws list
@@ -323,8 +333,8 @@ Run: bus inbox --agent ${AGENT} --channels ${PROJECT} --mark-read
 
 Process each message:
 - Task requests (-L task-request): create beads with br create
+- Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bead. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
 - Status/questions: reply on bus
-- Feedback (-L feedback): triage and respond
 - Announcements ("Working on...", "Completed...", "online"): ignore, no action
 - Duplicate requests: note existing bead, don't create another
 
@@ -336,6 +346,7 @@ Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promis
 
 GROOM each ready bead:
 - br show <id> — ensure clear title, description, acceptance criteria, priority
+- Evaluate as lead dev: is this worth doing now? Is the approach sound? Reprioritize, close as wontfix, or ask for clarification if needed.
 - Comment what you changed: br comments add --actor ${AGENT} --author ${AGENT} <id> "..."
 - If bead is claimed (check bus claims), skip it
 
@@ -347,7 +358,7 @@ Assess bead count:
 ## 5a. SEQUENTIAL (1 bead — do it yourself)
 
 Same as the standard worker loop:
-1. br update --actor ${AGENT} <id> --status=in_progress
+1. br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}
 2. bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "<id>"
 3. maw ws create --random — note workspace NAME and absolute PATH
 4. bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<id>"
@@ -360,11 +371,15 @@ Same as the standard worker loop:
 10. Describe: maw ws jj \$WS describe -m "<id>: <summary>"
 
 If REVIEW is true:
-  11. Create review: crit reviews create --agent ${AGENT} --title "<title>" --description "<summary>"
-  12. br comments add --actor ${AGENT} --author ${AGENT} <id> "Review requested: <review-id>, workspace: \$WS (\$WS_PATH)"
+  11. CHECK for existing review first:
+      - Run: br comments <id> | grep "Review created:"
+      - If found, extract <review-id> and skip to step 13 (don't create duplicate)
+  12. Create review (only if none exists):
+      - crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>" --path \$WS_PATH
+      - IMMEDIATELY record: br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace \$WS"
   13. bus statuses set --agent ${AGENT} "Review: <review-id>"
   14. Request security review (if project has security reviewer):
-      - Assign: crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
+      - Assign: crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT} --path \$WS_PATH
       - Spawn via @mention: bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
       (The @mention triggers the auto-spawn hook — without it, no reviewer spawns!)
   15. STOP this iteration — wait for reviewer.
@@ -390,7 +405,7 @@ Read each bead (br show <id>) and select a model based on complexity:
 ### For each bead being dispatched:
 1. maw ws create --random — note NAME and PATH
 2. bus generate-name — get a worker identity
-3. br update --actor ${AGENT} <id> --status=in_progress
+3. br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}
 4. bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "dispatched to <worker-name>"
 5. bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<id>"
 6. br comments add --actor ${AGENT} --author ${AGENT} <id> "Dispatched worker <worker-name> (model: <model>) in workspace \$WS (\$WS_PATH)"
@@ -416,10 +431,14 @@ For each completed worker:
 For each completed bead with a workspace:
 
 If REVIEW is true:
-  1. crit reviews create --agent ${AGENT} --title "<title>" --description "<summary of changes>"
-  2. br comments add --actor ${AGENT} --author ${AGENT} <id> "Review requested: <review-id>"
+  1. CHECK for existing review first:
+     - Run: br comments <id> | grep "Review created:"
+     - If found, extract <review-id> and skip to step 3 (don't create duplicate)
+  2. Create review (only if none exists):
+     - crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary of changes>" --path <ws-path>
+     - IMMEDIATELY record: br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace <ws-name>"
   3. Request security review (if project has security reviewer):
-     - Assign: crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
+     - Assign: crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT} --path <ws-path>
      - Spawn via @mention: bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
      (The @mention triggers the auto-spawn hook — without it, no reviewer spawns!)
   4. STOP — wait for reviewer
@@ -492,20 +511,25 @@ async function runClaude(prompt) {
 	});
 }
 
+// Track if we already announced sign-off (to avoid duplicate messages)
+let alreadySignedOff = false;
+
 // --- Cleanup handler ---
 async function cleanup() {
 	console.log('Cleaning up...');
-	try {
-		await runCommand('bus', [
-			'send',
-			'--agent',
-			AGENT,
-			PROJECT,
-			`Dev agent ${AGENT} signing off.`,
-			'-L',
-			'agent-idle',
-		]);
-	} catch {}
+	if (!alreadySignedOff) {
+		try {
+			await runCommand('bus', [
+				'send',
+				'--agent',
+				AGENT,
+				PROJECT,
+				`Dev agent ${AGENT} signing off.`,
+				'-L',
+				'agent-idle',
+			]);
+		} catch {}
+	}
 	try {
 		await runCommand('bus', ['statuses', 'clear', '--agent', AGENT]);
 	} catch {}
@@ -609,6 +633,7 @@ async function main() {
 				'-L',
 				'agent-idle',
 			]);
+			alreadySignedOff = true;
 			break;
 		}
 

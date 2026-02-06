@@ -449,6 +449,346 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.7",
+    title: "Set priority on mention hooks",
+    description: "Sets priority 1 on mention-based hooks so claim-based hooks (priority 0) run first.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping hook priority migration")
+        return
+      }
+
+      // Get all hooks
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping hook priority migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping hook priority migration")
+        return
+      }
+
+      // Find mention hooks for this project that still have default priority (0)
+      let mentionHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          h.condition?.type === "mention_received" &&
+          (h.priority === 0 || h.priority === undefined),
+      )
+
+      if (mentionHooks.length === 0) {
+        ctx.log("No mention hooks need priority update")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? `${name}-dev` : null
+
+      for (let hook of mentionHooks) {
+        // Remove old hook and re-add with priority 1
+        let removed = false
+        try {
+          execSync(`bus hooks remove ${hook.id}`, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          let addCmd = ["bus", "hooks", "add"]
+          if (agent) {
+            addCmd.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addCmd.push("--channel", `"${hook.channel}"`)
+          }
+          let condition = hook.condition || {}
+          let mentionAgent = condition.agent.replace(/^@/, "")
+          addCmd.push("--mention", `"${mentionAgent}"`)
+          addCmd.push("--priority", "1")
+          if (hook.cwd) {
+            addCmd.push("--cwd", hook.cwd)
+          }
+          // Preserve release-on-exit if the hook had a TTL (mention hooks from 1.0.5+)
+          addCmd.push("--release-on-exit")
+          addCmd.push("--", ...hook.command)
+
+          try {
+            execSync(addCmd.join(" "), {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: set priority 1 for @${mentionAgent}`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            ctx.warn(`Could not re-add hook ${hook.id}: ${message}`)
+          }
+        }
+      }
+    },
+  },
+  {
+    id: "1.0.8",
+    title: "Add claim guards to mention hooks",
+    description: "Adds --claim agent://... to mention-based hooks so they don't fire when the agent claim is already held.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping mention hook claim migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping mention hook claim migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping mention hook claim migration")
+        return
+      }
+
+      // Find mention hooks for this project that don't have a claim guard
+      let mentionHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          h.condition?.type === "mention_received" &&
+          !h.claim_pattern,
+      )
+
+      if (mentionHooks.length === 0) {
+        ctx.log("No mention hooks need claim guards")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? `${name}-dev` : null
+
+      for (let hook of mentionHooks) {
+        let condition = hook.condition || {}
+        let mentionAgent = condition.agent.replace(/^@/, "")
+
+        let removed = false
+        try {
+          execSync(`bus hooks remove ${hook.id}`, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          let addCmd = ["bus", "hooks", "add"]
+          if (agent) {
+            addCmd.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addCmd.push("--channel", `"${hook.channel}"`)
+          }
+          addCmd.push("--mention", `"${mentionAgent}"`)
+          addCmd.push("--claim", `"agent://${mentionAgent}"`)
+          addCmd.push("--claim-owner", mentionAgent)
+          addCmd.push("--ttl", "600")
+          addCmd.push("--priority", String(hook.priority ?? 1))
+          if (hook.cwd) {
+            addCmd.push("--cwd", hook.cwd)
+          }
+          addCmd.push("--", ...hook.command)
+
+          try {
+            execSync(addCmd.join(" "), {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: added claim guard for @${mentionAgent}`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            ctx.warn(`Could not re-add hook ${hook.id}: ${message}`)
+          }
+        }
+      }
+    },
+  },
+  {
+    id: "1.0.9",
+    title: "Replace --pass-env with --env-inherit in botty spawn hooks",
+    description: "Updates hook commands from --pass-env to --env-inherit to match current botty CLI.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping env-inherit migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping env-inherit migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping env-inherit migration")
+        return
+      }
+
+      // Find hooks for this project that still use --pass-env
+      let passEnvHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          Array.isArray(h.command) &&
+          h.command.includes("--pass-env"),
+      )
+
+      if (passEnvHooks.length === 0) {
+        ctx.log("No hooks need --env-inherit update")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? `${name}-dev` : null
+
+      for (let hook of passEnvHooks) {
+        // Build new command with --pass-env replaced by --env-inherit
+        let newCommand = hook.command.map(
+          (/** @type {string} */ c) => (c === "--pass-env" ? "--env-inherit" : c),
+        )
+
+        let removed = false
+        try {
+          execSync(`bus hooks remove ${hook.id}`, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          // Reconstruct add command preserving all hook properties
+          let addCmd = ["bus", "hooks", "add"]
+          if (agent) {
+            addCmd.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addCmd.push("--channel", `"${hook.channel}"`)
+          }
+          if (hook.cwd) {
+            addCmd.push("--cwd", hook.cwd)
+          }
+          let condition = hook.condition || {}
+          if (condition.type === "claim_available" && condition.pattern) {
+            addCmd.push("--claim", `"${condition.pattern}"`)
+            let claimOwner = hook.claim_owner || condition.pattern.replace(/^agent:\/\//, "")
+            addCmd.push("--claim-owner", claimOwner)
+            addCmd.push("--ttl", "600")
+          }
+          if (condition.type === "mention_received" && condition.agent) {
+            let mentionAgent = condition.agent.replace(/^@/, "")
+            addCmd.push("--mention", `"${mentionAgent}"`)
+            if (hook.claim_pattern) {
+              addCmd.push("--claim", `"${hook.claim_pattern}"`)
+            }
+            let claimOwner = hook.claim_owner || mentionAgent
+            addCmd.push("--claim-owner", claimOwner)
+            addCmd.push("--ttl", "600")
+          }
+          addCmd.push("--priority", String(hook.priority ?? 0))
+          addCmd.push("--", ...newCommand)
+
+          try {
+            execSync(addCmd.join(" "), {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: --pass-env → --env-inherit`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            ctx.warn(`Could not re-add hook ${hook.id}: ${message}`)
+            // Try to restore the old hook
+            try {
+              let restoreCmd = ["bus", "hooks", "add"]
+              if (agent) restoreCmd.push("--agent", agent)
+              if (hook.channel) restoreCmd.push("--channel", `"${hook.channel}"`)
+              if (hook.cwd) restoreCmd.push("--cwd", hook.cwd)
+              if (condition.type === "claim_available" && condition.pattern) {
+                restoreCmd.push("--claim", `"${condition.pattern}"`)
+                let claimOwner = hook.claim_owner || condition.pattern.replace(/^agent:\/\//, "")
+                restoreCmd.push("--claim-owner", claimOwner)
+                restoreCmd.push("--ttl", "600")
+              }
+              if (condition.type === "mention_received" && condition.agent) {
+                let mentionAgent = condition.agent.replace(/^@/, "")
+                restoreCmd.push("--mention", `"${mentionAgent}"`)
+                if (hook.claim_pattern) restoreCmd.push("--claim", `"${hook.claim_pattern}"`)
+                let claimOwner = hook.claim_owner || mentionAgent
+                restoreCmd.push("--claim-owner", claimOwner)
+                restoreCmd.push("--ttl", "600")
+              }
+              restoreCmd.push("--priority", String(hook.priority ?? 0))
+              restoreCmd.push("--", ...hook.command)
+              execSync(restoreCmd.join(" "), { stdio: "pipe", env: process.env })
+              ctx.warn(`Restored original hook ${hook.id}`)
+            } catch {
+              ctx.warn(`CRITICAL: Could not restore hook ${hook.id} — manual re-add required`)
+            }
+          }
+        }
+      }
+    },
+  },
 ]
 
 /**

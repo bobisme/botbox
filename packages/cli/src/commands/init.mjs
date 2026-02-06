@@ -467,7 +467,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
       console.log("Auto-spawn hook already exists, skipping")
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --pass-env BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/dev-loop.mjs ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/dev-loop.mjs ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log("Registered auto-spawn hook for dev agent")
@@ -496,7 +496,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
       console.log(`Respond hook for @${agent} already exists, skipping`)
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --mention "${agent}" --cwd ${absPath} -- botty spawn --pass-env BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/respond.mjs ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --mention "${agent}" --claim "agent://${agent}" --claim-owner ${agent} --ttl 600 --priority 1 --cwd ${absPath} -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/respond.mjs ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log(`Registered respond hook for @${agent} mentions`)
@@ -528,7 +528,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
 
     try {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --cwd ${absPath} -- botty spawn --pass-env BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${reviewerAgent} --cwd ${absPath} -- bun .agents/botbox/scripts/${scriptName} ${name} ${reviewerAgent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim "agent://${reviewerAgent}" --claim-owner ${reviewerAgent} --ttl 600 --priority 1 --cwd ${absPath} -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${reviewerAgent} --cwd ${absPath} -- bun .agents/botbox/scripts/${scriptName} ${name} ${reviewerAgent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log(`Registered mention hook for @${reviewerAgent}`)

@@ -18,6 +18,252 @@ Botbox orchestrates these companion projects (all ours):
 
 External (not ours, but used heavily):
 - **beads** (`br`) — Issue tracker with crash-recovery-friendly design
+- **beads-view** (`bv`) — Smart triage recommendations (`bv --robot-triage`, `bv --robot-next`)
+
+## How the Whole System Works End-to-End
+
+Understanding the full chain from "message arrives" to "agent does work" is critical for debugging and development.
+
+### The Agent Spawn Chain
+
+```
+1. Message lands on a botbus channel (e.g., `bus send myproject "New task" -L task-request`)
+2. botbus checks registered hooks (`bus hooks list`) for matching conditions
+3. Matching hook fires → runs its command (typically `botty spawn ...`)
+4. botty spawn creates a PTY session, runs `botbox run-agent` or `bun <script>.mjs`
+5. The loop script starts iterating: triage → start → work → review → finish
+6. Agent communicates back via `bus send`, updates beads via `br`, manages workspace via `maw`
+```
+
+### Hook Types That Trigger Agents
+
+Registered during `botbox init` (and updated via migrations):
+
+| Hook Type | Trigger | Spawns | Example |
+|-----------|---------|--------|---------|
+| **Dev agent** (claim-based) | Any message on project channel, when no dev agent claimed | Lead dev agent | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
+| **Respond** (mention-based) | `@myproject-dev` mention | Conversational responder | `bus hooks add --channel myproject --mention "myproject-dev" ...` |
+| **Reviewer** (mention-based) | `@myproject-security` mention | Reviewer agent | `bus hooks add --channel myproject --mention "myproject-security" ...` |
+
+Hook commands use `botty spawn` with `--pass-env` to forward environment variables (BOTBUS_CHANNEL, BOTBUS_MESSAGE_ID, BOTBUS_AGENT) to the spawned agent.
+
+### Observing Agents in Action
+
+```bash
+botty list                    # See running agents
+botty tail <name>             # Stream real-time agent output (primary debugging tool)
+botty tail <name> --last 100  # See last 100 lines
+botty kill <name>             # Stop a misbehaving agent
+botty send <name> "message"   # Send input to agent's PTY
+
+bus history <channel> -n 20   # See recent channel messages
+bus statuses list             # See agent presence/status
+bus claims list               # See all active claims
+bus inbox --all               # See unread messages across all channels
+```
+
+`botty tail` is the primary way to see what an agent is doing, whether it's stuck, and what tools it's calling. This is how you evaluate the effectiveness of the entire tool suite.
+
+## Companion Tools Deep Dive
+
+### botbus (`bus`) — Messaging and Coordination
+
+SQLite-backed channel messaging system. All tools default to TOON output format (token-efficient for AI agents).
+
+**Core commands:**
+- `bus send [--agent $AGENT] <channel> "message" [-L label]` — Post message to channel. Labels categorize messages (task-request, review-request, task-done, feedback, etc.)
+- `bus inbox [--channels <ch>] [--mentions] [--mark-read]` — Check unread messages. `--mentions` checks all channels for @agent mentions. `--count-only` for just the count.
+- `bus history <channel> [-n count] [--from agent] [--since time]` — Browse message history. `bus history projects` shows the project registry.
+- `bus search <query> [-c channel]` — Full-text search (FTS5 syntax)
+- `bus wait [-c channel] [--mention] [-L label] [-t timeout]` — Block until matching message arrives. Used by respond.mjs for follow-up conversations.
+- `bus watch [-c channel] [--all]` — Stream messages in real-time
+
+**Claims (advisory locks):**
+- `bus claims stake --agent $AGENT "<uri>" [-m memo] [--ttl duration]` — Claim a resource
+- `bus claims release --agent $AGENT [--all | "<uri>"]` — Release claims
+- `bus claims list [--mine] [--agent $AGENT]` — List active claims
+- Claim URI patterns: `bead://project/id`, `workspace://project/ws`, `agent://name`, `respond://name`
+
+**Hooks (event triggers):**
+- `bus hooks add --channel <ch> --cwd <dir> [--claim uri] [--mention name] [--ttl secs] <command>` — Register hook. `--cwd` is mandatory.
+- `bus hooks list` — List registered hooks with their conditions
+- `bus hooks remove <id>` — Remove a hook
+- Hook matching: `--claim` fires when claim is available; `--mention` fires on @name in message
+
+**Other:**
+- `bus statuses set/clear/list` — Agent presence and status messages
+- `bus generate-name` — Generate random agent names (used by dev-loop for worker dispatch)
+- `bus whoami [--agent $AGENT]` — Show/verify agent identity
+
+### maw — Multi-Agent Workspaces
+
+Creates isolated jj working copies so multiple agents can edit files concurrently without conflicts.
+
+**Core commands:**
+- `maw ws create <name> [--random]` — Create workspace. Returns absolute path (e.g., `/home/user/project/.workspaces/frost-castle/`). `--random` generates a random name.
+- `maw ws list [--format json]` — List all workspaces with their status
+- `maw ws merge <name> --destroy` — Squash-merge workspace commit into main and delete it. `--destroy` is required.
+- `maw ws destroy <name>` — Delete workspace without merging
+- `maw ws jj <name> <jj-args...>` — Run jj commands inside a workspace (e.g., `maw ws jj myws describe -m "feat: ..."`)
+- `maw ws status` — Comprehensive view of all workspaces, conflicts, and unmerged work
+- `maw init` — Initialize maw in a project (creates `.workspaces/` directory)
+- `maw push` — Push changes to remote
+- `maw doctor` — Validate maw configuration
+
+**Critical rules:**
+- Always use the **absolute path** from `maw ws create` output for file operations
+- Never `cd` into a workspace directory and stay there — it breaks cleanup when the workspace is destroyed
+- Each workspace owns ONE jj commit. Only modify your own.
+- Run `br` commands from **project root**, not inside `.workspaces/`
+
+### botcrit (`crit`) — Code Review
+
+Distributed code review system for jj. Reviews are tied to jj change IDs, with file-line-based comment threads and LGTM/BLOCK voting.
+
+**Review lifecycle:**
+```bash
+crit reviews create --agent $AGENT [--path $WS_PATH]    # Create review from workspace diff
+crit reviews request <id> --reviewers <name> --agent $AGENT  # Assign reviewer(s)
+crit review <id> [--format json] [--since time]          # Show full review with threads
+crit comment --file <path> --line <n> <review-id> "msg"  # Add line comment (auto-creates thread)
+crit reply <thread-id> "message"                         # Reply to existing thread
+crit lgtm <review-id> [-m "message"]                     # Approve
+crit block <review-id> --reason "..."                    # Block (request changes)
+crit reviews mark-merged <review-id>                     # Mark as merged after workspace merge
+crit inbox [--all-workspaces]                            # Show reviews/threads needing attention
+```
+
+**Key details:**
+- Reviews use `--path` to specify workspace (reviewers read code from workspace path, not project root)
+- `crit inbox --all-workspaces` is how reviewers discover pending work
+- Agent identity via `--agent` flag or `CRIT_AGENT`/`BOTBUS_AGENT` env vars
+- `--user` flag switches to human identity ($USER) for manual reviews
+
+### botty — Agent Runtime
+
+PTY-based agent spawner and manager. Runs Claude Code sessions in managed PTY processes.
+
+**Core commands:**
+- `botty spawn [--pass-env] [--model model] [--timeout secs] <name> <command...>` — Spawn agent. `--pass-env` forwards BOTBUS_* env vars to the spawned process.
+- `botty list [--format json]` — List running agents with PIDs and uptime
+- `botty tail <name> [--last n] [--follow]` — Stream agent output. **Primary debugging tool.**
+- `botty kill <name>` — Terminate agent
+- `botty send <name> "message"` — Send text to agent's PTY stdin
+
+### beads (`br`) — Issue Tracking
+
+File-based issue tracker designed for crash recovery. Beads are stored in `.beads/` and synced via `br sync`.
+
+**Core commands:**
+- `br create --actor $AGENT --owner $AGENT --title="..." [--description="..."] [--type=task|bug|feature] [--priority=1-4]`
+- `br ready` — List beads ready to work on (open, unblocked, unowned or owned by you)
+- `br show <id>` — Full bead details with comments and dependencies
+- `br update --actor $AGENT <id> --status=<open|in_progress|blocked|closed>`
+- `br close --actor $AGENT <id> [--reason="..."] [--suggest-next]`
+- `br comments add --actor $AGENT --author $AGENT <id> "message"`
+- `br dep add --actor $AGENT <blocked-id> <blocker-id>` — Add dependency
+- `br dep tree <id>` — Show dependency graph
+- `br label add --actor $AGENT -l <label> <id>` — Add label
+- `br sync --flush-only` — Flush local changes without full sync
+- `bv --robot-triage` — JSON triage output with scores and recommendations
+- `bv --robot-next` — Single best bead to work on next
+
+**Priority levels:** P1 (critical/blocking) → P2 (normal) → P3 (nice-to-have) → P4 (backlog)
+
+## Agent Loop Scripts
+
+Scripts in `packages/cli/scripts/` are copied to target projects at `.agents/botbox/scripts/`. They are self-contained `.mjs` files (cannot import from `../src/lib/`).
+
+### dev-loop.mjs — Lead Dev Agent
+
+Triages work, dispatches parallel workers, monitors progress, merges completed work.
+
+**Config:** `.botbox.json` → `agents.dev.{model, timeout, max_loops, pause}`
+
+**Per iteration:**
+1. Read inbox, create beads from task requests
+2. Check ready beads and in-progress work
+3. For N >= 2 ready beads: dispatch Haiku workers in parallel via `botty spawn`
+4. For single bead or when solo: work directly
+5. Monitor worker progress, merge completed workspaces
+6. Check for releases (feat/fix commits → version bump + tag)
+
+**Dispatch pattern:** Creates workspace per worker, generates random worker name via `bus generate-name`, stakes claims, comments bead with worker/workspace info, spawns via `botty spawn`.
+
+### agent-loop.mjs — Worker Agent
+
+Sequential: one bead per iteration. Triage → start → work → review → finish.
+
+**Config:** `.botbox.json` → `agents.worker.{model, timeout}`
+
+**Per iteration:**
+1. Resume check (crash recovery via bead comments)
+2. Triage: inbox → create beads → `br ready` → pick one
+3. Start: claim bead, create workspace, announce
+4. Work: implement in workspace using absolute paths
+5. Stuck check: 2 failed attempts = blocked, post and move on
+6. Review: `crit reviews create`, request reviewer, STOP and wait
+7. Finish: close bead, merge workspace (`maw ws merge --destroy`), release claims, sync
+8. Release check: unreleased feat/fix → bump version
+
+### reviewer-loop.mjs — Reviewer Agent
+
+Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
+
+**Config:** `.botbox.json` → `agents.reviewer.{model, timeout, max_loops, pause}`
+
+**Role detection:** Agent name suffix determines role (e.g., `myproject-security` → loads `reviewer-security.md` prompt). Falls back to generic `reviewer.md`.
+
+**Per iteration:**
+1. Check `crit inbox --all-workspaces` for pending reviews
+2. Read review diff and source files **from workspace path**
+3. Comment with severity: CRITICAL, HIGH, MEDIUM, LOW, INFO
+4. Vote: BLOCK if CRITICAL/HIGH issues, LGTM otherwise
+5. Post summary to project channel
+
+**Journal:** Maintains `.agents/botbox/review-loop-<role>.txt` with iteration summaries.
+
+### respond.mjs — Conversational Responder
+
+Answers @mentions with model selection via question prefixes.
+
+**Prefixes:** `qq:` → haiku, `q:` → sonnet (default), `big q:` → opus, `q(model):` → explicit
+
+**Flow:** Get triggering message → parse prefix → run Claude → post response → wait for follow-up (configurable timeout) → repeat up to max_conversations.
+
+### triage.mjs — Token-Efficient Triage
+
+Wraps `bv --robot-triage` JSON into scannable output: top picks, blockers, quick wins, health metrics.
+
+### iteration-start.mjs — Combined Status
+
+Aggregates inbox, ready beads, pending reviews, active claims into a single status snapshot at iteration start.
+
+## Script Eligibility
+
+Scripts are only deployed if the project has the required tools enabled:
+
+| Script | Requires |
+|--------|----------|
+| `agent-loop.mjs`, `dev-loop.mjs` | beads + maw + crit + botbus |
+| `reviewer-loop.mjs` | crit + botbus |
+| `respond.mjs` | botbus |
+| `triage.mjs` | beads |
+| `iteration-start.mjs` | beads + crit + botbus |
+
+Registry: `src/lib/scripts.mjs` → `SCRIPT_REGISTRY`
+
+## Claude Code Hooks
+
+Shell scripts in `packages/cli/hooks/`, copied to `.agents/botbox/hooks/`, registered in `.claude/settings.json`:
+
+| Hook | Event | Requires | Purpose |
+|------|-------|----------|---------|
+| `init-agent.sh` | SessionStart | botbus | Display agent identity from `.botbox.json` (default_agent, channel) |
+| `check-jj.sh` | SessionStart | maw | Remind agent to use jj; display workspace tips |
+| `check-bus-inbox.sh` | PostToolUse | botbus | Check for unread bus messages, inject reminder with previews |
+
+Registry: `src/lib/hooks.mjs` → `HOOK_REGISTRY`
 
 ## CRITICAL: Track ALL Work in Beads BEFORE Starting
 
@@ -36,11 +282,14 @@ Beads enable crash recovery, handoffs, and resumption. Without beads, work is lo
 `botbox sync` keeps projects up to date with latest docs, scripts, conventions, and hooks. It manages:
 
 - **Workflow docs** (`.agents/botbox/*.md`) — copied from bundled source
-- **AGENTS.md managed section** — regenerated from templates
+- **AGENTS.md managed section** — regenerated from templates (between `<!-- botbox:managed-start/end -->` markers)
 - **Loop scripts** (`.agents/botbox/scripts/*.mjs`) — copied based on enabled tools
+- **Prompts** (`.agents/botbox/prompts/*.md`) — reviewer prompt templates
 - **Claude Code hooks** (`.agents/botbox/hooks/*.sh`) — shell scripts for Claude Code events
 - **Design docs** (`.agents/botbox/design/*.md`) — copied based on project type
 - **Config migrations** (`.botbox.json`) — runs pending migrations
+
+Each component is version-tracked via SHA-256 content hashes stored in marker files (`.version`, `.scripts-version`, `.hooks-version`, `.prompts-version`, `.design-docs-version`). Sync detects staleness by comparing installed hash vs current bundled hash.
 
 ### Migrations
 
@@ -49,11 +298,43 @@ Beads enable crash recovery, handoffs, and resumption. Without beads, work is lo
 Migrations live in `src/migrations/index.mjs`. Each has:
 - `id`: Semantic version (e.g., "1.0.5")
 - `title`: Short description
-- `up(ctx)`: Migration function with access to projectDir, config, etc.
+- `up(ctx)`: Migration function with access to `{ projectDir, agentsDir, configPath, config, log, warn }`
 
 Migrations run automatically during `botbox sync` when the config version is behind. **When adding new botbus hook types or changing runtime behavior, add a migration.**
 
-Example: Migration 1.0.5 adds the respond hook for `@<project>-dev` mentions.
+Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add default_agent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks).
+
+### Init vs Sync
+
+**`botbox init`** does everything: interactive config, creates `.agents/botbox/`, copies all files, generates AGENTS.md + CLAUDE.md symlink + `.botbox.json`, initializes external tools (`br init`, `maw init`, `crit init`), registers botbus hooks, seeds initial beads, creates .gitignore.
+
+**`botbox sync`** is incremental: checks staleness, runs pending migrations, updates only changed components, preserves user edits outside managed markers. `--check` mode exits non-zero without changing anything (CI use).
+
+## .botbox.json Config
+
+```json
+{
+  "version": "1.0.6",
+  "project": {
+    "name": "myproject",
+    "type": ["cli"],
+    "default_agent": "myproject-dev",
+    "channel": "myproject",
+    "installCommand": "just install"
+  },
+  "tools": { "beads": true, "maw": true, "crit": true, "botbus": true, "botty": true },
+  "review": { "enabled": true, "reviewers": ["security"] },
+  "pushMain": false,
+  "agents": {
+    "dev": { "model": "opus", "max_loops": 20, "pause": 2, "timeout": 900 },
+    "worker": { "model": "haiku", "timeout": 600 },
+    "reviewer": { "model": "opus", "max_loops": 20, "pause": 2, "timeout": 600 },
+    "responder": { "model": "sonnet", "timeout": 300, "wait_timeout": 300, "max_conversations": 10 }
+  }
+}
+```
+
+Scripts read `project.default_agent` and `project.channel` on startup, making CLI args optional.
 
 ## Botbox Release Process
 
@@ -70,17 +351,21 @@ Use semantic versioning and conventional commits. See [packages/cli/AGENTS.md](p
 
 ## Repository Structure
 
-This is a bun monorepo with two packages:
-
 ```
 packages/cli/          @botbox/cli — the main CLI (commander + inquirer)
-  ├── src/             Commands, lib modules, migrations
-  ├── docs/            Workflow docs (bundled with npm, copied to target projects)
-  └── scripts/         Loop scripts (dev-loop.mjs, agent-loop.mjs, etc.)
+  ├── src/
+  │   ├── commands/    init.mjs, sync.mjs, doctor.mjs, status.mjs, run-agent.mjs
+  │   ├── lib/         docs.mjs, templates.mjs, scripts.mjs, hooks.mjs, design-docs.mjs,
+  │   │                prompts.mjs, config.mjs, errors.mjs, jj.mjs
+  │   └── migrations/  index.mjs (versioned migrations)
+  ├── docs/            Workflow docs (bundled, copied to target projects)
+  ├── scripts/         Loop scripts (agent-loop.mjs, dev-loop.mjs, etc.)
+  ├── hooks/           Claude Code hooks (init-agent.sh, check-jj.sh, check-bus-inbox.sh)
+  └── prompts/         Reviewer prompts (reviewer.md, reviewer-security.md)
 packages/botbox/       botbox — npm alias that re-exports @botbox/cli
-scripts/               Shell launchers for loop scripts (agent-loop.sh, etc.)
+scripts/               Shell launchers (symlinks to package scripts)
 evals/                 Behavioral eval framework: rubrics, scripts, results
-notes/                 Extended docs not needed for daily work
+notes/                 Extended docs (eval-framework.md, migration-system.md, workflow-docs-maintenance.md)
 .beads/                Issue tracker (beads)
 ```
 
@@ -107,34 +392,12 @@ All source is `.mjs` with JSDoc type annotations — no build step. Types are en
 **Manual testing**: ALWAYS use isolated data directories to avoid polluting actual project data:
 
 ```bash
-# Use temporary botbus data directory
 BOTBUS_DATA_DIR=/tmp/test-botbus botbox init --name test --type cli --tools beads,maw,crit,botbus --no-interactive
-
-# Also isolate other tools during testing
 BOTBUS_DATA_DIR=/tmp/test-botbus bus hooks list
-BOTBUS_DATA_DIR=/tmp/test-botbus bus send ...
-
-# Clean up after testing
 rm -rf /tmp/test-botbus
 ```
 
-**Why this matters**: Without isolation, manual tests create hooks, claims, and messages in your actual botbus data directory, mixing test artifacts with real project data.
-
 **Applies to**: Any manual testing with bus, botty, crit, maw, or br commands during development.
-
-## CLI Architecture
-
-Entry point: `packages/cli/src/index.mjs`
-
-Commands:
-- `botbox init` — interactive bootstrap (project name, type, tools, reviewers). Also accepts `--name`, `--type`, `--tools`, `--reviewers`, `--init-beads`, `--force`, `--no-interactive` for non-interactive use.
-- `botbox sync` — update `.agents/botbox/` docs and managed section of AGENTS.md. `--check` exits non-zero if stale.
-- `botbox doctor` — validate toolchain and project configuration.
-
-Key modules:
-- `src/lib/docs.mjs` — copies bundled docs, manages version markers (SHA-256 hash of doc content)
-- `src/lib/templates.mjs` — renders AGENTS.md and its managed section
-- `src/lib/errors.mjs` — `ExitError` class (thrown instead of `process.exit()`)
 
 ## Conventions
 
@@ -146,13 +409,50 @@ Key modules:
 - Commands throw `ExitError` instead of calling `process.exit()` directly
 - All commits include the trailer `Co-Authored-By: Claude <noreply@anthropic.com>` when Claude contributes
 
-## Workflow Docs
+## Debugging and Troubleshooting
 
-Source docs live in `packages/cli/docs/` and get copied to target projects during `botbox init`. For doc index, update procedures, and maintenance guidance, see [notes/workflow-docs-maintenance.md](notes/workflow-docs-maintenance.md).
+### "Look at the botty session for X"
+
+When asked to look at a botty session, immediately run `botty tail <name> --last 200` to see recent output from that agent. This is the primary workflow for:
+- Checking if an agent is stuck or making progress
+- Identifying tool failures or protocol violations
+- Finding improvement opportunities in the tool suite
+- Understanding what the agent tried and where it went wrong
+
+Drop whatever you're doing and run the tail command. Analyze the output and report what the agent is doing, whether it's stuck, and what might need fixing.
+
+### Agent not spawning
+1. Check hook registration: `bus hooks list` — is the hook there? Does the channel match?
+2. Check claim availability: `bus claims list` — is the claim already taken? (claim-based hooks won't fire if claimed)
+3. Check botty: `botty list` — is the agent already running?
+4. Verify hook command: the hook should run `botty spawn` with correct script path and `--pass-env`
+
+### Agent stuck or looping
+1. `botty tail <name>` — what is the agent doing right now?
+2. Check claims: `bus claims list --mine --agent <name>` — stuck claim?
+3. Check bead state: `br show <id>` — is the bead in expected status?
+4. Check workspace: `maw ws list` — is workspace still alive?
+
+### Review not being picked up
+1. `crit inbox --agent <reviewer> --all-workspaces` — does it show the review?
+2. Verify the @mention: the bus message MUST contain `@<project>-<role>` (no @ prefix in hook registration, but @ in message)
+3. Check hook: `bus hooks list` — is there a mention hook for that reviewer?
+4. Verify reviewer workspace path: reviewer reads code from workspace, not project root
+
+### Common pitfalls from evals
+- **Workspace path**: Always use absolute path from `maw ws create` output. Never `cd` into workspace.
+- **Re-review**: Reviewers must read from **workspace path** (`.workspaces/$WS/`) to see fixed code, not main
+- **Duplicate beads**: Check existing beads before creating from inbox messages
+- **br commands from project root**: `br` commands must run from project root, not inside `.workspaces/`
+- **Mention format**: `--mention "agent-name"` in hook registration (no @), but `@agent-name` in bus messages
 
 ## Eval Framework
 
 Behavioral eval framework for testing agent protocol compliance. See [notes/eval-framework.md](notes/eval-framework.md) for run history, results, and instructions.
+
+Eval types: L2 (single session), Agent Loop, R1 (reviewer bugs), R2 (author response), R3 (full review loop), R4 (integration), R5 (cross-project), R6 (parallel dispatch), R7 (planning), R8 (adversarial review), R9 (crash recovery).
+
+Eval scripts in `evals/scripts/` use `BOTBUS_DATA_DIR` for isolation. Rubrics in `evals/rubrics.md`.
 
 ## Proposals
 
@@ -164,9 +464,18 @@ For significant features or changes, use the formal proposal process before impl
 2. Validate by investigating open questions, moving answers to "Answered Questions"
 3. Accept (remove label, create implementation beads) or Reject (document why)
 
-Proposal docs include: summary, motivation, proposed design, open/answered questions, alternatives, and implementation plan.
-
 See [proposal.md](.agents/botbox/proposal.md) for full workflow.
+
+## Output Formats
+
+All companion tools support three output formats via `--format`:
+- **toon** (default) — Token-efficient plain text optimized for AI agents (~90% smaller than JSON)
+- **json** — Machine-readable structured output
+- **text** — Human-readable with colors and unicode glyphs
+
+## Message Labels
+
+Labels on bus messages categorize intent: `task-request`, `task-claim`, `task-blocked`, `task-done`, `review-request`, `review-done`, `review-response`, `feedback`, `grooming`, `tool-issue`, `agent-idle`, `spawn-ack`, `agent-error`.
 
 <!-- botbox:managed-start -->
 ## Botbox Workflow
@@ -182,7 +491,7 @@ See [proposal.md](.agents/botbox/proposal.md) for full workflow.
 | View ready work | `br ready` |
 | Show bead | `br show <id>` |
 | Create | `br create --actor $AGENT --owner $AGENT --title="..." --type=task --priority=2` |
-| Start work | `br update --actor $AGENT <id> --status=in_progress` |
+| Start work | `br update --actor $AGENT <id> --status=in_progress --owner=$AGENT` |
 | Add comment | `br comments add --actor $AGENT --author $AGENT <id> "message"` |
 | Close | `br close --actor $AGENT <id>` |
 | Add dependency | `br dep add --actor $AGENT <blocked> <blocker>` |

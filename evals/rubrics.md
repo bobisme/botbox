@@ -1175,3 +1175,151 @@ cargo check                                      # merged code compiles
 - **Round-trip fix**: After filing, a second agent in r5-utils picks up the bug and fixes it
 - **Multiple bugs**: r5-utils has 2-3 bugs of varying severity; agent should file appropriate priorities
 - **Ambiguous ownership**: Bug could be in r5-utils or r5-app — agent must reason about which project to file in
+
+---
+
+## E10: Full Lifecycle
+
+**Type**: Integration (multi-project, multi-agent, 8 phases)
+
+**What it tests**: Complete end-to-end workflow across two Rust projects (Alpha API + Beta library) with 3 agents (alpha-dev/Opus, alpha-security/Opus, beta-dev/Sonnet). Tests triage, cross-project discovery, workspace management, code review with security block/fix/LGTM cycle, finish protocol, and release.
+
+**Setup**: `evals/scripts/e10-setup.sh` creates isolated eval environment with shared botbus, both projects, planted defects (Beta: validate_email rejects `+`; Alpha: `/debug` endpoint exposes `api_secret`), and seeds work.
+
+**Run**: `evals/scripts/e10-run.sh` (orchestrator) or individual phase scripts.
+
+### Phase 1: Alpha Triage + Implementation + Cross-Project Discovery (30 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Reads inbox, finds task request | 3 | `bus inbox` called with correct agent |
+| Claims bead (update status + stake claim) | 4 | `br show` shows in_progress, `bus claims list` shows bead claim |
+| Creates workspace, uses absolute paths | 4 | `maw ws list` shows workspace, no `cd` into workspace |
+| Implements POST /users handler | 4 | Handler exists in workspace, accepts JSON, returns 201/400 |
+| Calls beta's validate_email | 3 | Import or call to beta validation in code |
+| Writes test with user+tag@, discovers failure | 4 | Test file exists, evidence of test failure in session |
+| Reads beta source code, identifies the bug | 3 | Reads beta/src/lib.rs, identifies whitelist issue |
+| Discovers beta via #projects registry | 3 | `bus history projects` called |
+| Communicates with beta-dev via bus | 2 | `bus send beta "..." -L feedback` with discussion tone |
+
+### Phase 2: Beta Investigates + Responds (15 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Reads inbox, finds alpha-dev's question | 3 | `bus inbox` with --mentions |
+| Investigates own code before responding | 3 | Reads src/lib.rs |
+| Responds with domain expertise | 3 | Response references RFC or explains the rationale |
+| Creates bug bead to track the fix | 3 | `br create` in beta dir |
+| Sends response to alpha channel | 3 | `bus send alpha "..." -L feedback` |
+
+### Phase 3: Beta Fix + Release (15 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Creates workspace for fix | 2 | `maw ws create` |
+| Correct fix (allows + in local part) | 4 | validate_email("user+tag@example.com") returns Ok |
+| Adds test coverage for + | 2 | Test exists and passes |
+| cargo test passes | 2 | All tests green |
+| Merges workspace, closes bead | 3 | `maw ws merge --destroy`, `br close` |
+| Announces fix on alpha channel | 2 | `bus send alpha "..." -L task-done` |
+
+### Phase 4: Alpha Resumes + Review Request (20 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Reads beta's fix announcement from inbox | 3 | `bus inbox` shows fix message |
+| Verifies tests now pass | 3 | `cargo test` in workspace succeeds |
+| Completes implementation | 4 | POST /users works correctly |
+| Creates crit review with --path | 4 | `crit reviews create --path $WS_PATH` |
+| Requests alpha-security reviewer | 3 | `crit reviews request ... --reviewers alpha-security` |
+| Announces review request with @mention | 3 | `bus send alpha "... @alpha-security" -L review-request` |
+
+### Phase 4.5: Hook Verification (5 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Mention hook registered for alpha-security | 3 | `bus hooks list` output contains alpha-security mention hook |
+| Hook command is well-formed (botty spawn, --pass-env) | 2 | Hook command parses correctly |
+
+### Phase 5: Security Review (20 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Discovers review via crit inbox | 3 | `crit inbox --all-workspaces` |
+| Reads code from workspace path (not project root) | 3 | File reads use .workspaces/ path |
+| Finds /debug endpoint secret exposure | 5 | crit comment references /debug and api_secret |
+| Correct severity (CRITICAL or HIGH) | 3 | Comment includes CRITICAL/HIGH tag |
+| Blocks the review | 3 | `crit block` called |
+| Announces result on bus | 3 | `bus send alpha "..." -L review-done` |
+
+### Phase 6: Alpha Fixes Feedback (15 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Reads review feedback from crit | 3 | `crit review` called |
+| Removes/secures /debug endpoint | 4 | /debug route gone or secret stripped from response |
+| Code still compiles | 2 | `cargo check` passes |
+| Replies on crit thread | 3 | `crit reply` with explanation of fix |
+| Re-requests review | 3 | `crit reviews request` + bus send with @mention |
+
+### Phase 7: Re-review + LGTM (10 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Reads from workspace path (not main) | 3 | File reads use .workspaces/ path |
+| Verifies /debug is removed | 4 | Session shows verification |
+| LGTMs | 3 | `crit lgtm` called |
+
+### Phase 8: Merge + Finish + Release (15 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Marks review merged | 2 | `crit reviews mark-merged` |
+| Merges workspace | 3 | `maw ws merge --destroy`, workspace gone from `maw ws list` |
+| Closes bead | 2 | `br show` status=closed |
+| Releases all claims | 2 | `bus claims list --agent $ALPHA_DEV` is empty |
+| Syncs beads | 1 | `br sync --flush-only` |
+| Version bump + tag | 3 | Cargo.toml version updated, `jj tag create v0.2.0` |
+| Completion announcement | 2 | `bus send alpha "..." -L task-done` |
+
+### Communication Throughout (15 pts)
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Progress comments on beads | 5 | `br comments` shows updates at key milestones |
+| Bus messages use correct labels | 5 | feedback, review-request, review-done, task-done used appropriately |
+| Agent identity consistent | 5 | `--agent`/`--actor` on mutating commands (reads like `br ready`, `crit review` are exempt) |
+
+### Scoring Summary
+
+| Category | Points |
+|----------|--------|
+| Phase 1: Triage + Implement + Discovery | 30 |
+| Phase 2: Beta Investigates | 15 |
+| Phase 3: Beta Fix + Release | 15 |
+| Phase 4: Alpha Resume + Review | 20 |
+| Phase 4.5: Hook Verification | 5 |
+| Phase 5: Security Review | 20 |
+| Phase 6: Fix Feedback | 15 |
+| Phase 7: Re-review | 10 |
+| Phase 8: Merge + Finish | 15 |
+| Communication | 15 |
+| **Total** | **160** |
+
+### Critical Fail Conditions (override score)
+
+Any of the following results in overall **FAIL**, regardless of point total:
+1. Alpha merges or closes bead while review is BLOCKED (no LGTM).
+2. No cross-project peer message from alpha-dev to beta channel in Phase 1.
+3. `/debug` endpoint still exposes `api_secret` after Phase 6.
+4. Mutating `bus`/`br`/`crit` commands missing identity flags (`--agent`/`--actor`). Read-only commands (`br ready`, `crit review`, `bus history`) are exempt.
+5. Claims remain unreleased after Phase 8.
+
+**Pass**: >= 112 (70%), **Excellent**: >= 144 (90%)
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| E10-1 | Opus+Sonnet | 158/160 (99%) | Near-perfect. Security reviewer found 7 issues (2 CRITICAL). All agents followed full protocol. |
+| E10-2 | Opus+Sonnet | 159/160 (99%) | Reproducible. Clean run with no setup workarounds. crit FK constraint persists. |

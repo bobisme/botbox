@@ -34,7 +34,7 @@ async function loadConfig() {
 			WORKER_MODEL = worker.model || '';
 			CLAUDE_TIMEOUT = dev.timeout || 600;
 			PUSH_MAIN = config.pushMain || false;
-			REVIEW = config.review ?? true;
+			REVIEW = config.review?.enabled ?? true;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
 		}
@@ -160,7 +160,7 @@ async function hasWork() {
 		const unfinished = await getUnfinishedBeads();
 		if (unfinished.length > 0) return true;
 
-		// Check claims (dispatched workers or in-progress beads)
+		// Check claims (dispatched workers, in-progress beads, pending reviews)
 		const claimsResult = await runCommand('bus', [
 			'claims',
 			'--agent',
@@ -171,7 +171,14 @@ async function hasWork() {
 			'json',
 		]);
 		const claims = JSON.parse(claimsResult.stdout || '{}');
-		if (claims.claims && claims.claims.length > 0) return true;
+		const claimList = claims.claims || [];
+		// bead:// or workspace:// claims mean active work (don't count agent:// identity claim)
+		const workClaims = claimList.filter(
+			(/** @type {any} */ c) =>
+				Array.isArray(c.patterns) &&
+				c.patterns.some((/** @type {string} */ p) => p.startsWith('bead://') || p.startsWith('workspace://')),
+		);
+		if (workClaims.length > 0) return true;
 
 		// Check inbox
 		const inboxResult = await runCommand('bus', [
@@ -184,8 +191,9 @@ async function hasWork() {
 			'--format',
 			'json',
 		]);
-		const inbox = JSON.parse(inboxResult.stdout || '{}');
-		if (inbox.total_unread > 0) return true;
+		const inboxParsed = JSON.parse(inboxResult.stdout || '0');
+		const unreadCount = typeof inboxParsed === 'number' ? inboxParsed : (inboxParsed.total_unread ?? 0);
+		if (unreadCount > 0) return true;
 
 		// Check ready beads
 		const readyResult = await runCommand('br', ['ready', '--json']);
@@ -325,8 +333,8 @@ Run: bus inbox --agent ${AGENT} --channels ${PROJECT} --mark-read
 
 Process each message:
 - Task requests (-L task-request): create beads with br create
+- Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bead. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
 - Status/questions: reply on bus
-- Feedback (-L feedback): triage and respond
 - Announcements ("Working on...", "Completed...", "online"): ignore, no action
 - Duplicate requests: note existing bead, don't create another
 
@@ -338,6 +346,7 @@ Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promis
 
 GROOM each ready bead:
 - br show <id> — ensure clear title, description, acceptance criteria, priority
+- Evaluate as lead dev: is this worth doing now? Is the approach sound? Reprioritize, close as wontfix, or ask for clarification if needed.
 - Comment what you changed: br comments add --actor ${AGENT} --author ${AGENT} <id> "..."
 - If bead is claimed (check bus claims), skip it
 
@@ -349,7 +358,7 @@ Assess bead count:
 ## 5a. SEQUENTIAL (1 bead — do it yourself)
 
 Same as the standard worker loop:
-1. br update --actor ${AGENT} <id> --status=in_progress
+1. br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}
 2. bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "<id>"
 3. maw ws create --random — note workspace NAME and absolute PATH
 4. bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<id>"
@@ -396,7 +405,7 @@ Read each bead (br show <id>) and select a model based on complexity:
 ### For each bead being dispatched:
 1. maw ws create --random — note NAME and PATH
 2. bus generate-name — get a worker identity
-3. br update --actor ${AGENT} <id> --status=in_progress
+3. br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}
 4. bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "dispatched to <worker-name>"
 5. bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<id>"
 6. br comments add --actor ${AGENT} --author ${AGENT} <id> "Dispatched worker <worker-name> (model: <model>) in workspace \$WS (\$WS_PATH)"
