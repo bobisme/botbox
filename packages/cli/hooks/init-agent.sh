@@ -5,7 +5,7 @@
 if [ -f ".botbox.json" ]; then
     # Extract values using jq (falls back to bus whoami if jq not available)
     if command -v jq &> /dev/null; then
-        DEFAULT_AGENT=$(jq -r '.project.default_agent // empty' .botbox.json 2>/dev/null)
+        DEFAULT_AGENT=$(jq -r '.project.defaultAgent // .project.default_agent // empty' .botbox.json 2>/dev/null)
         CHANNEL=$(jq -r '.project.channel // .project.name // empty' .botbox.json 2>/dev/null)
 
         if [ -n "$DEFAULT_AGENT" ]; then

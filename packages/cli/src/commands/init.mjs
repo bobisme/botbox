@@ -272,7 +272,7 @@ export async function init(opts) {
         name,
         type: types,
         languages: languages.length > 0 ? languages : undefined,
-        default_agent: `${name}-dev`,
+        defaultAgent: `${name}-dev`,
         channel: name,
         installCommand: installCommand || undefined,
       },
@@ -291,7 +291,7 @@ export async function init(opts) {
       agents: {
         dev: {
           model: "opus",
-          max_loops: 20,
+          maxLoops: 20,
           pause: 2,
           timeout: 900,
         },
@@ -301,7 +301,7 @@ export async function init(opts) {
         },
         reviewer: {
           model: "opus",
-          max_loops: 20,
+          maxLoops: 20,
           pause: 2,
           timeout: 600,
         },

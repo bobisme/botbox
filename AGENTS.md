@@ -68,7 +68,7 @@ bus inbox --all               # See unread messages across all channels
 
 ### botbus (`bus`) — Messaging and Coordination
 
-SQLite-backed channel messaging system. All tools default to TOON output format (token-efficient for AI agents).
+SQLite-backed channel messaging system. Default output is `text` format (concise, token-efficient). Use `--format json` when you need structured data for parsing.
 
 **Core commands:**
 - `bus send [--agent $AGENT] <channel> "message" [-L label]` — Post message to channel. Labels categorize messages (task-request, review-request, task-done, feedback, etc.)
@@ -178,7 +178,7 @@ Scripts in `packages/cli/scripts/` are copied to target projects at `.agents/bot
 
 Triages work, dispatches parallel workers, monitors progress, merges completed work.
 
-**Config:** `.botbox.json` → `agents.dev.{model, timeout, max_loops, pause}`
+**Config:** `.botbox.json` → `agents.dev.{model, timeout, maxLoops, pause}`
 
 **Per iteration:**
 1. Read inbox, create beads from task requests
@@ -210,7 +210,7 @@ Sequential: one bead per iteration. Triage → start → work → review → fin
 
 Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
-**Config:** `.botbox.json` → `agents.reviewer.{model, timeout, max_loops, pause}`
+**Config:** `.botbox.json` → `agents.reviewer.{model, timeout, maxLoops, pause}`
 
 **Role detection:** Agent name suffix determines role (e.g., `myproject-security` → loads `reviewer-security.md` prompt). Falls back to generic `reviewer.md`.
 
@@ -259,7 +259,7 @@ Shell scripts in `packages/cli/hooks/`, copied to `.agents/botbox/hooks/`, regis
 
 | Hook | Event | Requires | Purpose |
 |------|-------|----------|---------|
-| `init-agent.sh` | SessionStart | botbus | Display agent identity from `.botbox.json` (default_agent, channel) |
+| `init-agent.sh` | SessionStart | botbus | Display agent identity from `.botbox.json` (defaultAgent, channel) |
 | `check-jj.sh` | SessionStart | maw | Remind agent to use jj; display workspace tips |
 | `check-bus-inbox.sh` | PostToolUse | botbus | Check for unread bus messages, inject reminder with previews |
 
@@ -302,7 +302,7 @@ Migrations live in `src/migrations/index.mjs`. Each has:
 
 Migrations run automatically during `botbox sync` when the config version is behind. **When adding new botbus hook types or changing runtime behavior, add a migration.**
 
-Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add default_agent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks).
+Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add defaultAgent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks), 1.0.10 (rename snake_case config keys to camelCase).
 
 ### Init vs Sync
 
@@ -318,7 +318,7 @@ Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs script
   "project": {
     "name": "myproject",
     "type": ["cli"],
-    "default_agent": "myproject-dev",
+    "defaultAgent": "myproject-dev",
     "channel": "myproject",
     "installCommand": "just install"
   },
@@ -326,15 +326,15 @@ Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs script
   "review": { "enabled": true, "reviewers": ["security"] },
   "pushMain": false,
   "agents": {
-    "dev": { "model": "opus", "max_loops": 20, "pause": 2, "timeout": 900 },
+    "dev": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 900 },
     "worker": { "model": "haiku", "timeout": 600 },
-    "reviewer": { "model": "opus", "max_loops": 20, "pause": 2, "timeout": 600 },
+    "reviewer": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 600 },
     "responder": { "model": "sonnet", "timeout": 300, "wait_timeout": 300, "max_conversations": 10 }
   }
 }
 ```
 
-Scripts read `project.default_agent` and `project.channel` on startup, making CLI args optional.
+Scripts read `project.defaultAgent` and `project.channel` on startup, making CLI args optional.
 
 ## Botbox Release Process
 
@@ -468,10 +468,10 @@ See [proposal.md](.agents/botbox/proposal.md) for full workflow.
 
 ## Output Formats
 
-All companion tools support three output formats via `--format`:
-- **toon** (default) — Token-efficient plain text optimized for AI agents (~90% smaller than JSON)
-- **json** — Machine-readable structured output
-- **text** — Human-readable with colors and unicode glyphs
+All companion tools support output formats via `--format`:
+- **text** (default) — Concise plain text. Should be token-efficient by design — IDs, key fields, and suggested next commands, without decorative prose.
+- **json** — Machine-readable structured output. Use when you need to parse fields programmatically.
+- **toon** — Ultra-compact token-optimized format. Available but rarely needed — `text` is already concise enough for most agent workflows.
 
 ## Message Labels
 

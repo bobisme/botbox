@@ -43,7 +43,7 @@ async function loadConfig() {
       let responder = agents.responder || {}
 
       PROJECT = project.channel || project.name || ""
-      AGENT = project.default_agent || ""
+      AGENT = project.defaultAgent || project.default_agent || ""
       DEFAULT_MODEL = responder.model || "sonnet"
       WAIT_TIMEOUT = responder.wait_timeout || 300
       CLAUDE_TIMEOUT = responder.timeout || 300

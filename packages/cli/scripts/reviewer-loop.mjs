@@ -134,7 +134,7 @@ async function loadConfig() {
 
 			// Agent settings
 			MODEL = reviewer.model || '';
-			MAX_LOOPS = reviewer.max_loops || 20;
+			MAX_LOOPS = reviewer.maxLoops || reviewer.max_loops || 20;
 			LOOP_PAUSE = reviewer.pause || 2;
 			CLAUDE_TIMEOUT = reviewer.timeout || 600;
 		} catch (err) {

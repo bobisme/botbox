@@ -789,6 +789,42 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.10",
+    title: "Rename snake_case config keys to camelCase",
+    description: "Renames project.default_agent → project.defaultAgent and agents.*.max_loops → agents.*.maxLoops in .botbox.json.",
+    up(ctx) {
+      let config = ctx.config
+      if (!config) return
+
+      let changed = false
+
+      // project.default_agent → project.defaultAgent
+      let project = config.project || {}
+      if (project.default_agent && !project.defaultAgent) {
+        project.defaultAgent = project.default_agent
+        delete project.default_agent
+        changed = true
+      }
+
+      // agents.*.max_loops → agents.*.maxLoops
+      let agents = config.agents || {}
+      for (let [role, settings] of Object.entries(agents)) {
+        let s = /** @type {any} */ (settings)
+        if (s.max_loops !== undefined && s.maxLoops === undefined) {
+          s.maxLoops = s.max_loops
+          delete s.max_loops
+          changed = true
+        }
+      }
+
+      if (changed) {
+        ctx.log("Renamed snake_case keys to camelCase (default_agent → defaultAgent, max_loops → maxLoops)")
+      } else {
+        ctx.log("No snake_case keys to rename")
+      }
+    },
+  },
 ]
 
 /**

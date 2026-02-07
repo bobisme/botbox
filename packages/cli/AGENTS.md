@@ -61,7 +61,8 @@ Version-tracked migrations that run during `botbox sync`.
 | 1.0.1 | Move scripts from `scripts/` to `.agents/botbox/scripts/` |
 | 1.0.2 | Replace `.sh` scripts with `.mjs` versions |
 | 1.0.3 | Update botbus hooks from `.sh` to `.mjs` |
-| 1.0.4 | Add `default_agent` and `channel` to project config |
+| 1.0.4 | Add `defaultAgent` and `channel` to project config |
+| 1.0.10 | Rename snake_case config keys to camelCase |
 
 ### Migration Guidelines
 
@@ -76,11 +77,11 @@ Project configuration stored in target projects. Key fields:
 
 ```json
 {
-  "version": "1.0.4",
+  "version": "1.0.10",
   "project": {
     "name": "myproject",
     "type": ["cli"],
-    "default_agent": "myproject-dev",
+    "defaultAgent": "myproject-dev",
     "channel": "myproject"
   },
   "tools": { "beads": true, "maw": true, ... },
@@ -95,7 +96,7 @@ Project configuration stored in target projects. Key fields:
 
 ### Project Identity Fields
 
-- `project.default_agent`: Lead agent name (e.g., `myproject-dev`). Used by dev-loop.mjs as default AGENT.
+- `project.defaultAgent`: Lead agent name (e.g., `myproject-dev`). Used by dev-loop.mjs as default AGENT.
 - `project.channel`: Botbus channel name (e.g., `myproject`). Used by all scripts as default PROJECT.
 
 Scripts read these on startup, so CLI args become optional:
