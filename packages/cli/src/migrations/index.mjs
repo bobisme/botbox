@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process"
 import { existsSync, readdirSync, renameSync, unlinkSync } from "node:fs"
-import { join } from "node:path"
+import { basename, dirname, join } from "node:path"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
 
 /**
@@ -954,6 +954,143 @@ export const migrations = [
         } catch (error) {
           let message = error instanceof Error ? error.message : String(error)
           ctx.warn(`Could not register router hook: ${message}`)
+        }
+      }
+    },
+  },
+  {
+    id: "1.0.12",
+    title: "Update botbus hooks for maw v2 workspace layout",
+    description:
+      "Updates hook --cwd and botty spawn --cwd to point to ws/default/ " +
+      "for projects that have been upgraded to maw v2.",
+    up(ctx) {
+      // Detect maw v2 — either ws/ at project root (bare root)
+      // or we're running inside ws/default/ (re-exec'd by sync)
+      let bareRoot = null
+      if (existsSync(join(ctx.projectDir, "ws"))) {
+        bareRoot = ctx.projectDir
+      } else if (
+        basename(dirname(ctx.projectDir)) === "ws" &&
+        existsSync(join(dirname(dirname(ctx.projectDir)), ".jj"))
+      ) {
+        bareRoot = dirname(dirname(ctx.projectDir))
+      }
+
+      if (!bareRoot) {
+        ctx.log("Not a maw v2 project, skipping")
+        return
+      }
+
+      let defaultWsDir = join(bareRoot, "ws", "default")
+
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping hook cwd migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping hook cwd migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping hook cwd migration")
+        return
+      }
+
+      // Find hooks for this project whose cwd points to bare root (not ws/default/)
+      let projectHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === bareRoot &&
+          h.active,
+      )
+
+      if (projectHooks.length === 0) {
+        ctx.log("No hooks need cwd update for maw v2")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? (project.defaultAgent || `${name}-dev`) : null
+
+      for (let hook of projectHooks) {
+        // Update botty spawn --cwd in the command array too
+        let newCommand = hook.command.map((/** @type {string} */ c, /** @type {number} */ i, /** @type {string[]} */ arr) => {
+          // If this is the value after --cwd in the command (botty spawn --cwd <dir>)
+          if (i > 0 && arr[i - 1] === "--cwd" && c === bareRoot) {
+            return defaultWsDir
+          }
+          return c
+        })
+
+        let removed = false
+        try {
+          execSync(`bus hooks remove ${hook.id}`, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          let addCmd = ["bus", "hooks", "add"]
+          if (agent) {
+            addCmd.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addCmd.push("--channel", `"${hook.channel}"`)
+          }
+          // Update hook cwd to default workspace
+          addCmd.push("--cwd", defaultWsDir)
+
+          let condition = hook.condition || {}
+          if (condition.type === "claim_available" && condition.pattern) {
+            addCmd.push("--claim", `"${condition.pattern}"`)
+            let claimOwner = hook.claim_owner || condition.pattern.replace(/^agent:\/\//, "")
+            addCmd.push("--claim-owner", claimOwner)
+            addCmd.push("--ttl", "600")
+          }
+          if (condition.type === "mention_received" && condition.agent) {
+            let mentionAgent = condition.agent.replace(/^@/, "")
+            addCmd.push("--mention", `"${mentionAgent}"`)
+            if (hook.claim_pattern) {
+              addCmd.push("--claim", `"${hook.claim_pattern}"`)
+            }
+            let claimOwner = hook.claim_owner || mentionAgent
+            addCmd.push("--claim-owner", claimOwner)
+            addCmd.push("--ttl", "600")
+          }
+          addCmd.push("--priority", String(hook.priority ?? 0))
+          addCmd.push("--", ...newCommand)
+
+          try {
+            execSync(addCmd.join(" "), {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: cwd → ws/default/`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            ctx.warn(`Could not re-add hook ${hook.id}: ${message}`)
+          }
         }
       }
     },

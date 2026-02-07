@@ -1,3 +1,4 @@
+import { execSync } from "node:child_process"
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
@@ -49,6 +50,18 @@ export function sync(opts) {
   let shouldCommit = opts.commit !== false
   const projectDir = process.cwd()
   const agentsDir = join(projectDir, ".agents", "botbox")
+
+  // Detect maw v2 bare repo — no .agents/botbox/ at root but ws/ exists
+  if (!existsSync(agentsDir) && existsSync(join(projectDir, "ws"))) {
+    let args = ["exec", "default", "--", "botbox", "sync"]
+    if (opts.check) args.push("--check")
+    if (opts.commit === false) args.push("--no-commit")
+    execSync(`maw ${args.join(" ")}`, {
+      cwd: projectDir,
+      stdio: "inherit",
+    })
+    return
+  }
 
   if (!existsSync(agentsDir)) {
     throw new ExitError("No .agents/botbox/ found. Run `botbox init` first.", 1)

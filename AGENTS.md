@@ -110,21 +110,24 @@ SQLite-backed channel messaging system. Default output is `text` format (concise
 Creates isolated jj working copies so multiple agents can edit files concurrently without conflicts.
 
 **Core commands:**
-- `maw ws create <name> [--random]` — Create workspace. Returns absolute path (e.g., `/home/user/project/.workspaces/frost-castle/`). `--random` generates a random name.
+- `maw ws create <name> [--random]` — Create workspace. Returns workspace name. Workspace files live at `ws/<name>/`. `--random` generates a random name.
 - `maw ws list [--format json]` — List all workspaces with their status
 - `maw ws merge <name> --destroy` — Squash-merge workspace commit into main and delete it. `--destroy` is required.
 - `maw ws destroy <name>` — Delete workspace without merging
-- `maw ws jj <name> <jj-args...>` — Run jj commands inside a workspace (e.g., `maw ws jj myws describe -m "feat: ..."`)
+- `maw exec <name> -- <command>` — Run any command inside a workspace (e.g., `maw exec myws -- jj describe -m "feat: ..."`)
 - `maw ws status` — Comprehensive view of all workspaces, conflicts, and unmerged work
-- `maw init` — Initialize maw in a project (creates `.workspaces/` directory)
+- `maw init` — Initialize maw in a project
+- `maw upgrade` — Upgrade from v1 (`.workspaces/`) to v2 (`ws/`) layout
 - `maw push` — Push changes to remote
 - `maw doctor` — Validate maw configuration
 
 **Critical rules:**
-- Always use the **absolute path** from `maw ws create` output for file operations
+- Use `maw exec <ws> -- <command>` to run commands in workspace context (br, bv, crit, jj, cargo, etc.)
+- Use `maw exec default -- br ...` for beads commands (always in default workspace)
+- Use `maw exec <ws> -- crit ...` for review commands (always in the review's workspace)
+- Workspace files are at `ws/<name>/` — use absolute paths for file operations
 - Never `cd` into a workspace directory and stay there — it breaks cleanup when the workspace is destroyed
 - Each workspace owns ONE jj commit. Only modify your own.
-- Run `br` commands from **project root**, not inside `.workspaces/`
 
 ### botcrit (`crit`) — Code Review
 
@@ -132,19 +135,19 @@ Distributed code review system for jj. Reviews are tied to jj change IDs, with f
 
 **Review lifecycle:**
 ```bash
-crit reviews create --agent $AGENT --title "..." [--path $WS_PATH]  # Create review from workspace diff
-crit reviews request <id> --reviewers <name> --agent $AGENT  # Assign reviewer(s)
-crit review <id> [--format json] [--since time]          # Show full review with threads
-crit comment --file <path> --line <n> <review-id> "msg"  # Add line comment (auto-creates thread)
-crit reply <thread-id> "message"                         # Reply to existing thread
-crit lgtm <review-id> [-m "message"]                     # Approve
-crit block <review-id> --reason "..."                    # Block (request changes)
-crit reviews mark-merged <review-id>                     # Mark as merged after workspace merge
-crit inbox [--all-workspaces]                            # Show reviews/threads needing attention
+maw exec $WS -- crit reviews create --agent $AGENT --title "..."  # Create review from workspace diff
+maw exec $WS -- crit reviews request <id> --reviewers <name> --agent $AGENT  # Assign reviewer(s)
+maw exec $WS -- crit review <id> [--format json] [--since time]  # Show full review with threads
+maw exec $WS -- crit comment --file <path> --line <n> <review-id> "msg"  # Add line comment
+maw exec $WS -- crit reply <thread-id> "message"                 # Reply to existing thread
+maw exec $WS -- crit lgtm <review-id> [-m "message"]             # Approve
+maw exec $WS -- crit block <review-id> --reason "..."            # Block (request changes)
+maw exec default -- crit reviews mark-merged <review-id>          # Mark as merged after workspace merge
+maw exec default -- crit inbox [--all-workspaces]                 # Show reviews/threads needing attention
 ```
 
 **Key details:**
-- Reviews use `--path` to specify workspace (reviewers read code from workspace path, not project root)
+- Always run crit commands via `maw exec <ws> --` in the workspace context
 - `crit inbox --all-workspaces` is how reviewers discover pending work
 - Agent identity via `--agent` flag or `CRIT_AGENT`/`BOTBUS_AGENT` env vars
 - `--user` flag switches to human identity ($USER) for manual reviews
@@ -225,8 +228,8 @@ Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 **Role detection:** Agent name suffix determines role (e.g., `myproject-security` → loads `reviewer-security.md` prompt). Falls back to generic `reviewer.md`.
 
 **Per iteration:**
-1. Check `crit inbox --all-workspaces` for pending reviews
-2. Read review diff and source files **from workspace path**
+1. Check `maw exec default -- crit inbox --all-workspaces` for pending reviews
+2. Read review diff and source files from workspace (`ws/$WS/...`)
 3. Comment with severity: CRITICAL, HIGH, MEDIUM, LOW, INFO
 4. Vote: BLOCK if CRITICAL/HIGH issues, LGTM otherwise
 5. Post summary to project channel
@@ -314,7 +317,7 @@ Migrations live in `src/migrations/index.mjs`. Each has:
 
 Migrations run automatically during `botbox sync` when the config version is behind. **When adding new botbus hook types or changing runtime behavior, add a migration.**
 
-Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add defaultAgent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks), 1.0.10 (rename snake_case config keys to camelCase).
+Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add defaultAgent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks), 1.0.10 (rename snake_case config keys to camelCase), 1.0.12 (update hook cwd for maw v2).
 
 ### Init vs Sync
 
@@ -452,10 +455,11 @@ Drop whatever you're doing and run the tail command. Analyze the output and repo
 4. Verify reviewer workspace path: reviewer reads code from workspace, not project root
 
 ### Common pitfalls from evals
-- **Workspace path**: Always use absolute path from `maw ws create` output. Never `cd` into workspace.
-- **Re-review**: Reviewers must read from **workspace path** (`.workspaces/$WS/`) to see fixed code, not main
+- **Workspace path**: Workspace files are at `ws/$WS/`. Use absolute paths for file operations. Never `cd` into workspace.
+- **Re-review**: Reviewers must read from workspace path (`ws/$WS/`) to see fixed code, not main
 - **Duplicate beads**: Check existing beads before creating from inbox messages
-- **br commands from project root**: `br` commands must run from project root, not inside `.workspaces/`
+- **br/bv via maw exec**: Always use `maw exec default -- br ...` — never run `br` directly
+- **crit via maw exec**: Always use `maw exec $WS -- crit ...` — crit runs in workspace context
 - **Mention format**: `--mention "agent-name"` in hook registration (no @), but `@agent-name` in bus messages
 
 ## Eval Framework

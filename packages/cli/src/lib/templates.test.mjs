@@ -99,7 +99,7 @@ describe("renderAgentsMd", () => {
       reviewers: [],
     })
     expect(result).toContain("### Beads Quick Reference")
-    expect(result).toContain("`br ready`")
+    expect(result).toContain("`maw exec default -- br ready`")
     expect(result).toContain("| Close |")
   })
 
@@ -111,7 +111,7 @@ describe("renderAgentsMd", () => {
       reviewers: [],
     })
     expect(result).toContain("### Beads Conventions")
-    expect(result).toContain("br sync --flush-only")
+    expect(result).toContain("maw exec default -- br sync --flush-only")
   })
 
   test("managed section contains claims", () => {
