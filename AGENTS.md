@@ -41,11 +41,21 @@ Registered during `botbox init` (and updated via migrations):
 
 | Hook Type | Trigger | Spawns | Example |
 |-----------|---------|--------|---------|
-| **Dev agent** (claim-based) | Any message on project channel, when no dev agent claimed | Lead dev agent | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
-| **Respond** (mention-based) | `@myproject-dev` mention | Conversational responder | `bus hooks add --channel myproject --mention "myproject-dev" ...` |
+| **Router** (claim-based) | Any message on project channel, when no agent claimed | respond.mjs (universal router) | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
 | **Reviewer** (mention-based) | `@myproject-security` mention | Reviewer agent | `bus hooks add --channel myproject --mention "myproject-security" ...` |
 
-Hook commands use `botty spawn` with `--pass-env` to forward environment variables (BOTBUS_CHANNEL, BOTBUS_MESSAGE_ID, BOTBUS_AGENT) to the spawned agent.
+The router hook spawns `respond.mjs` which routes messages based on `!` prefixes:
+- `!dev [msg]` — create bead + spawn dev-loop
+- `!bead [desc]` — create bead (with dedup via `br search`)
+- `!q [question]` — answer with sonnet
+- `!qq [question]` — answer with haiku
+- `!bigq [question]` — answer with opus
+- `!q(model) [question]` — answer with explicit model
+- No prefix — smart triage via haiku (chat → reply, question → conversation mode, work → bead + dev-loop)
+
+Also accepts old-style `q:` / `qq:` / `big q:` / `q(model):` prefixes for backwards compatibility.
+
+Hook commands use `botty spawn` with `--env-inherit` to forward environment variables (BOTBUS_CHANNEL, BOTBUS_MESSAGE_ID, BOTBUS_AGENT) to the spawned agent.
 
 ### Observing Agents in Action
 
@@ -223,13 +233,15 @@ Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
 **Journal:** Maintains `.agents/botbox/review-loop-<role>.txt` with iteration summaries.
 
-### respond.mjs — Conversational Responder
+### respond.mjs — Universal Message Router
 
-Answers @mentions with model selection via question prefixes.
+THE single entrypoint for all project channel messages. Routes based on `!` prefixes, maintains conversation context across turns, and can escalate to dev-loop mid-conversation.
 
-**Prefixes:** `qq:` → haiku, `q:` → sonnet (default), `big q:` → opus, `q(model):` → explicit
+**Commands:** `!dev` → dev-loop, `!bead` → create bead, `!q`/`!qq`/`!bigq`/`!q(model)` → question answering, no prefix → haiku triage (chat/question/work)
 
-**Flow:** Get triggering message → parse prefix → run Claude → post response → wait for follow-up (configurable timeout) → repeat up to max_conversations.
+**Flow:** Fetch message → route by prefix → dispatch to handler. Question mode enters a conversation loop with transcript buffer. Triage classifies bare messages and routes accordingly. Mid-conversation escalation creates a bead with conversation context and spawns dev-loop.
+
+**Config:** `.botbox.json` → `agents.responder.{model, timeout, wait_timeout, max_conversations}`
 
 ### triage.mjs — Token-Efficient Triage
 
@@ -422,10 +434,10 @@ When asked to look at a botty session, immediately run `botty tail <name> --last
 Drop whatever you're doing and run the tail command. Analyze the output and report what the agent is doing, whether it's stuck, and what might need fixing.
 
 ### Agent not spawning
-1. Check hook registration: `bus hooks list` — is the hook there? Does the channel match?
-2. Check claim availability: `bus claims list` — is the claim already taken? (claim-based hooks won't fire if claimed)
+1. Check hook registration: `bus hooks list` — is the router hook there? Does the channel match? It should point to `respond.mjs`.
+2. Check claim availability: `bus claims list` — is the `agent://X-dev` claim already taken? (router hook won't fire if claimed)
 3. Check botty: `botty list` — is the agent already running?
-4. Verify hook command: the hook should run `botty spawn` with correct script path and `--pass-env`
+4. Verify hook command: the hook should run `botty spawn` with correct script path and `--env-inherit`
 
 ### Agent stuck or looping
 1. `botty tail <name>` — what is the agent doing right now?

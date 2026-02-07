@@ -116,12 +116,13 @@ Registers botbus hooks for auto-spawning agents.
 
 ### Hook Registration
 
-**Dev agent hook** (claim-based):
+**Router hook** (claim-based, single entrypoint for all channel messages):
 ```
-bus hooks add --channel <project> --claim "agent://<project>-dev" --claim-owner <project>-dev --ttl 600 ...
+bus hooks add --channel <project> --claim "agent://<project>-dev" --claim-owner <project>-dev --ttl 600 -- botty spawn ... -- bun .agents/botbox/scripts/respond.mjs <project> <project>-dev
 ```
+respond.mjs routes based on `!` prefixes: `!dev`, `!bead`, `!q`/`!qq`/`!bigq`, or triage for bare messages.
 
-**Reviewer hooks** (mention-based):
+**Reviewer hooks** (mention-based, unchanged):
 ```
 bus hooks add --channel <project> --mention "<project>-<role>" --claim-owner <project>-<role> --ttl 600 ...
 ```

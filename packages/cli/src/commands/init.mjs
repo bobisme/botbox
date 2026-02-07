@@ -454,7 +454,8 @@ async function registerSpawnHook(projectDir, name, reviewers) {
     return
   }
 
-  // Register dev agent hook (channel-based)
+  // Register single router hook — respond.mjs handles all message routing
+  // (replaces the old dev-loop + respond hook pair)
   try {
     let existing = execSync("bus hooks list --format json", {
       encoding: "utf-8",
@@ -463,46 +464,26 @@ async function registerSpawnHook(projectDir, name, reviewers) {
     })
     let hooks = JSON.parse(existing)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
-    if (arr.some((/** @type {any} */ h) => h.channel === name && h.active && !h.mention)) {
-      console.log("Auto-spawn hook already exists, skipping")
-    } else {
-      execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/dev-loop.mjs ${name} ${agent}`,
-        { cwd: projectDir, stdio: "inherit", env: process.env },
-      )
-      console.log("Registered auto-spawn hook for dev agent")
-    }
-  } catch {
-    console.warn("Warning: Failed to register auto-spawn hook for dev agent")
-  }
-
-  // Register respond hook for dev agent mentions (question answering)
-  try {
-    let existing = execSync("bus hooks list --format json", {
-      encoding: "utf-8",
-      stdio: ["pipe", "pipe", "pipe"],
-      env: process.env,
-    })
-    let hooks = JSON.parse(existing)
-    let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
-    // Check for existing mention hook for dev agent (respond hook)
-    let hasRespondHook = arr.some(
+    // Check for existing router hook (claim-based, runs respond.mjs)
+    let hasRouterHook = arr.some(
       (/** @type {any} */ h) =>
-        h.condition?.type === "mention_received" &&
-        h.condition?.agent === agent &&
-        h.active,
+        h.cwd === absPath &&
+        h.active &&
+        h.condition?.type === "claim_available" &&
+        Array.isArray(h.command) &&
+        h.command.some((/** @type {string} */ c) => c.includes("respond.mjs")),
     )
-    if (hasRespondHook) {
-      console.log(`Respond hook for @${agent} already exists, skipping`)
+    if (hasRouterHook) {
+      console.log("Router hook already exists, skipping")
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --mention "${agent}" --claim "agent://${agent}" --claim-owner ${agent} --ttl 600 --priority 1 --cwd ${absPath} -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/respond.mjs ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/respond.mjs ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
-      console.log(`Registered respond hook for @${agent} mentions`)
+      console.log("Registered router hook (respond.mjs) for all channel messages")
     }
   } catch {
-    console.warn(`Warning: Failed to register respond hook for @${agent}`)
+    console.warn("Warning: Failed to register router hook")
   }
 
   // Register reviewer hooks (mention-based)

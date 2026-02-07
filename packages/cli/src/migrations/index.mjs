@@ -825,6 +825,139 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.11",
+    title: "Replace dev+respond hooks with single router hook",
+    description:
+      "Replaces the separate dev-loop (claim-based) and respond (mention-based) hooks " +
+      "with a single channel hook that routes all messages through respond.mjs.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping router hook migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping router hook migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping router hook migration")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      if (!name) {
+        ctx.warn("No project.name in config, skipping router hook migration")
+        return
+      }
+
+      let agent = project.defaultAgent || `${name}-dev`
+
+      // Find the dev hook (claim-based, runs dev-loop.mjs) and respond hook (mention-based, runs respond.mjs)
+      let devHook = hooks.find(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          h.condition?.type === "claim_available" &&
+          Array.isArray(h.command) &&
+          h.command.some((/** @type {string} */ c) => c.includes("dev-loop.mjs")),
+      )
+
+      let respondHook = hooks.find(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          h.condition?.type === "mention_received" &&
+          Array.isArray(h.command) &&
+          h.command.some((/** @type {string} */ c) => c.includes("respond.mjs")),
+      )
+
+      if (!devHook && !respondHook) {
+        ctx.log("No dev or respond hooks found for this project, nothing to migrate")
+        return
+      }
+
+      // Check if a unified router hook already exists (idempotency)
+      let hasRouterHook = hooks.some(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          h.condition?.type === "claim_available" &&
+          Array.isArray(h.command) &&
+          h.command.some((/** @type {string} */ c) => c.includes("respond.mjs")),
+      )
+
+      if (hasRouterHook) {
+        ctx.log("Router hook already exists, cleaning up old hooks only")
+      }
+
+      // Remove old hooks
+      let removed = []
+      for (let hook of [devHook, respondHook]) {
+        if (!hook) continue
+        try {
+          execSync(`bus hooks remove ${hook.id}`, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed.push(hook.id)
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}`)
+        }
+      }
+
+      if (removed.length > 0) {
+        ctx.log(`Removed old hooks: ${removed.join(", ")}`)
+      }
+
+      // Add single router hook (respond.mjs handles all routing)
+      if (!hasRouterHook) {
+        let addCmd = [
+          "bus", "hooks", "add",
+          "--agent", agent,
+          "--channel", `"${name}"`,
+          "--claim", `"agent://${agent}"`,
+          "--claim-owner", agent,
+          "--ttl", "600",
+          "--cwd", ctx.projectDir,
+          "--",
+          "botty", "spawn",
+          "--env-inherit", "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID",
+          "--name", agent,
+          "--cwd", ctx.projectDir,
+          "--", "bun", ".agents/botbox/scripts/respond.mjs", name, agent,
+        ]
+
+        try {
+          execSync(addCmd.join(" "), {
+            stdio: "pipe",
+            env: process.env,
+          })
+          ctx.log(`Registered single router hook for #${name} → respond.mjs`)
+        } catch (error) {
+          let message = error instanceof Error ? error.message : String(error)
+          ctx.warn(`Could not register router hook: ${message}`)
+        }
+      }
+    },
+  },
 ]
 
 /**
