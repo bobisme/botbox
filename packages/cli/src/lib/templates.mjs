@@ -55,6 +55,7 @@ const DOC_DESCRIPTIONS = {
   "review-loop.md": "Reviewer agent loop",
   "merge-check.md": "Verify approval before merge",
   "preflight.md": "Validate toolchain health",
+  "cross-channel.md": "Ask questions, report bugs, and track responses across projects",
   "report-issue.md": "Report bugs/features to other projects",
 }
 
@@ -185,13 +186,17 @@ The @mention triggers the auto-spawn hook for the reviewer.
 
 ### Cross-Project Communication
 
-When you have questions, feedback, or issues with tools from other projects:
+**Don't suffer in silence.** If a tool confuses you or behaves unexpectedly, post to its project channel.
 
 1. Find the project: \`bus history projects -n 50\` (the #projects channel has project registry entries)
-2. Post to their channel: \`bus send <project> "..." -L feedback\`
-3. For bugs/features, create beads in their repo (see [report-issue.md](.agents/botbox/report-issue.md))
+2. Post question or feedback: \`bus send --agent $AGENT <project> "..." -L feedback\`
+3. For bugs, create beads in their repo first
+4. **Always create a local tracking bead** so you check back later:
+   \`\`\`bash
+   br create --actor $AGENT --owner $AGENT --title="[tracking] <summary>" --labels tracking --type=task --priority=3
+   \`\`\`
 
-This includes: bugs, feature requests, confusion about APIs, UX problems, or just questions.
+See [cross-channel.md](.agents/botbox/cross-channel.md) for the full workflow.
 
 ### Session Search (optional)
 
