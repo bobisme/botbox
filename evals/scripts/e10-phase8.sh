@@ -63,7 +63,7 @@ Your code review ${REVIEW_ID} has been approved (LGTM). Complete the full finish
    - Edit Cargo.toml: change version from \"0.1.0\" to \"0.2.0\"
    - jj describe -m \"feat: add POST /users registration with email validation\"
    - jj new
-   - jj tag create v0.2.0 -r @-
+   - jj tag set v0.2.0 -r @-
 
 4. ANNOUNCE:
    - bus send --agent ${ALPHA_DEV} alpha \"Closed ${BEAD}: user registration endpoint. Released v0.2.0.\" -L task-done

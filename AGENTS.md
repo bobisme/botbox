@@ -122,7 +122,7 @@ Distributed code review system for jj. Reviews are tied to jj change IDs, with f
 
 **Review lifecycle:**
 ```bash
-crit reviews create --agent $AGENT [--path $WS_PATH]    # Create review from workspace diff
+crit reviews create --agent $AGENT --title "..." [--path $WS_PATH]  # Create review from workspace diff
 crit reviews request <id> --reviewers <name> --agent $AGENT  # Assign reviewer(s)
 crit review <id> [--format json] [--since time]          # Show full review with threads
 crit comment --file <path> --line <n> <review-id> "msg"  # Add line comment (auto-creates thread)
@@ -344,7 +344,7 @@ Changes to workflow docs, scripts, prompts, or templates require a release:
 2. **Add migration** if behavior changes (see `src/migrations/index.mjs`)
 3. **Run tests**: `bun test` — version hashes auto-update
 4. **Commit and push** to main
-5. **Tag**: `jj tag create vX.Y.Z -r main && jj git push --remote origin`
+5. **Tag**: `jj tag set vX.Y.Z -r main && jj git push --remote origin`
 6. **Install locally**: `just install`
 
 Use semantic versioning and conventional commits. See [packages/cli/AGENTS.md](packages/cli/AGENTS.md) for component details.

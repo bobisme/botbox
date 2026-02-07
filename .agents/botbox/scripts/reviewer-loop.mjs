@@ -456,6 +456,7 @@ async function main() {
 			// Check for completion signals
 			if (result.output.includes('<promise>COMPLETE</promise>')) {
 				console.log('✓ Review cycle complete');
+				alreadySignedOff = true; // Agent likely sent its own sign-off
 			} else if (result.output.includes('<promise>BLOCKED</promise>')) {
 				console.log('⚠ Reviewer blocked');
 			} else {
