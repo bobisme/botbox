@@ -1,13 +1,13 @@
 {
-  "version": "1.0.9",
+  "version": "1.0.11",
   "project": {
     "name": "botbox",
     "type": [
       "cli"
     ],
-    "default_agent": "botbox-dev",
     "channel": "botbox",
-    "installCommand": "just install"
+    "installCommand": "just install",
+    "defaultAgent": "botbox-dev"
   },
   "tools": {
     "beads": true,
@@ -26,9 +26,9 @@
   "agents": {
     "dev": {
       "model": "opus",
-      "max_loops": 20,
       "pause": 2,
-      "timeout": 900
+      "timeout": 900,
+      "maxLoops": 20
     },
     "worker": {
       "model": "haiku",
@@ -36,9 +36,9 @@
     },
     "reviewer": {
       "model": "opus",
-      "max_loops": 20,
       "pause": 2,
-      "timeout": 600
+      "timeout": 600,
+      "maxLoops": 20
     }
   }
 }

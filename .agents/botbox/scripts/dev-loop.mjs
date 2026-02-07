@@ -27,7 +27,7 @@ async function loadConfig() {
 
 			// Project identity (can be overridden by CLI args)
 			PROJECT = project.channel || project.name || '';
-			AGENT = project.default_agent || '';
+			AGENT = project.defaultAgent || project.default_agent || '';
 
 			// Agent settings
 			MODEL = dev.model || '';
