@@ -2,6 +2,30 @@ import { describe, expect, it } from "bun:test"
 import { routeMessage } from "./respond.mjs"
 
 describe("routeMessage", () => {
+  // --- !oneshot ---
+  describe("!oneshot prefix", () => {
+    it("routes !oneshot with body", () => {
+      let route = routeMessage("!oneshot what time is it?")
+      expect(route).toEqual({ type: "oneshot", body: "what time is it?" })
+    })
+
+    it("routes bare !oneshot", () => {
+      let route = routeMessage("!oneshot")
+      expect(route).toEqual({ type: "oneshot", body: "" })
+    })
+
+    it("is case-insensitive", () => {
+      let route = routeMessage("!ONESHOT hello")
+      expect(route).toEqual({ type: "oneshot", body: "hello" })
+    })
+
+    it("takes priority over other routes", () => {
+      // !oneshot should match before !dev, !q, etc.
+      let route = routeMessage("!oneshot !dev something")
+      expect(route.type).toBe("oneshot")
+    })
+  })
+
   // --- !dev ---
   describe("!dev prefix", () => {
     it("routes !dev with body", () => {
