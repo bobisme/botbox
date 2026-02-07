@@ -45,17 +45,32 @@ export function getCurrentDescription() {
 
 /**
  * Commit the current working copy with a message.
- * This sets the commit message via `jj describe` and then creates
- * a new empty change with `jj new`.
+ *
+ * When called without paths, this commits all changes (describe + new).
+ * When called with paths, only the specified files are included in the
+ * commit — other working copy changes remain in the new working copy.
+ * This uses `jj commit -m <message> <paths...>` which splits out just
+ * the named files.
+ *
  * @param {string} message - The commit message
+ * @param {string[]} [paths] - Optional list of file paths to include (relative to repo root)
  * @returns {boolean} - True if commit succeeded
  */
-export function commit(message) {
+export function commit(message, paths) {
   try {
-    // Set the commit message
-    execSync(`jj describe -m "${escapeShell(message)}"`, { stdio: "pipe" })
-    // Create new change to finalize
-    execSync("jj new", { stdio: "pipe" })
+    if (paths && paths.length > 0) {
+      // Use jj commit with file arguments — only the specified files
+      // go into the committed change; everything else stays in the
+      // new working copy on top.
+      let quotedPaths = paths.map((p) => `"${escapeShell(p)}"`).join(" ")
+      execSync(`jj commit -m "${escapeShell(message)}" ${quotedPaths}`, {
+        stdio: "pipe",
+      })
+    } else {
+      // No paths specified — commit everything (original behavior)
+      execSync(`jj describe -m "${escapeShell(message)}"`, { stdio: "pipe" })
+      execSync("jj new", { stdio: "pipe" })
+    }
     return true
   } catch {
     return false

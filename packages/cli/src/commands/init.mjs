@@ -411,7 +411,21 @@ opencode.json
   // Auto-commit if this is a new init (not a re-init) and in a jj repo
   if (!isReinit && shouldCommit && isJjRepo()) {
     let message = `chore: initialize botbox v${BOTBOX_CONFIG_VERSION}`
-    if (commit(message)) {
+
+    // Only commit botbox-managed files to avoid capturing unrelated
+    // user changes that happen to be in the working copy.
+    let managedPaths = [
+      ".agents/botbox",
+      "AGENTS.md",
+      "CLAUDE.md",
+      ".botbox.json",
+      ".claude/settings.json",
+    ]
+    if (existsSync(join(projectDir, ".critignore"))) {
+      managedPaths.push(".critignore")
+    }
+
+    if (commit(message, managedPaths)) {
       console.log(`Committed: ${message}`)
     } else {
       console.warn("Warning: Failed to auto-commit (jj error)")

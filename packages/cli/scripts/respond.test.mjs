@@ -250,6 +250,12 @@ describe("routeMessage", () => {
       expect(route.body).toBe("fix this\nit's broken\nurgent")
     })
 
+    it("!bead multiline: first line is title, rest is body", () => {
+      let route = routeMessage("!bead Add rate limiting\nWe need per-IP rate limiting on the API\nMax 100 req/min")
+      expect(route.type).toBe("bead")
+      expect(route.body).toBe("Add rate limiting\nWe need per-IP rate limiting on the API\nMax 100 req/min")
+    })
+
     it("!q does not consume first word of body", () => {
       let route = routeMessage("!q question about something")
       expect(route.body).toBe("question about something")

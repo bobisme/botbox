@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from "bun:test"
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { execSync } from "node:child_process"
@@ -86,6 +86,65 @@ describe("jj helpers", () => {
 
       // Current change should be empty
       expect(getCurrentDescription()).toBe(null)
+    })
+
+    it("commits only specified paths when paths are provided", () => {
+      execSync("jj git init", { stdio: "pipe" })
+
+      // Create two files — one managed, one unrelated
+      mkdirSync(join(testDir, ".agents", "botbox"), { recursive: true })
+      writeFileSync(join(testDir, ".agents", "botbox", "doc.md"), "managed")
+      writeFileSync(join(testDir, "user-file.txt"), "unrelated work")
+
+      let result = commit("scoped commit", [".agents/botbox"])
+      expect(result).toBe(true)
+
+      // The committed change should contain only the managed file
+      let committed = execSync('jj diff -r @- --summary', {
+        encoding: "utf-8",
+        stdio: "pipe",
+      })
+      expect(committed).toContain(".agents/botbox/doc.md")
+      expect(committed).not.toContain("user-file.txt")
+
+      // The unrelated file should still be in the working copy
+      let working = execSync("jj diff --summary", {
+        encoding: "utf-8",
+        stdio: "pipe",
+      })
+      expect(working).toContain("user-file.txt")
+    })
+
+    it("commits multiple specified paths", () => {
+      execSync("jj git init", { stdio: "pipe" })
+
+      mkdirSync(join(testDir, ".agents", "botbox"), { recursive: true })
+      writeFileSync(join(testDir, ".agents", "botbox", "doc.md"), "managed")
+      writeFileSync(join(testDir, "AGENTS.md"), "agents content")
+      writeFileSync(join(testDir, ".botbox.json"), "{}")
+      writeFileSync(join(testDir, "unrelated.txt"), "user work")
+
+      let result = commit("multi-path commit", [
+        ".agents/botbox",
+        "AGENTS.md",
+        ".botbox.json",
+      ])
+      expect(result).toBe(true)
+
+      let committed = execSync('jj diff -r @- --summary', {
+        encoding: "utf-8",
+        stdio: "pipe",
+      })
+      expect(committed).toContain(".agents/botbox/doc.md")
+      expect(committed).toContain("AGENTS.md")
+      expect(committed).toContain(".botbox.json")
+      expect(committed).not.toContain("unrelated.txt")
+
+      let working = execSync("jj diff --summary", {
+        encoding: "utf-8",
+        stdio: "pipe",
+      })
+      expect(working).toContain("unrelated.txt")
     })
   })
 })

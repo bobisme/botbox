@@ -315,8 +315,6 @@ opencode.json
     critignoreCreated ||
     ranMigrations
   if (madeChanges && shouldCommit && isJjRepo()) {
-    // Check if there were pre-existing uncommitted changes
-    // (we can't easily distinguish, so just commit if we made changes)
     let parts = []
     if (docsNeedUpdate) parts.push("docs")
     if (managedSectionNeedsUpdate) parts.push("AGENTS.md")
@@ -330,7 +328,14 @@ opencode.json
     let toVer = latest
     let message = `chore: upgrade botbox from ${fromVer} to ${toVer}\n\nUpdated: ${parts.join(", ")}`
 
-    if (commit(message)) {
+    // Only commit botbox-managed files to avoid capturing unrelated
+    // user changes that happen to be in the working copy.
+    let managedPaths = [".agents/botbox"]
+    if (managedSectionNeedsUpdate) managedPaths.push("AGENTS.md")
+    if (ranMigrations) managedPaths.push(".botbox.json")
+    if (critignoreCreated) managedPaths.push(".critignore")
+
+    if (commit(message, managedPaths)) {
       console.log(`Committed: chore: upgrade botbox from ${fromVer} to ${toVer}`)
     } else {
       console.warn("Warning: Failed to auto-commit (jj error)")
