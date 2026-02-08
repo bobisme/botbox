@@ -17,7 +17,7 @@ const VERSION_FILE = ".hooks-version"
 
 /**
  * @typedef {object} HookEntry
- * @property {string} event - Claude Code hook event (SessionStart, PostToolUse, etc.)
+ * @property {string | string[]} event - Claude Code hook event(s) (SessionStart, PostToolUse, etc.)
  * @property {string} description
  * @property {(config: { tools: string[] }) => boolean} eligible
  */
@@ -25,12 +25,12 @@ const VERSION_FILE = ".hooks-version"
 /** @type {Record<string, HookEntry>} */
 const HOOK_REGISTRY = {
   "init-agent.sh": {
-    event: "SessionStart",
+    event: ["SessionStart", "PreCompact"],
     description: "Display agent identity from .botbox.json",
     eligible: (config) => config.tools.includes("botbus"),
   },
   "check-jj.sh": {
-    event: "SessionStart",
+    event: ["SessionStart", "PreCompact"],
     description: "Remind agent to use jj commands in jj repos",
     eligible: (config) => config.tools.includes("maw"),
   },
@@ -160,21 +160,24 @@ export function generateHooksConfig(hooksDir, hookNames) {
     let entry = HOOK_REGISTRY[hookName]
     if (!entry) continue
 
-    let event = entry.event
-    if (!hooks[event]) {
-      hooks[event] = []
-    }
+    let events = Array.isArray(entry.event) ? entry.event : [entry.event]
 
-    // New format: each entry has a matcher and hooks array
-    hooks[event].push({
-      matcher: {},  // Empty matcher matches all
-      hooks: [
-        {
-          type: "command",
-          command: join(hooksDir, hookName),
-        },
-      ],
-    })
+    for (let event of events) {
+      if (!hooks[event]) {
+        hooks[event] = []
+      }
+
+      // New format: each entry has a matcher and hooks array
+      hooks[event].push({
+        matcher: {},  // Empty matcher matches all
+        hooks: [
+          {
+            type: "command",
+            command: join(hooksDir, hookName),
+          },
+        ],
+      })
+    }
   }
 
   return hooks

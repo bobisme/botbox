@@ -1,7 +1,8 @@
 import { execSync } from "node:child_process"
-import { existsSync, readdirSync, renameSync, unlinkSync } from "node:fs"
-import { basename, dirname, join } from "node:path"
+import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, mkdirSync } from "node:fs"
+import { basename, dirname, join, resolve } from "node:path"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
+import { generateHooksConfig, listEligibleHooks } from "../lib/hooks.mjs"
 
 /**
  * @typedef {object} MigrationContext
@@ -1093,6 +1094,56 @@ export const migrations = [
           }
         }
       }
+    },
+  },
+  {
+    id: "1.0.13",
+    title: "Regenerate .claude/settings.json hooks with new matcher format",
+    description:
+      "Claude Code now requires hooks in settings.json to use the matcher group format: " +
+      '{"event": [{"hooks": [...]}]}. Old format had hook handlers directly in the event array. ' +
+      "Also adds PreCompact event for init-agent.sh and check-jj.sh.",
+    up(ctx) {
+      let hooksDir = join(ctx.projectDir, ".agents", "botbox", "hooks")
+      if (!existsSync(hooksDir)) {
+        ctx.log("No hooks directory found, skipping")
+        return
+      }
+
+      // Get list of installed hook files
+      let hookFiles
+      try {
+        hookFiles = readdirSync(hooksDir).filter((f) => f.endsWith(".sh"))
+      } catch {
+        ctx.log("Could not read hooks directory, skipping")
+        return
+      }
+
+      if (hookFiles.length === 0) {
+        ctx.log("No hooks installed, skipping")
+        return
+      }
+
+      // Find .claude/settings.json
+      let claudeDir = join(ctx.projectDir, ".claude")
+      let settingsPath = join(claudeDir, "settings.json")
+
+      let settings = {}
+      if (existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
+        } catch {
+          ctx.warn("Could not parse existing settings.json, will overwrite hooks section")
+        }
+      }
+
+      // Regenerate hooks config with correct format
+      let absHooksDir = resolve(hooksDir)
+      settings.hooks = generateHooksConfig(absHooksDir, hookFiles)
+
+      mkdirSync(claudeDir, { recursive: true })
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n")
+      ctx.log("Regenerated .claude/settings.json hooks with new matcher format")
     },
   },
 ]

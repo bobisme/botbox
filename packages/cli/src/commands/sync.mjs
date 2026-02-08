@@ -1,6 +1,6 @@
 import { execSync } from "node:child_process"
-import { existsSync, lstatSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { join, resolve } from "node:path"
 import {
   copyWorkflowDocs,
   currentVersion,
@@ -24,6 +24,7 @@ import {
 } from "../lib/scripts.mjs"
 import {
   currentHooksVersion,
+  generateHooksConfig,
   readHooksVersionMarker,
   updateExistingHooks,
   writeHooksVersionMarker,
@@ -269,6 +270,25 @@ export function sync(opts) {
     let updated = updateExistingHooks(hooksDir)
     writeHooksVersionMarker(hooksDir)
     console.log(`Updated hooks: ${updated.join(", ")}`)
+
+    // Regenerate .claude/settings.json hooks config
+    let hookFiles = readdirSync(hooksDir).filter((f) => f.endsWith(".sh"))
+    if (hookFiles.length > 0) {
+      let claudeDir = join(projectDir, ".claude")
+      let settingsPath = join(claudeDir, "settings.json")
+      let settings = {}
+      if (existsSync(settingsPath)) {
+        try {
+          settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
+        } catch {
+          // Overwrite if unparseable
+        }
+      }
+      settings.hooks = generateHooksConfig(resolve(hooksDir), hookFiles)
+      mkdirSync(claudeDir, { recursive: true })
+      writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n")
+      console.log("Regenerated .claude/settings.json hooks config")
+    }
   }
 
   if (designDocsNeedUpdate) {
@@ -360,7 +380,8 @@ opencode.json
     // user changes that happen to be in the working copy.
     let managedPaths = [".agents/botbox"]
     if (managedSectionNeedsUpdate) managedPaths.push("AGENTS.md")
-    if (ranMigrations) managedPaths.push(".botbox.json")
+    if (ranMigrations) managedPaths.push(".botbox.json", ".claude/settings.json")
+    if (hooksNeedUpdate) managedPaths.push(".claude/settings.json")
     if (critignoreCreated) managedPaths.push(".critignore")
 
     if (commit(message, managedPaths)) {

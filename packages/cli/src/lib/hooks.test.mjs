@@ -168,6 +168,18 @@ describe("generateHooksConfig", () => {
       ],
     })
 
+    expect(config.PreCompact).toBeDefined()
+    expect(config.PreCompact).toHaveLength(1)
+    expect(config.PreCompact[0]).toEqual({
+      matcher: {},
+      hooks: [
+        {
+          type: "command",
+          command: "/abs/path/hooks/init-agent.sh",
+        },
+      ],
+    })
+
     expect(config.PostToolUse).toBeDefined()
     expect(config.PostToolUse).toHaveLength(1)
     expect(config.PostToolUse[0]).toEqual({
@@ -179,6 +191,18 @@ describe("generateHooksConfig", () => {
         },
       ],
     })
+  })
+
+  test("handles multiple events per hook", () => {
+    let config = generateHooksConfig("/abs/path/hooks", ["check-jj.sh"])
+
+    expect(config.SessionStart).toBeDefined()
+    expect(config.SessionStart).toHaveLength(1)
+    expect(config.PreCompact).toBeDefined()
+    expect(config.PreCompact).toHaveLength(1)
+
+    expect(config.SessionStart[0].hooks[0].command).toBe("/abs/path/hooks/check-jj.sh")
+    expect(config.PreCompact[0].hooks[0].command).toBe("/abs/path/hooks/check-jj.sh")
   })
 
   test("returns empty object for no hooks", () => {
