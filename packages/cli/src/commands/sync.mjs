@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process"
-import { existsSync, readFileSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import {
   copyWorkflowDocs,
@@ -60,6 +60,21 @@ export function sync(opts) {
       cwd: projectDir,
       stdio: "inherit",
     })
+
+    // Ensure bare root has stub AGENTS.md + CLAUDE.md symlink
+    // so Claude Code finds instructions when launched from project root
+    let stubAgentsMd = join(projectDir, "AGENTS.md")
+    let stubClaudeMd = join(projectDir, "CLAUDE.md")
+    let stubContent = "**Do not edit the root AGENTS.md or CLAUDE.md for memories or instructions. Use the AGENTS.md in ws/default/.**\n@ws/default/AGENTS.md\n"
+    if (!existsSync(stubAgentsMd)) {
+      writeFileSync(stubAgentsMd, stubContent)
+      console.log("Created bare-root AGENTS.md stub")
+    }
+    if (!existsSync(stubClaudeMd)) {
+      symlinkSync("AGENTS.md", stubClaudeMd)
+      console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
+    }
+
     return
   }
 

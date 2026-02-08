@@ -1,4 +1,5 @@
 import { checkbox, confirm, input } from "@inquirer/prompts"
+import { execSync } from "node:child_process"
 import {
   existsSync,
   mkdirSync,
@@ -48,6 +49,43 @@ export async function init(opts) {
   const interactive = opts.interactive !== false
   const shouldCommit = opts.commit !== false
   const projectDir = process.cwd()
+
+  // Detect maw v2 bare repo — no .agents/botbox/ at root but ws/ exists
+  let bareRootDir = null
+  if (!existsSync(join(projectDir, ".agents", "botbox")) && existsSync(join(projectDir, "ws"))) {
+    bareRootDir = projectDir
+    let args = ["exec", "default", "--", "botbox", "init"]
+    // Forward relevant flags
+    if (opts.name) args.push("--name", opts.name)
+    if (opts.type) args.push("--type", opts.type)
+    if (opts.tools) args.push("--tools", opts.tools)
+    if (opts.reviewers) args.push("--reviewers", opts.reviewers)
+    if (opts.language) args.push("--language", opts.language)
+    if (opts.installCommand) args.push("--install-command", opts.installCommand)
+    if (opts.force) args.push("--force")
+    if (opts.interactive === false) args.push("--no-interactive")
+    if (opts.commit === false) args.push("--no-commit")
+    if (opts.initBeads === false) args.push("--no-init-beads")
+    if (opts.seedWork === false) args.push("--no-seed-work")
+    execSync(`maw ${args.join(" ")}`, {
+      cwd: projectDir,
+      stdio: "inherit",
+    })
+
+    // Ensure bare root has stub AGENTS.md + CLAUDE.md symlink
+    let stubAgentsMd = join(projectDir, "AGENTS.md")
+    let stubClaudeMd = join(projectDir, "CLAUDE.md")
+    let stubContent = "**Do not edit the root AGENTS.md or CLAUDE.md for memories or instructions. Use the AGENTS.md in ws/default/.**\n@ws/default/AGENTS.md\n"
+    if (!existsSync(stubAgentsMd)) {
+      writeFileSync(stubAgentsMd, stubContent)
+      console.log("Created bare-root AGENTS.md stub")
+    }
+    if (!existsSync(stubClaudeMd)) {
+      symlinkSync("AGENTS.md", stubClaudeMd)
+      console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
+    }
+    return
+  }
 
   try {
     // Detect existing config from AGENTS.md on re-init
