@@ -112,8 +112,8 @@ Creates isolated jj working copies so multiple agents can edit files concurrentl
 **Core commands:**
 - `maw ws create <name> [--random]` — Create workspace. Returns workspace name. Workspace files live at `ws/<name>/`. `--random` generates a random name.
 - `maw ws list [--format json]` — List all workspaces with their status
-- `maw ws merge <name> --destroy` — Squash-merge workspace commit into main and delete it. `--destroy` is required.
-- `maw ws destroy <name>` — Delete workspace without merging
+- `maw ws merge <name> --destroy` — Squash-merge workspace commit into main and delete it. `--destroy` is required. **Never use on `default`.**
+- `maw ws destroy <name>` — Delete workspace without merging. **Never use on `default`.**
 - `maw exec <name> -- <command>` — Run any command inside a workspace (e.g., `maw exec myws -- jj describe -m "feat: ..."`)
 - `maw ws status` — Comprehensive view of all workspaces, conflicts, and unmerged work
 - `maw init` — Initialize maw in a project
@@ -122,6 +122,7 @@ Creates isolated jj working copies so multiple agents can edit files concurrentl
 - `maw doctor` — Validate maw configuration
 
 **Critical rules:**
+- **Never merge or destroy the default workspace.** It is the main working copy — other workspaces merge INTO it.
 - Use `maw exec <ws> -- <command>` to run commands in workspace context (br, bv, crit, jj, cargo, etc.)
 - Use `maw exec default -- br ...` for beads commands (always in default workspace)
 - Use `maw exec <ws> -- crit ...` for review commands (always in the review's workspace)
