@@ -1230,7 +1230,7 @@ cargo check                                      # merged code compiles
 | Reads beta's fix announcement from inbox | 3 | `bus inbox` shows fix message |
 | Verifies tests now pass | 3 | `cargo test` in workspace succeeds |
 | Completes implementation | 4 | POST /users works correctly |
-| Creates crit review with --path | 4 | `crit reviews create --path $WS_PATH` |
+| Creates crit review from workspace | 4 | `maw exec $WS -- crit reviews create` |
 | Requests alpha-security reviewer | 3 | `crit reviews request ... --reviewers alpha-security` |
 | Announces review request with @mention | 3 | `bus send alpha "... @alpha-security" -L review-request` |
 
@@ -1246,7 +1246,7 @@ cargo check                                      # merged code compiles
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
 | Discovers review via crit inbox | 3 | `crit inbox --all-workspaces` |
-| Reads code from workspace path (not project root) | 3 | File reads use .workspaces/ path |
+| Reads code from workspace path (not project root) | 3 | File reads use ws/$WS/ path |
 | Finds /debug endpoint secret exposure | 5 | crit comment references /debug and api_secret |
 | Correct severity (CRITICAL or HIGH) | 3 | Comment includes CRITICAL/HIGH tag |
 | Blocks the review | 3 | `crit block` called |
@@ -1266,7 +1266,7 @@ cargo check                                      # merged code compiles
 
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
-| Reads from workspace path (not main) | 3 | File reads use .workspaces/ path |
+| Reads from workspace path (not main) | 3 | File reads use ws/$WS/ path |
 | Verifies /debug is removed | 4 | Session shows verification |
 | LGTMs | 3 | `crit lgtm` called |
 
@@ -1274,12 +1274,12 @@ cargo check                                      # merged code compiles
 
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
-| Marks review merged | 2 | `crit reviews mark-merged` |
 | Merges workspace | 3 | `maw ws merge --destroy`, workspace gone from `maw ws list` |
+| Marks review merged (from default, after merge) | 2 | `maw exec default -- crit reviews mark-merged` |
 | Closes bead | 2 | `br show` status=closed |
 | Releases all claims | 2 | `bus claims list --agent $ALPHA_DEV` is empty |
 | Syncs beads | 1 | `br sync --flush-only` |
-| Version bump + tag | 3 | Cargo.toml version updated, `jj tag create v0.2.0` |
+| Version bump + tag | 3 | Cargo.toml version updated, `jj tag set v0.2.0` |
 | Completion announcement | 2 | `bus send alpha "..." -L task-done` |
 
 ### Communication Throughout (15 pts)
@@ -1289,6 +1289,31 @@ cargo check                                      # merged code compiles
 | Progress comments on beads | 5 | `br comments` shows updates at key milestones |
 | Bus messages use correct labels | 5 | feedback, review-request, review-done, task-done used appropriately |
 | Agent identity consistent | 5 | `--agent`/`--actor` on mutating commands (reads like `br ready`, `crit review` are exempt) |
+
+### Friction Efficiency (40 pts) — E10v2
+
+Automated extraction from phase stdout logs via `e10-friction.sh`. Measures how efficiently agents use the tools — wasted calls from failures, retries, sibling cancellations, and --help lookups.
+
+| Criterion | Pts | Verification |
+|-----------|-----|-------------|
+| Zero friction (0 wasted calls) | 40 | `e10-friction.sh` reports 0 total wasted |
+| Minor friction (1-5 wasted calls) | 30 | Occasional flag discovery or single retry |
+| Moderate friction (6-15 wasted calls) | 20 | Multiple tool failures, some sibling amplification |
+| Significant friction (16-30 wasted calls) | 10 | Persistent friction source (e.g., missing --path across phases) |
+| Severe friction (31+ wasted calls) | 0 | Major tool usability issues |
+
+**What counts as a wasted call:**
+- `Exit code 1` / `Exit code 2` on tool commands (wrong flags/args)
+- `Sibling tool call errored` (parallel call cancelled by sibling failure)
+- `--help` lookups mid-phase (agent didn't know the CLI)
+- Retries of the same command with corrected flags
+
+**What does NOT count:**
+- Intentional --help at start of session (exploratory, not recovery)
+- Tool calls that succeed but produce unexpected output
+- FALLBACK lines in orchestrator output (script-level, not agent-level)
+
+**Sibling amplification note:** Claude Code's parallel tool calling means 1 failure in a batch of N cancels N-1 siblings. A single missing flag on 7 parallel crit comments costs 7 calls, not 1. This amplification is intentionally captured because it reflects real cost.
 
 ### Scoring Summary
 
@@ -1304,7 +1329,8 @@ cargo check                                      # merged code compiles
 | Phase 7: Re-review | 10 |
 | Phase 8: Merge + Finish | 15 |
 | Communication | 15 |
-| **Total** | **160** |
+| Friction Efficiency | 40 |
+| **Total** | **200** |
 
 ### Critical Fail Conditions (override score)
 
@@ -1315,7 +1341,7 @@ Any of the following results in overall **FAIL**, regardless of point total:
 4. Mutating `bus`/`br`/`crit` commands missing identity flags (`--agent`/`--actor`). Read-only commands (`br ready`, `crit review`, `bus history`) are exempt.
 5. Claims remain unreleased after Phase 8.
 
-**Pass**: >= 112 (70%), **Excellent**: >= 144 (90%)
+**Pass**: >= 140 (70%), **Excellent**: >= 180 (90%)
 
 ### Runs
 

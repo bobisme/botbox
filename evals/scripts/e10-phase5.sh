@@ -13,23 +13,20 @@ mkdir -p "$ARTIFACTS"
 
 cd "$ALPHA_DIR"
 
-# Re-discover review ID and workspace path if not in env
+# Re-discover review ID and workspace if not in env
+if [[ -z "${WS:-}" ]]; then
+  WS=$(maw ws list --format json 2>/dev/null | jq -r '[.workspaces[] | select(.is_default == false)] | .[0].name // empty')
+  if [[ -z "$WS" ]]; then WS="default"; fi
+fi
+WS_PATH="$ALPHA_DIR/ws/$WS"
+
 if [[ -z "${REVIEW_ID:-}" ]]; then
-  REVIEW_ID=$(crit reviews list --all-workspaces --path "$ALPHA_DIR" --format json 2>/dev/null | jq -r '.[-1].review_id // empty' || true)
+  REVIEW_ID=$(maw exec "$WS" -- crit reviews list --format json 2>/dev/null | jq -r '.[-1].review_id // empty' || true)
 fi
 if [[ -z "${REVIEW_ID:-}" ]]; then
   REVIEW_ID=$(grep -oP 'cr-[a-z0-9]+' "$ARTIFACTS/phase4.stdout.log" 2>/dev/null | head -1 || true)
   if [[ -n "$REVIEW_ID" ]]; then
-    echo "FALLBACK: REVIEW_ID=$REVIEW_ID recovered from phase4 log (crit reviews list --all-workspaces failed)"
-  fi
-fi
-if [[ -z "${WS_PATH:-}" ]]; then
-  WS=$(maw ws list --format json 2>/dev/null | jq -r '[.[] | select(.is_default == false)] | .[0].name // empty')
-  if [[ -z "$WS" ]]; then WS="default"; fi
-  if [[ "$WS" == "default" ]]; then
-    WS_PATH="$ALPHA_DIR"
-  else
-    WS_PATH="$ALPHA_DIR/.workspaces/$WS"
+    echo "FALLBACK: REVIEW_ID=$REVIEW_ID recovered from phase4 log (crit reviews list failed)"
   fi
 fi
 
@@ -37,21 +34,23 @@ echo "=== E10 Phase 5: Security Review ==="
 echo "ALPHA_SECURITY=$ALPHA_SECURITY"
 echo "ALPHA_DIR=$ALPHA_DIR"
 echo "REVIEW_ID=$REVIEW_ID"
+echo "WS=$WS"
 echo "WS_PATH=$WS_PATH"
 
 PROMPT="You are security reviewer agent \"${ALPHA_SECURITY}\" for project \"alpha\".
 Your project directory is: ${ALPHA_DIR}
+This project uses maw v2 (bare repo layout). Source files are in ws/default/.
 Use --agent ${ALPHA_SECURITY} on ALL crit and bus commands.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
 
 You have a pending code review to perform.
 
 1. DISCOVER REVIEW:
-   - crit inbox --agent ${ALPHA_SECURITY} --all-workspaces
+   - maw exec default -- crit inbox --agent ${ALPHA_SECURITY} --all-workspaces
    - The review ID is: ${REVIEW_ID}
 
 2. READ THE REVIEW:
-   - crit review ${REVIEW_ID}
+   - maw exec ${WS} -- crit review ${REVIEW_ID}
    - This shows the diff of changes made in the workspace
 
 3. REVIEW THE FULL CODEBASE:
@@ -70,11 +69,11 @@ You have a pending code review to perform.
    - LOW: Code quality, naming
    - INFO: Suggestions
 
-   Use: crit comment --file <path> --line <line-number> ${REVIEW_ID} \"SEVERITY: description\"
+   Use: maw exec ${WS} -- crit comment --file <path> --line <line-number> ${REVIEW_ID} \"SEVERITY: description\"
 
 5. VOTE:
-   - If any CRITICAL or HIGH issues: crit block ${REVIEW_ID} --reason \"<reason>\"
-   - Otherwise: crit lgtm ${REVIEW_ID}
+   - If any CRITICAL or HIGH issues: maw exec ${WS} -- crit block ${REVIEW_ID} --reason \"<reason>\"
+   - Otherwise: maw exec ${WS} -- crit lgtm ${REVIEW_ID}
 
 6. ANNOUNCE:
    - bus send --agent ${ALPHA_SECURITY} alpha \"Review ${REVIEW_ID}: <BLOCKED|LGTM> — <summary>. @${ALPHA_DEV}\" -L review-done
@@ -92,11 +91,11 @@ botbox run-agent claude -p "$PROMPT" -m opus -t 900 \
   || echo "PHASE $PHASE exited with code $?"
 
 # --- Discover thread ID for Phase 6 ---
-THREAD_ID=$(crit review "$REVIEW_ID" --path "$WS_PATH" --format json 2>/dev/null | jq -r '.threads[0].thread_id // empty' || true)
+THREAD_ID=$(cd "$ALPHA_DIR" && maw exec "$WS" -- crit review "$REVIEW_ID" --format json 2>/dev/null | jq -r '.threads[0].thread_id // empty' || true)
 if [[ -z "$THREAD_ID" ]]; then
   THREAD_ID=$(grep -oP 'th-[a-z0-9]+' "$ARTIFACTS/$PHASE.stdout.log" 2>/dev/null | head -1 || true)
   if [[ -n "$THREAD_ID" ]]; then
-    echo "FALLBACK: THREAD_ID=$THREAD_ID recovered from stdout log (crit review --path failed)"
+    echo "FALLBACK: THREAD_ID=$THREAD_ID recovered from stdout log (crit review failed)"
   fi
 fi
 

@@ -91,6 +91,9 @@ bash evals/scripts/e10-phase8.sh "$EVAL_DIR/.eval-env"
 
 # Verification — automated pass/fail checks
 bash evals/scripts/e10-verify.sh "$EVAL_DIR/.eval-env"
+
+# Friction analysis — automated wasted-call scoring
+bash evals/scripts/e10-friction.sh "$EVAL_DIR/.eval-env"
 ```
 
 You can re-run individual phases without re-running setup. Each phase script re-discovers dynamic state (workspace names, review IDs, thread IDs) from tool output if the `.eval-env` values are stale.
@@ -108,7 +111,7 @@ You can re-run individual phases without re-running setup. Each phase script re-
 | 5 | alpha-security | Opus | Reviews code from workspace, finds /debug vulnerability, CRITICAL comment, BLOCKs |
 | 6 | alpha-dev | Opus | Reads block, removes /debug, replies on crit thread, re-requests review |
 | 7 | alpha-security | Opus | Re-reviews from workspace, verifies fix, LGTMs |
-| 8 | alpha-dev | Opus | Full finish: mark-merged, ws merge, close bead, release claims, version bump, tag, announce |
+| 8 | alpha-dev | Opus | Full finish: ws merge, mark-merged (from default), close bead, release claims, version bump, tag, announce |
 
 ### Planted Defects
 
@@ -133,12 +136,12 @@ cat $EVAL_DIR/artifacts/phase5.prompt.md
 BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history alpha -n 30
 BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history beta -n 20
 
-# Bead state
-cd $ALPHA_DIR && br show $BEAD
-cd $BETA_DIR && br ready
+# Bead state (use maw exec for v2 bare repo layout)
+cd $ALPHA_DIR && maw exec default -- br show $BEAD
+cd $BETA_DIR && maw exec default -- br ready
 
 # Review state
-cd $ALPHA_DIR && crit reviews list
+cd $ALPHA_DIR && maw exec default -- crit reviews list
 
 # Tool versions used
 cat $EVAL_DIR/artifacts/tool-versions.env
@@ -146,11 +149,27 @@ cat $EVAL_DIR/artifacts/tool-versions.env
 
 ### Scoring
 
-160 points across 10 categories. See `evals/rubrics.md` E10 section for the full rubric.
+200 points across 11 categories. See `evals/rubrics.md` E10 section for the full rubric.
 
-- **Pass**: >= 112 (70%)
-- **Excellent**: >= 144 (90%)
+- **Workflow compliance**: 160 pts across 10 categories (same as E10 v1)
+- **Friction efficiency**: 40 pts — automated extraction from phase stdout logs via `e10-friction.sh`
+- **Pass**: >= 140 (70%)
+- **Excellent**: >= 180 (90%)
 - **Critical fail conditions** (override score): merge while blocked, no cross-project message, /debug still exposed, missing identity flags, unreleased claims
+
+### Friction Scoring
+
+New in E10v2. The `e10-friction.sh` script parses phase stdout logs and counts wasted tool calls: exit code failures, sibling cancellations, --help lookups, and retries. Tiered scoring:
+
+- 40 pts = 0 wasted calls (zero friction)
+- 30 pts = 1-5 wasted calls (minor)
+- 20 pts = 6-15 wasted calls (moderate)
+- 10 pts = 16-30 wasted calls (significant)
+- 0 pts = 31+ wasted calls (severe)
+
+Run standalone: `bash evals/scripts/e10-friction.sh "$EVAL_DIR/.eval-env"`
+
+The friction score captures tool usability from the agent's perspective. A high workflow compliance score with a low friction score means "agents get the right answer but waste a lot of calls figuring out the tools." This is the signal that drove the maw v2 `maw exec` pattern — E10-1/E10-2 both scored 99% workflow compliance but had ~61 wasted tool calls from `crit --path` friction.
 
 ### Common Failure Modes
 
@@ -171,7 +190,9 @@ After scoring, create `evals/results/YYYY-MM-DD-e10-runN-MODEL.md` using this te
 **Alpha-dev model:** Opus (model ID)
 **Alpha-security model:** Opus (model ID)
 **Beta-dev model:** Sonnet (model ID)
-**Score:** X/160 (Y%) — PASS/FAIL/EXCELLENT
+**Workflow Score:** X/160 (Y%)
+**Friction Score:** X/40
+**Total Score:** X/200 (Y%) — PASS/FAIL/EXCELLENT
 
 ## Tool Versions
 

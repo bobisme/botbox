@@ -20,6 +20,7 @@ echo "BEAD=$BEAD"
 
 PROMPT="You are dev agent \"${ALPHA_DEV}\" for project \"alpha\".
 Your project directory is: ${ALPHA_DIR}
+This project uses maw v2 (bare repo layout). Source files are in ws/default/.
 Use --agent ${ALPHA_DEV} on ALL bus, crit, and br mutation commands.
 Use --actor ${ALPHA_DEV} on br mutations and --author ${ALPHA_DEV} on br comments.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
@@ -28,15 +29,17 @@ Execute the steps below, then STOP.
 
 1. TRIAGE:
    - Check inbox: bus inbox --agent ${ALPHA_DEV} --channels alpha --mark-read
-   - Check ready beads: br ready
-   - Read the bead: br show ${BEAD}
+   - Check ready beads: maw exec default -- br ready
+   - Read the bead: maw exec default -- br show ${BEAD}
 
 2. START:
-   - br update --actor ${ALPHA_DEV} ${BEAD} --status=in_progress
+   - maw exec default -- br update --actor ${ALPHA_DEV} ${BEAD} --status=in_progress
    - bus claims stake --agent ${ALPHA_DEV} \"bead://alpha/${BEAD}\" -m \"${BEAD}\"
-   - maw ws create --random — note the workspace name (\$WS) and absolute path (\$WS_PATH)
+   - maw ws create --random — note the workspace name (\$WS)
+     Your workspace files will be at: ${ALPHA_DIR}/ws/\$WS/
    - bus claims stake --agent ${ALPHA_DEV} \"workspace://alpha/\$WS\" -m \"${BEAD}\"
-   - All file operations MUST use the absolute workspace path. For jj: maw ws jj \$WS <args>.
+   - All file operations MUST use the absolute workspace path (${ALPHA_DIR}/ws/\$WS/).
+   - For tool commands: maw exec \$WS -- <command> (jj, cargo, crit, etc.)
    - Do NOT cd into the workspace directory.
 
 3. WORK:
@@ -45,27 +48,28 @@ Execute the steps below, then STOP.
      - Validate email using beta::validate_email()
      - On success: add user to AppState.users, return 201 with the created user
      - On validation failure: return 400 with error message
-   - Add the handler to the router in src/main.rs
+   - Edit ${ALPHA_DIR}/ws/\$WS/src/main.rs to add the handler and route
    - Write tests including: user+tag@example.com (subaddressing / plus-addressing)
-   - Run: cd \$WS_PATH && cargo test
+   - Run: maw exec \$WS -- cargo test
    - When the plus-address test fails, investigate beta's code:
-     - Read ${BETA_DIR}/src/lib.rs — examine the character whitelist in validate_email
-   - Describe the change: maw ws jj \$WS describe -m \"feat: add POST /users registration with email validation\"
+     - Read ${BETA_DIR}/ws/default/src/lib.rs — examine the character whitelist in validate_email
+   - Describe: maw exec \$WS -- jj describe -m \"feat: add POST /users registration with email validation\"
 
 4. DISCOVER + COMMUNICATE:
    - Discover the beta project: bus history projects -n 10
    - Send a message to beta-dev asking about the behavior. Be collaborative — ask if the + exclusion is intentional, don't just file a bug:
      bus send --agent ${ALPHA_DEV} beta \"Hey @beta-dev — I'm using validate_email() in alpha's new registration endpoint and hit an issue: it rejects user+tag@example.com. We need subaddressing support (plus addressing). Is the + exclusion intentional? The local-part whitelist only allows alphanumeric, dots, hyphens, underscores.\" -L feedback
    - Add a progress comment on the bead:
-     br comments add --actor ${ALPHA_DEV} --author ${ALPHA_DEV} ${BEAD} \"Blocked: beta validate_email rejects + in local part. Asked beta-dev about it on bus.\"
+     maw exec default -- br comments add --actor ${ALPHA_DEV} --author ${ALPHA_DEV} ${BEAD} \"Blocked: beta validate_email rejects + in local part. Asked beta-dev about it on bus.\"
 
 5. STOP HERE. Do NOT close the bead. Do NOT merge the workspace. Wait for beta-dev's response.
 
 Key rules:
-- All file operations use the absolute workspace path from maw ws create output
-- Run br commands from the project root (${ALPHA_DIR}), not from inside the workspace
-- Use jj via maw ws jj, not git
-- The beta library is at ${BETA_DIR} — you can read its source to investigate"
+- All file operations use the absolute workspace path: ${ALPHA_DIR}/ws/\$WS/
+- Run br/bv commands via: maw exec default -- br ...
+- Run jj/cargo/crit via: maw exec \$WS -- <command>
+- Use jj (not git) via maw exec
+- The beta library source is at ${BETA_DIR}/ws/default/ — you can read its files to investigate"
 
 echo "$PROMPT" > "$ARTIFACTS/$PHASE.prompt.md"
 
@@ -74,19 +78,14 @@ botbox run-agent claude -p "$PROMPT" -m opus -t 900 \
   || echo "PHASE $PHASE exited with code $?"
 
 # --- Discover workspace name/path for subsequent phases ---
-# maw ws list JSON doesn't include path — construct from name.
-# Prefer non-default workspace (agent should have created one via maw ws create --random).
-WS=$(cd "$ALPHA_DIR" && maw ws list --format json 2>/dev/null | jq -r '[.[] | select(.is_default == false)] | .[0].name // empty')
+# maw ws list returns { workspaces: [...], advice: [...] } envelope in v2.
+WS=$(cd "$ALPHA_DIR" && maw ws list --format json 2>/dev/null | jq -r '[.workspaces[] | select(.is_default == false)] | .[0].name // empty')
 if [[ -z "$WS" ]]; then
   # Fallback to default workspace if agent didn't create a named one
   WS="default"
 fi
 
-if [[ "$WS" == "default" ]]; then
-  WS_PATH="$ALPHA_DIR"
-else
-  WS_PATH="$ALPHA_DIR/.workspaces/$WS"
-fi
+WS_PATH="$ALPHA_DIR/ws/$WS"
 
 if [[ -n "$WS" ]]; then
   echo "export WS=\"$WS\"" >> "$EVAL_DIR/.eval-env"

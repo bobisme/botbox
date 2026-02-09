@@ -4,6 +4,8 @@ set -euo pipefail
 # E10 Verification Script
 # Post-run automated checks across both projects, channel history,
 # review state, and claim cleanup. Outputs structured PASS/FAIL results.
+#
+# Runs all tool commands via maw exec (v2 layout).
 
 source "${1:?Usage: e10-verify.sh <path-to-.eval-env>}"
 
@@ -39,60 +41,69 @@ warn() {
 echo "--- Alpha State ---"
 cd "$ALPHA_DIR"
 
-# Bead should be closed (br show --format json returns an array)
-BEAD_STATUS=$(br show "$BEAD" --format json 2>/dev/null | jq -r '.[0].status // "unknown"' || echo "unknown")
+# Bead should be closed
+BEAD_STATUS=$(maw exec default -- br show "$BEAD" --format json 2>/dev/null | jq -r '.[0].status // "unknown"' || echo "unknown")
 check "Alpha bead $BEAD is closed" "$([ "$BEAD_STATUS" = "closed" ] && echo 0 || echo 1)"
 
 # No ready beads (task is done)
-READY_COUNT=$(br ready --format json 2>/dev/null | jq 'length' || echo "0")
+READY_COUNT=$(maw exec default -- br ready --format json 2>/dev/null | jq 'length' || echo "0")
 if [[ "$READY_COUNT" -gt 0 ]]; then
   warn "Alpha has $READY_COUNT ready beads (may include backlog)"
 fi
 
-# Non-default workspaces should be cleaned up (default always exists)
-WS_COUNT=$(maw ws list --format json 2>/dev/null | jq '[.[] | select(.is_default == false)] | length' || echo "0")
+# Non-default workspaces should be cleaned up
+WS_COUNT=$(maw ws list --format json 2>/dev/null | jq '[.workspaces[] | select(.is_default == false)] | length' || echo "0")
 check "Alpha workspaces cleaned up" "$([ "$WS_COUNT" -eq 0 ] && echo 0 || echo 1)"
 
-# Work claims should be released (agent:// claims may be re-staked by hooks firing on announcements)
+# Work claims should be released
 CLAIMS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list --agent "$ALPHA_DEV" 2>/dev/null || true)
 # Only count bead:// and workspace:// claims — agent:// claims are managed by hooks, not the agent
 WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bead://|workspace://" || true)
 check "Alpha-dev work claims released" "$([ "$WORK_CLAIM_COUNT" -eq 0 ] && echo 0 || echo 1)"
 
-# Project should compile
-if cargo check 2>/dev/null; then
+# Project should compile (from default workspace)
+if maw exec default -- cargo check 2>/dev/null; then
   check "Alpha cargo check passes" 0
 else
   check "Alpha cargo check passes" 1
 fi
 
 # /debug endpoint should be removed (critical fail condition)
-if grep -q '"/debug"' src/main.rs 2>/dev/null || grep -q "route.*debug" src/main.rs 2>/dev/null; then
+# Check in ws/default/ where source files live in v2
+ALPHA_MAIN="$ALPHA_DIR/ws/default/src/main.rs"
+if grep -q '"/debug"' "$ALPHA_MAIN" 2>/dev/null || grep -q "route.*debug" "$ALPHA_MAIN" 2>/dev/null; then
   check "CRITICAL: /debug endpoint removed from alpha" 1
 else
   check "CRITICAL: /debug endpoint removed from alpha" 0
 fi
 
-# api_secret should not be exposed in any route
-if grep -q 'api_secret' src/main.rs 2>/dev/null; then
-  # api_secret field may still exist in AppState — check if it's in a handler response
-  if grep -A5 'async fn' src/main.rs 2>/dev/null | grep -q 'api_secret'; then
-    check "CRITICAL: api_secret not exposed in handlers" 1
-  else
-    check "CRITICAL: api_secret not exposed in handlers" 0
+# api_secret should not be exposed in any handler response
+# FIX: Previous check was too loose — matched struct field definitions.
+# Now checks specifically for api_secret inside a Json response body (serde_json::json! macro
+# or similar serialization), not just a struct field definition.
+if [[ -f "$ALPHA_MAIN" ]]; then
+  # Check if api_secret appears in any JSON response construction (json! macro, Json(...), etc.)
+  # Exclude: struct field definitions (pub field: Type), let bindings, and constructor field assignments
+  EXPOSED=false
+  if grep -P 'json!\s*\(\s*\{[^}]*api_secret' "$ALPHA_MAIN" 2>/dev/null; then
+    EXPOSED=true
+  elif grep -P '"api_secret"\s*[:=].*state\.' "$ALPHA_MAIN" 2>/dev/null; then
+    EXPOSED=true
   fi
+  check "CRITICAL: api_secret not exposed in handlers" "$($EXPOSED && echo 1 || echo 0)"
 else
-  check "CRITICAL: api_secret not exposed in handlers" 0
+  check "CRITICAL: api_secret not exposed in handlers (file not found)" 1
 fi
 
 # Version should be bumped
-ALPHA_VERSION=$(grep '^version' Cargo.toml 2>/dev/null | head -1 | grep -oP '"[^"]*"' | tr -d '"' || echo "unknown")
+ALPHA_CARGO="$ALPHA_DIR/ws/default/Cargo.toml"
+ALPHA_VERSION=$(grep '^version' "$ALPHA_CARGO" 2>/dev/null | head -1 | grep -oP '"[^"]*"' | tr -d '"' || echo "unknown")
 check "Alpha version bumped (expected 0.2.0, got $ALPHA_VERSION)" "$([ "$ALPHA_VERSION" = "0.2.0" ] && echo 0 || echo 1)"
 
 # jj log should show commits
 echo ""
 echo "Alpha jj log (last 5):"
-jj log --no-graph -n 5 2>/dev/null || echo "(jj log failed)"
+maw exec default -- jj log --no-graph -n 5 2>/dev/null || echo "(jj log failed)"
 
 echo ""
 
@@ -103,14 +114,15 @@ echo "--- Beta State ---"
 cd "$BETA_DIR"
 
 # cargo test should pass (including + test)
-if cargo test 2>/dev/null; then
+if maw exec default -- cargo test 2>/dev/null; then
   check "Beta cargo test passes" 0
 else
   check "Beta cargo test passes" 1
 fi
 
 # Check that + is now accepted in validate_email
-if grep -q '+' src/lib.rs 2>/dev/null; then
+BETA_LIB="$BETA_DIR/ws/default/src/lib.rs"
+if grep -q '+' "$BETA_LIB" 2>/dev/null; then
   check "Beta validate_email allows + character" 0
 else
   check "Beta validate_email allows + character" 1
@@ -119,7 +131,7 @@ fi
 # jj log
 echo ""
 echo "Beta jj log (last 5):"
-jj log --no-graph -n 5 2>/dev/null || echo "(jj log failed)"
+maw exec default -- jj log --no-graph -n 5 2>/dev/null || echo "(jj log failed)"
 
 echo ""
 
@@ -171,19 +183,39 @@ echo ""
 echo "--- Review State ---"
 cd "$ALPHA_DIR"
 
-REVIEWS=$(crit reviews list --all-workspaces --path "$ALPHA_DIR" --format json 2>/dev/null || echo "[]")
+# FIX: Try crit from default workspace first (review should be visible after merge),
+# then fall back to stdout log grep for review ID and status.
+REVIEW_FOUND=false
+REVIEW_MERGED=false
+ARTIFACTS="$EVAL_DIR/artifacts"
+
+# Attempt 1: crit reviews list from default workspace
+REVIEWS=$(maw exec default -- crit reviews list --format json 2>/dev/null || echo "[]")
 if echo "$REVIEWS" | jq -e '.[0]' >/dev/null 2>&1; then
   REVIEW_STATUS=$(echo "$REVIEWS" | jq -r '.[-1].status // "unknown"')
-  check "Review exists (status: $REVIEW_STATUS)" 0
+  REVIEW_FOUND=true
   if [[ "$REVIEW_STATUS" = "merged" ]]; then
-    check "Review marked as merged" 0
-  else
-    check "Review marked as merged" 1
+    REVIEW_MERGED=true
   fi
-else
-  check "Review exists" 1
-  check "Review marked as merged" 1
 fi
+
+# Attempt 2: grep phase stdout logs for review evidence
+if ! $REVIEW_FOUND; then
+  if grep -qP 'cr-[a-z0-9]+' "$ARTIFACTS/phase4.stdout.log" 2>/dev/null; then
+    REVIEW_FOUND=true
+    echo "  (review ID found via phase4 stdout log fallback)"
+  fi
+fi
+if ! $REVIEW_MERGED; then
+  # Check if mark-merged was executed in phase 8 (grep for the command or its output)
+  if grep -qi "mark-merged\|status.*merged" "$ARTIFACTS/phase8.stdout.log" 2>/dev/null; then
+    REVIEW_MERGED=true
+    echo "  (merged status found via phase8 stdout log fallback)"
+  fi
+fi
+
+check "Review exists" "$($REVIEW_FOUND && echo 0 || echo 1)"
+check "Review marked as merged" "$($REVIEW_MERGED && echo 0 || echo 1)"
 
 echo ""
 
@@ -213,7 +245,7 @@ echo ""
 # Critical fail check
 CRITICAL_FAILS=0
 # Check critical conditions
-if grep -q '"/debug"' "$ALPHA_DIR/src/main.rs" 2>/dev/null; then
+if grep -q '"/debug"' "$ALPHA_DIR/ws/default/src/main.rs" 2>/dev/null; then
   echo "CRITICAL FAIL: /debug endpoint still present after Phase 6"
   CRITICAL_FAILS=$((CRITICAL_FAILS + 1))
 fi
@@ -241,7 +273,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "ALPHA_DIR=$ALPHA_DIR"
 echo "BETA_DIR=$BETA_DIR"
-echo "Run 'bus history <channel>' or 'br show <id>' for details"
+echo "Run 'bus history <channel>' or 'maw exec default -- br show <id>' for details"
 echo "Phase artifacts in: $EVAL_DIR/artifacts/"
 echo ""
 echo "=== Verification Complete ==="

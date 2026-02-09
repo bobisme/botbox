@@ -5,6 +5,8 @@ set -euo pipefail
 # Creates two Rust projects (Alpha API + Beta library) sharing an isolated botbus instance.
 # Alpha has a planted /debug vulnerability; Beta has a buggy validate_email (rejects +).
 # Seeds a registration bead on Alpha, registers projects in #projects channel.
+#
+# Both projects use maw v2 layout (bare repo + ws/default/).
 
 # --- Preflight: fail fast on missing dependencies ---
 REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo claude jq)
@@ -39,11 +41,9 @@ bus init
 } > "$EVAL_DIR/artifacts/tool-versions.env"
 
 # --- Beta project ---
+# Create source files FIRST (before botbox init converts to bare repo via maw init)
 cd "$BETA_DIR"
 jj git init
-
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name beta --type library --tools beads,maw,crit,botbus --init-beads --no-interactive
 
 cargo init --lib --name beta
 
@@ -125,18 +125,20 @@ mod tests {
 RUST_EOF
 
 cargo test
-crit init
-maw init
+
+# Initial commit and bookmark (before maw init converts to bare)
 jj describe -m "beta: validation library"
 jj bookmark create main -r @
 jj new
 
+# botbox init handles: maw init (→ bare repo + ws/default/), br init, crit init, hooks
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
+  botbox init --name beta --type library --tools beads,maw,crit,botbus --init-beads --no-interactive
+
 # --- Alpha project ---
+# Create source files FIRST (before botbox init converts to bare repo via maw init)
 cd "$ALPHA_DIR"
 jj git init
-
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name alpha --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
 
 cargo init --name alpha
 
@@ -210,18 +212,28 @@ async fn main() {
 RUST_EOF
 
 cargo check
-crit init
-maw init
+
+# Initial commit and bookmark (before maw init converts to bare)
 jj describe -m "alpha: initial API with health and debug endpoints"
 jj bookmark create main -r @
 jj new
 
+# botbox init handles: maw init (→ bare repo + ws/default/), br init, crit init, hooks
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
+  botbox init --name alpha --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
+
 # --- Hooks (verify they were registered by botbox init) ---
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1
 
+# --- Fix workspace path dependency ---
+# Cargo.toml uses `path = "../beta"` which resolves relative to the Cargo.toml location.
+# In maw v2, Cargo.toml is at ws/$WS/Cargo.toml, so `../beta` → ws/beta.
+# Create symlink: ws/beta → beta's default workspace (where Cargo.toml + src/ live).
+ln -s "../../beta/ws/default" "$ALPHA_DIR/ws/beta"
+
 # --- Seed work ---
 cd "$ALPHA_DIR"
-BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" br create --actor setup --owner "$ALPHA_DEV" \
+BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create --actor setup --owner "$ALPHA_DEV" \
   --title="Add user registration with email validation" \
   --description="Implement POST /users with beta::validate_email. Must support plus-addressing (user+tag@example.com)." \
   --type=feature --priority=2 2>&1 | grep -oP 'bd-\w+')
@@ -240,13 +252,6 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus send --agent "$ALPHA_DEV" projects \
 # NOTE: Do NOT mark alpha channel as read for alpha-dev — they need to discover the task-request in Phase 1
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus inbox --agent "$ALPHA_DEV" --channels projects --mark-read >/dev/null 2>&1 || true
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus inbox --agent "$BETA_DEV" --channels projects --mark-read >/dev/null 2>&1 || true
-
-# --- Fix workspace path dependency ---
-# Cargo.toml uses `path = "../beta"` which resolves correctly from the project root
-# but breaks from .workspaces/*/  (resolves to .workspaces/beta which doesn't exist).
-# Create a symlink so the relative path works from any workspace.
-mkdir -p "$ALPHA_DIR/.workspaces"
-ln -s "../../beta" "$ALPHA_DIR/.workspaces/beta"
 
 # --- Save env ---
 cat > "$EVAL_DIR/.eval-env" << EOF

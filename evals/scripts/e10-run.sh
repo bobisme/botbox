@@ -53,6 +53,11 @@ echo ""
 echo "--- Running verify ($(date +%H:%M:%S)) ---"
 "$SCRIPT_DIR/e10-verify.sh" "$EVAL_ENV" || FAILED+=("verify")
 
+# --- Friction Analysis ---
+echo ""
+echo "--- Running friction analysis ($(date +%H:%M:%S)) ---"
+"$SCRIPT_DIR/e10-friction.sh" "$EVAL_ENV" || echo "WARNING: friction analysis failed"
+
 # --- Summary ---
 echo ""
 echo "========================================="
