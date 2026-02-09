@@ -40,8 +40,8 @@ const HOOK_REGISTRY = {
     eligible: (config) => config.tools.includes("botbus"),
   },
   "claim-agent.sh": {
-    event: ["SessionStart", "PostToolUse"],
-    description: "Claim and refresh agent:// advisory lock",
+    event: ["SessionStart", "PostToolUse", "SessionEnd"],
+    description: "Claim agent:// lock, set status, release on exit",
     eligible: (config) => config.tools.includes("botbus"),
   },
 }
