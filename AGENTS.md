@@ -361,7 +361,7 @@ Changes to workflow docs, scripts, prompts, or templates require a release:
 3. **Run tests**: `bun test` — version hashes auto-update
 4. **Commit and push** to main
 5. **Tag and push**: `jj tag set vX.Y.Z -r main && maw push`
-6. **Install locally**: `just install`
+6. **Install locally**: `maw exec default -- just install`
 
 Use semantic versioning and conventional commits. See [packages/cli/AGENTS.md](packages/cli/AGENTS.md) for component details.
 
@@ -392,11 +392,11 @@ notes/                 Extended docs (eval-framework.md, migration-system.md, wo
 Runtime: **bun** (not node). Tooling: **oxlint** (lint), **oxfmt** (format), **tsc** (type check via jsconfig.json).
 
 ```bash
-just install    # bun install
-just lint       # oxlint
-just fmt        # oxfmt --write
-just check      # tsc -p jsconfig.json
-bun test        # run tests (packages/cli/)
+maw exec default -- just install    # bun link from workspace
+maw exec default -- just lint       # oxlint
+maw exec default -- just fmt        # oxfmt --write
+maw exec default -- just check      # tsc -p jsconfig.json
+maw exec default -- bun test        # run tests (packages/cli/)
 ```
 
 All source is `.mjs` with JSDoc type annotations — no build step. Types are enforced by `tsc --checkJs` with strict settings.
