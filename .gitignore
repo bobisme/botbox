@@ -17,3 +17,6 @@ bun.lockb
 
 # maw agent workspaces
 .workspaces/
+
+# maw agent workspaces
+ws/
