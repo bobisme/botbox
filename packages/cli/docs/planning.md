@@ -92,3 +92,64 @@ Beads created:
 5. `Add OAuth integration tests` (P3) — blocked by 4
 
 Graph shows 1 and 3 are parallel, 4 waits for both, 5 is last.
+
+## Mission Bead Conventions
+
+A **mission** is a special bead that coordinates a group of child beads toward a shared outcome. Use missions when work is too large for a single bead but needs coherent planning and concurrent execution.
+
+### When to Create a Mission Bead
+
+- Large tasks needing decomposition into parallel workstreams
+- Features spanning multiple components (e.g., CLI + library + docs)
+- Specs or PRDs that need breakdown into individually reviewable units
+
+If the task is small enough for one bead, skip missions entirely.
+
+### Mission Bead Format
+
+Create a mission bead with the `mission` label and a structured description:
+
+```bash
+maw exec default -- br create --actor $AGENT --owner $AGENT \
+  --title="Add OAuth login support" \
+  --labels mission \
+  --type=task --priority=2 \
+  --description="Outcome: Users can log in via OAuth providers (Google, GitHub).
+Success metric: OAuth login flow works end-to-end in integration tests.
+Constraints: No new runtime dependencies; use existing HTTP client. Max 6 child beads.
+Stop criteria: Core login flow works; provider-specific edge cases can be follow-up beads."
+```
+
+**Description fields:**
+- **Outcome**: One sentence — what does "done" look like?
+- **Success metric**: How to verify the outcome?
+- **Constraints**: Scope boundaries, forbidden actions, budget
+- **Stop criteria**: When to stop even if not everything is done
+
+### Child Bead Conventions
+
+When creating child beads under a mission:
+
+1. **Wire the dependency** with `--parent` to connect child to mission:
+   ```bash
+   maw exec default -- br dep add --actor $AGENT <child-id> <mission-id>
+   ```
+
+2. **Label for querying** with `mission:<mission-id>` so siblings can be discovered:
+   ```bash
+   maw exec default -- br label add --actor $AGENT -l "mission:<mission-id>" <child-id>
+   ```
+
+3. **Query siblings** to see all children of a mission:
+   ```bash
+   maw exec default -- br list --label "mission:bd-xxx"
+   ```
+
+### Mission Invariants
+
+These rules must hold for every mission:
+
+- **Every child** has both a `mission:<id>` label and a `--parent` dependency on the mission bead
+- **A child belongs to at most one mission** — no shared children across missions
+- **Mission cannot close with open children** — all children must be closed first
+- **One active worker per child bead** — enforced via `bead://` claims (no two agents work the same child)

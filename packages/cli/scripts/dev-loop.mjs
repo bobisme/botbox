@@ -14,6 +14,10 @@ let PROJECT = '';
 let AGENT = '';
 let PUSH_MAIN = false;
 let REVIEW = true;
+let MISSIONS_ENABLED = false;
+let MAX_MISSION_WORKERS = 4;
+let MAX_MISSION_CHILDREN = 12;
+let CHECKPOINT_INTERVAL_SEC = 30;
 
 // --- Load config from .botbox.json ---
 async function loadConfig() {
@@ -35,6 +39,13 @@ async function loadConfig() {
 			CLAUDE_TIMEOUT = dev.timeout || 600;
 			PUSH_MAIN = config.pushMain || false;
 			REVIEW = config.review?.enabled ?? true;
+
+			// Mission coordination config
+			let missions = agents.dev?.missions || {};
+			MISSIONS_ENABLED = missions.enabled ?? false;
+			MAX_MISSION_WORKERS = missions.maxWorkers ?? 4;
+			MAX_MISSION_CHILDREN = missions.maxChildren ?? 12;
+			CHECKPOINT_INTERVAL_SEC = missions.checkpointIntervalSec ?? 30;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
 		}
@@ -394,7 +405,19 @@ Process each message:
 Run: maw exec default -- br ready --json
 
 Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promise> and stop.
+${MISSIONS_ENABLED ? `
+### Mission-Aware Triage
 
+Check for active missions (beads with label "mission" that are in_progress):
+  maw exec default -- br list -l mission --status in_progress --json
+${process.env.BOTBOX_MISSION ? `BOTBOX_MISSION="${process.env.BOTBOX_MISSION}" — prioritize this mission's children.` : ''}
+For each active mission:
+  1. List children: maw exec default -- br list -l "mission:<mission-id>" --json
+  2. Count status: N open, M in_progress, K closed, J blocked
+  3. If any children are ready (open, unblocked): include them in the dispatch plan
+  4. If all children are done: close the mission bead (see step 5c "Closing a Mission")
+  5. If children are blocked: investigate — can you unblock them? Reassign?
+` : ''}
 GROOM each ready bead:
 - maw exec default -- br show <id> — ensure clear title, description, acceptance criteria, priority, and risk label
 - Evaluate as lead dev: is this worth doing now? Is the approach sound? Reprioritize, close as wontfix, or ask for clarification if needed.
@@ -407,10 +430,24 @@ GROOM each ready bead:
 - Comment what you changed: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "..."
 - If bead is claimed (check bus claims), skip it
 
+## EXECUTION LEVEL DECISION
+
+After grooming, decide the execution level for this iteration:
+
+| Level | Name | When to use |
+|-------|------|-------------|
+| 2 | Sequential | 1 small clear bead, or tightly coupled beads (same files, must be done in order) |
+| 3 | Parallel dispatch | 2+ independent beads unrelated to each other. Different bugs, unrelated features. |
+| 4 | Mission | Large task needing decomposition into related beads with shared context${MISSIONS_ENABLED ? '' : ' (DISABLED — missionsEnabled is false)'} |
+
+**Level 3 vs 4:** Level 3 dispatches workers for *pre-existing independent beads*. Level 4 *creates the beads as part of planning* under a mission envelope with shared outcome, constraints, and sibling awareness.
+${MISSIONS_ENABLED ? `
+**Level 4 signals:** Task mentions multiple components, description reads like a spec/PRD, human explicitly requested coordinated work (BOTBOX_MISSION env), or beads share a common feature/goal.` : ''}
 Assess bead count:
 - 0 ready beads (but dispatched workers pending): just monitor, skip to step 7.
 - 1 ready bead: do it yourself sequentially (follow steps 5a below).
-- 2+ ready beads: dispatch workers in parallel (follow steps 5b below).
+- 2+ independent ready beads: dispatch workers in parallel (follow steps 5b below).${MISSIONS_ENABLED ? `
+- Large task needing decomposition: create a mission (follow step 5c below).` : ''}
 
 ## 5a. SEQUENTIAL (1 bead — do it yourself)
 
@@ -481,7 +518,54 @@ Read each bead (maw exec default -- br show <id>) and select a model based on co
 
 DO NOT actually spawn background processes — that's handled by bash/botty. Instead, just note:
 "Workers would be spawned here in production. For now, skip to monitoring."
+${MISSIONS_ENABLED ? `
+## 5c. MISSION (Level 4 — large task decomposition)
 
+Use when: a large coherent task needs decomposition into related beads with shared context.
+${process.env.BOTBOX_MISSION ? `\nBOTBOX_MISSION is set to "${process.env.BOTBOX_MISSION}" — focus on this mission.\n` : ''}
+### Creating a Mission
+
+1. Create the mission bead (if not already created by !mission handler):
+   maw exec default -- br create --actor ${AGENT} --owner ${AGENT} \\
+     --title="<mission title>" --labels mission --type=task --priority=2 \\
+     --description="Outcome: <what done looks like>\\nSuccess metric: <how to verify>\\nConstraints: <scope/budget/forbidden>\\nStop criteria: <when to stop>"
+2. Plan decomposition: break the mission into ${MAX_MISSION_CHILDREN} or fewer child beads.
+   Consider dependencies between children — which can run in parallel, which are sequential.
+3. Create child beads:
+   For each child:
+   maw exec default -- br create --actor ${AGENT} --owner ${AGENT} \\
+     --title="<child title>" --parent <mission-id> \\
+     --labels "mission:<mission-id>" --type=task --priority=2
+4. Wire dependencies between children if needed:
+   maw exec default -- br dep add --actor ${AGENT} <blocked-child> <blocker-child>
+5. Post plan to channel:
+   bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id>: <title> — created N child beads" -L task-claim
+
+### Dispatch Mission Workers
+
+For independent children (unblocked), dispatch workers (max ${MAX_MISSION_WORKERS} concurrent):
+- Follow the same dispatch pattern as step 5b
+- Include mission context in each worker's bead comment:
+  maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <child-id> \\
+    "Mission context: <mission-id> — <outcome>. Siblings: <sibling-ids>."
+
+### Mission-Aware Monitoring
+
+During step 6 (MONITOR), also check mission progress:
+  maw exec default -- br list -l "mission:<mission-id>" --json
+Count: N done / M total, K blocked.
+If all children are done: proceed to close mission bead.
+If some are blocked: investigate and unblock or reassign.
+Post checkpoint summary every ${CHECKPOINT_INTERVAL_SEC}s:
+  bus send --agent ${AGENT} ${PROJECT} "Mission <id> checkpoint: N/M done, K blocked" -L feedback
+
+### Closing a Mission
+
+When all children are closed:
+1. Verify: maw exec default -- br list -l "mission:<mission-id>" — all should be closed
+2. Close the mission: maw exec default -- br close --actor ${AGENT} <mission-id> --reason="All children completed"
+3. Announce: bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id> complete: <title>" -L task-done
+` : ''}
 ## 6. MONITOR (if workers are dispatched)
 
 Check for completion messages:
@@ -550,7 +634,8 @@ Key rules:
 - All br/bv commands: maw exec default -- br/bv ...
 - All crit/jj commands in a workspace: maw exec \$WS -- crit/jj ...
 - For parallel dispatch, note limitations of this prompt-based approach
-- RISK LABELS: Always assess risk during grooming. risk:low skips review, risk:medium is standard, risk:high requires failure-mode checklist, risk:critical requires human approval.
+- RISK LABELS: Always assess risk during grooming. risk:low skips review, risk:medium is standard, risk:high requires failure-mode checklist, risk:critical requires human approval.${MISSIONS_ENABLED ? `
+- MISSIONS: Enabled. Max ${MAX_MISSION_WORKERS} concurrent workers, max ${MAX_MISSION_CHILDREN} children per mission. Checkpoint every ${CHECKPOINT_INTERVAL_SEC}s.${process.env.BOTBOX_MISSION ? ` Focus on mission: ${process.env.BOTBOX_MISSION}` : ''}` : ''}
 - Output completion signal at end`;
 }
 

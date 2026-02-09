@@ -26,6 +26,40 @@ describe("routeMessage", () => {
     })
   })
 
+  // --- !mission ---
+  describe("!mission prefix", () => {
+    it("routes !mission with body", () => {
+      let route = routeMessage("!mission add OAuth support")
+      expect(route).toEqual({ type: "mission", body: "add OAuth support" })
+    })
+
+    it("routes bare !mission", () => {
+      let route = routeMessage("!mission")
+      expect(route).toEqual({ type: "mission", body: "" })
+    })
+
+    it("is case-insensitive", () => {
+      let route = routeMessage("!MISSION deploy to staging")
+      expect(route).toEqual({ type: "mission", body: "deploy to staging" })
+    })
+
+    it("does not match !missionary (word boundary)", () => {
+      let route = routeMessage("!missionary work is important")
+      expect(route.type).toBe("triage")
+    })
+
+    it("has priority over triage", () => {
+      let route = routeMessage("!mission refactor the auth system")
+      expect(route.type).toBe("mission")
+    })
+
+    it("has priority over !dev", () => {
+      // !mission is checked before !dev
+      let route = routeMessage("!mission !dev something")
+      expect(route.type).toBe("mission")
+    })
+  })
+
   // --- !dev ---
   describe("!dev prefix", () => {
     it("routes !dev with body", () => {

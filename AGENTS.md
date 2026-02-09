@@ -342,13 +342,17 @@ Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs script
   "review": { "enabled": true, "reviewers": ["security"] },
   "pushMain": false,
   "agents": {
-    "dev": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 900 },
+    "dev": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 900,
+      "missions": { "enabled": false, "maxWorkers": 4, "maxChildren": 12, "checkpointIntervalSec": 30 }
+    },
     "worker": { "model": "haiku", "timeout": 600 },
     "reviewer": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 600 },
     "responder": { "model": "sonnet", "timeout": 300, "wait_timeout": 300, "max_conversations": 10 }
   }
 }
 ```
+
+Mission config is read from `agents.dev.missions`. `enabled` defaults to false for safe rollout. `maxWorkers` limits concurrent worker agents per mission, `maxChildren` caps the number of child beads, and `checkpointIntervalSec` controls how often the dev-loop persists mission state.
 
 Scripts read `project.defaultAgent` and `project.channel` on startup, making CLI args optional.
 

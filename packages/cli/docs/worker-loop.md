@@ -55,6 +55,7 @@ Before triaging new work, check if you have unfinished work from a previous sess
 
 ### 1. Triage — find and groom work, then pick one small task (always run this, even if you already know what to work on)
 
+- **Mission context**: If a bead has a `mission:bd-xxx` label, you are working as part of a mission. Check the mission bead (`maw exec default -- br show <mission-id>`) for shared outcome, constraints, and sibling context before starting work.
 - Check inbox: `bus inbox --agent $AGENT --channels $BOTBOX_PROJECT --mark-read`
 - For messages that request work, create beads: `maw exec default -- br create --actor $AGENT --owner $AGENT --title="..." --description="..." --type=task --priority=2`
 - For questions or status checks, reply directly: `bus send --agent $AGENT <channel> "<reply>" -L triage-reply`

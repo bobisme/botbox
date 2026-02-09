@@ -275,6 +275,13 @@ At the end of your work, output exactly one of these completion signals:
    maw exec default -- br create + br dep add, then bv --robot-next again. If a bead is claimed
    (bus claims check --agent ${AGENT} "bead://${PROJECT}/<id>"), skip it.
 
+   MISSION CONTEXT: After picking a bead, check if it has a mission:bd-xxx label (visible in br show output).
+   If it does, read the mission bead for shared context:
+     maw exec default -- br show <mission-id>
+   Note the mission's Outcome, Constraints, and Stop criteria. Check siblings:
+     maw exec default -- br list -l "mission:<mission-id>"
+   Use this context to understand how your work fits into the larger effort.
+
 3. START: maw exec default -- br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}.
    bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "<id>".
    Create workspace: run maw ws create --random. Note the workspace name AND absolute path
