@@ -501,18 +501,45 @@ Labels on bus messages categorize intent: `task-request`, `task-claim`, `task-bl
 
 **All tools have `--help`** with usage examples. When unsure, run `<tool> --help` or `<tool> <command> --help`.
 
+### Directory Structure (maw v2)
+
+This project uses a **bare repo** layout. Source files live in workspaces under `ws/`, not at the project root.
+
+```
+project-root/          ← bare repo (no source files here)
+├── ws/
+│   ├── default/       ← main working copy (AGENTS.md, .beads/, src/, etc.)
+│   ├── frost-castle/  ← agent workspace (isolated jj commit)
+│   └── amber-reef/    ← another agent workspace
+├── .jj/               ← jj repo data
+├── .git/              ← git data (core.bare=true)
+├── AGENTS.md          ← stub redirecting to ws/default/AGENTS.md
+└── CLAUDE.md          ← symlink → AGENTS.md
+```
+
+**Key rules:**
+- `ws/default/` is the main workspace — beads, config, and project files live here
+- **Never merge or destroy the default workspace.** It is where other branches merge INTO, not something you merge.
+- Agent workspaces (`ws/<name>/`) are isolated jj commits for concurrent work
+- Use `maw exec <ws> -- <command>` to run commands in a workspace context
+- Use `maw exec default -- br|bv ...` for beads commands (always in default workspace)
+- Use `maw exec <ws> -- crit ...` for review commands (always in the review's workspace)
+- Never run `br`, `bv`, `crit`, or `jj` directly — always go through `maw exec`
+
 ### Beads Quick Reference
 
 | Operation | Command |
 |-----------|---------|
-| View ready work | `br ready` |
-| Show bead | `br show <id>` |
-| Create | `br create --actor $AGENT --owner $AGENT --title="..." --type=task --priority=2` |
-| Start work | `br update --actor $AGENT <id> --status=in_progress --owner=$AGENT` |
-| Add comment | `br comments add --actor $AGENT --author $AGENT <id> "message"` |
-| Close | `br close --actor $AGENT <id>` |
-| Add dependency | `br dep add --actor $AGENT <blocked> <blocker>` |
-| Sync | `br sync --flush-only` |
+| View ready work | `maw exec default -- br ready` |
+| Show bead | `maw exec default -- br show <id>` |
+| Create | `maw exec default -- br create --actor $AGENT --owner $AGENT --title="..." --type=task --priority=2` |
+| Start work | `maw exec default -- br update --actor $AGENT <id> --status=in_progress --owner=$AGENT` |
+| Add comment | `maw exec default -- br comments add --actor $AGENT --author $AGENT <id> "message"` |
+| Close | `maw exec default -- br close --actor $AGENT <id>` |
+| Add dependency | `maw exec default -- br dep add --actor $AGENT <blocked> <blocker>` |
+| Sync | `maw exec default -- br sync --flush-only` |
+| Triage (scores) | `maw exec default -- bv --robot-triage` |
+| Next bead | `maw exec default -- bv --robot-next` |
 
 **Required flags**: `--actor $AGENT` on mutations, `--author $AGENT` on comments.
 
@@ -524,19 +551,24 @@ Labels on bus messages categorize intent: `task-request`, `task-claim`, `task-bl
 | List workspaces | `maw ws list` |
 | Merge to main | `maw ws merge <name> --destroy` |
 | Destroy (no merge) | `maw ws destroy <name>` |
-| Run jj in workspace | `maw ws jj <name> <jj-args...>` |
+| Run jj in workspace | `maw exec <name> -- jj <jj-args...>` |
 
 **Avoiding divergent commits**: Each workspace owns ONE commit. Only modify your own.
 
 | Safe | Dangerous |
 |------|-----------|
+| `maw ws merge <agent-ws> --destroy` | `maw ws merge default --destroy` (NEVER) |
 | `jj describe` (your working copy) | `jj describe main -m "..."` |
-| `maw ws jj <your-ws> describe -m "..."` | `jj describe <other-change-id>` |
+| `maw exec <your-ws> -- jj describe -m "..."` | `jj describe <other-change-id>` |
 
 If you see `(divergent)` in `jj log`:
 ```bash
 jj abandon <change-id>/0   # keep one, abandon the divergent copy
 ```
+
+**Working copy snapshots**: jj auto-snapshots your working copy before most operations (`jj new`, `jj rebase`, etc.). Edits go into the **current** commit automatically. To put changes in a **new** commit, run `jj new` first, then edit files.
+
+**Always pass `-m`**: Commands like `jj commit`, `jj squash`, and `jj describe` open an editor by default. Agents cannot interact with editors, so always pass `-m "message"` explicitly.
 
 ### Beads Conventions
 
@@ -565,7 +597,7 @@ bus claims release --agent $AGENT --all  # when done
 Use `@<project>-<role>` mentions to request reviews:
 
 ```bash
-crit reviews request <review-id> --reviewers $PROJECT-security --agent $AGENT
+maw exec $WS -- crit reviews request <review-id> --reviewers $PROJECT-security --agent $AGENT
 bus send --agent $AGENT $PROJECT "Review requested: <review-id> @$PROJECT-security" -L review-request
 ```
 
@@ -580,7 +612,7 @@ The @mention triggers the auto-spawn hook for the reviewer.
 3. For bugs, create beads in their repo first
 4. **Always create a local tracking bead** so you check back later:
    ```bash
-   br create --actor $AGENT --owner $AGENT --title="[tracking] <summary>" --labels tracking --type=task --priority=3
+   maw exec default -- br create --actor $AGENT --owner $AGENT --title="[tracking] <summary>" --labels tracking --type=task --priority=3
    ```
 
 See [cross-channel.md](.agents/botbox/cross-channel.md) for the full workflow.

@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process"
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
   copyWorkflowDocs,
@@ -26,7 +26,7 @@ import {
   currentHooksVersion,
   generateHooksConfig,
   readHooksVersionMarker,
-  updateExistingHooks,
+  syncHooks,
   writeHooksVersionMarker,
 } from "../lib/hooks.mjs"
 import {
@@ -52,8 +52,8 @@ export function sync(opts) {
   const projectDir = process.cwd()
   const agentsDir = join(projectDir, ".agents", "botbox")
 
-  // Detect maw v2 bare repo — no .agents/botbox/ at root but ws/ exists
-  if (!existsSync(agentsDir) && existsSync(join(projectDir, "ws"))) {
+  // Detect maw v2 bare repo — botbox was initialized inside ws/default/
+  if (existsSync(join(projectDir, "ws", "default", ".botbox.json"))) {
     let args = ["exec", "default", "--", "botbox", "sync"]
     if (opts.check) args.push("--check")
     if (opts.commit === false) args.push("--no-commit")
@@ -76,13 +76,26 @@ export function sync(opts) {
       console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
     }
 
-    // Copy .claude/settings.json to repo root so Claude Code finds hooks
-    let wsSettingsPath = join(projectDir, "ws", "default", ".claude", "settings.json")
-    if (existsSync(wsSettingsPath)) {
-      let rootClaudeDir = join(projectDir, ".claude")
-      mkdirSync(rootClaudeDir, { recursive: true })
-      copyFileSync(wsSettingsPath, join(rootClaudeDir, "settings.json"))
-      console.log("Copied .claude/settings.json to bare root")
+    // Generate .claude/settings.json at repo root pointing to ws/default/ hooks
+    let wsHooksDir = join(projectDir, "ws", "default", ".agents", "botbox", "hooks")
+    if (existsSync(wsHooksDir)) {
+      let hookFiles = readdirSync(wsHooksDir).filter((f) => f.endsWith(".sh"))
+      if (hookFiles.length > 0) {
+        let rootClaudeDir = join(projectDir, ".claude")
+        let settingsPath = join(rootClaudeDir, "settings.json")
+        mkdirSync(rootClaudeDir, { recursive: true })
+        let settings = {}
+        if (existsSync(settingsPath)) {
+          try {
+            settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
+          } catch {
+            // Overwrite if unparseable
+          }
+        }
+        settings.hooks = generateHooksConfig(resolve(wsHooksDir), hookFiles)
+        writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n")
+        console.log("Generated .claude/settings.json at bare root (hooks → ws/default/)")
+      }
     }
 
     return
@@ -276,12 +289,23 @@ export function sync(opts) {
   }
 
   if (hooksNeedUpdate) {
-    let updated = updateExistingHooks(hooksDir)
-    writeHooksVersionMarker(hooksDir)
-    console.log(`Updated hooks: ${updated.join(", ")}`)
+    let enabledTools = []
+    if (config?.tools) {
+      for (let [tool, enabled] of Object.entries(config.tools)) {
+        if (enabled) enabledTools.push(tool)
+      }
+    }
+    let { updated, added } = syncHooks(hooksDir, { tools: enabledTools })
+    if (updated.length > 0 || added.length > 0) {
+      writeHooksVersionMarker(hooksDir)
+      let hookParts = []
+      if (updated.length > 0) hookParts.push(`updated: ${updated.join(", ")}`)
+      if (added.length > 0) hookParts.push(`added: ${added.join(", ")}`)
+      console.log(`Synced hooks (${hookParts.join("; ")})`)
+    }
 
     // Regenerate .claude/settings.json hooks config
-    let hookFiles = readdirSync(hooksDir).filter((f) => f.endsWith(".sh"))
+    let hookFiles = existsSync(hooksDir) ? readdirSync(hooksDir).filter((f) => f.endsWith(".sh")) : []
     if (hookFiles.length > 0) {
       let claudeDir = join(projectDir, ".claude")
       let settingsPath = join(claudeDir, "settings.json")
@@ -520,14 +544,14 @@ function getHooksUpdateState(agentsDir) {
   let hooksDir = join(agentsDir, "hooks")
   let hooksNeedUpdate = false
   let installedHooksVer = null
-  let latestHooksVer = null
+  let latestHooksVer = currentHooksVersion()
 
   if (existsSync(hooksDir)) {
     installedHooksVer = readHooksVersionMarker(hooksDir)
-    if (installedHooksVer !== null) {
-      latestHooksVer = currentHooksVersion()
-      hooksNeedUpdate = installedHooksVer !== latestHooksVer
-    }
+    hooksNeedUpdate = installedHooksVer !== latestHooksVer
+  } else {
+    // Hooks dir doesn't exist — install eligible hooks for first time
+    hooksNeedUpdate = true
   }
 
   return {

@@ -115,6 +115,36 @@ export function updateExistingHooks(targetDir) {
 }
 
 /**
+ * Sync hooks: update existing and add newly eligible ones (like syncScripts).
+ * @param {string} targetDir
+ * @param {{ tools: string[] }} config
+ * @returns {{ updated: string[], added: string[] }}
+ */
+export function syncHooks(targetDir, config) {
+  let updated = []
+  let added = []
+  let eligible = listEligibleHooks(config)
+
+  if (eligible.length > 0 && !existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true })
+  }
+
+  for (let file of eligible) {
+    let dest = join(targetDir, file)
+    let existed = existsSync(dest)
+    copyFileSync(join(HOOKS_DIR, file), dest)
+    chmodSync(dest, 0o755)
+    if (existed) {
+      updated.push(file)
+    } else {
+      added.push(file)
+    }
+  }
+
+  return { updated, added }
+}
+
+/**
  * Compute a version hash from all bundled hooks.
  * @returns {string}
  */

@@ -1,10 +1,10 @@
 import { checkbox, confirm, input } from "@inquirer/prompts"
 import { execSync } from "node:child_process"
 import {
-  copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs"
@@ -51,9 +51,12 @@ export async function init(opts) {
   const shouldCommit = opts.commit !== false
   const projectDir = process.cwd()
 
-  // Detect maw v2 bare repo — no .agents/botbox/ at root but ws/ exists
+  // Detect maw v2 bare repo — ws/default/ has botbox config, or ws/default/
+  // exists and root has no .agents/botbox/ (first init at bare root)
   let bareRootDir = null
-  if (!existsSync(join(projectDir, ".agents", "botbox")) && existsSync(join(projectDir, "ws"))) {
+  let wsDefault = join(projectDir, "ws", "default")
+  if (existsSync(join(wsDefault, ".botbox.json")) ||
+      (existsSync(wsDefault) && !existsSync(join(projectDir, ".agents", "botbox")))) {
     bareRootDir = projectDir
     let args = ["exec", "default", "--", "botbox", "init"]
     // Forward relevant flags
@@ -86,13 +89,17 @@ export async function init(opts) {
       console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
     }
 
-    // Copy .claude/settings.json to repo root so Claude Code finds hooks
-    let wsSettingsPath = join(projectDir, "ws", "default", ".claude", "settings.json")
-    if (existsSync(wsSettingsPath)) {
-      let rootClaudeDir = join(projectDir, ".claude")
-      mkdirSync(rootClaudeDir, { recursive: true })
-      copyFileSync(wsSettingsPath, join(rootClaudeDir, "settings.json"))
-      console.log("Copied .claude/settings.json to bare root")
+    // Generate .claude/settings.json at repo root pointing to ws/default/ hooks
+    let wsHooksDir = join(projectDir, "ws", "default", ".agents", "botbox", "hooks")
+    if (existsSync(wsHooksDir)) {
+      let hookFiles = readdirSync(wsHooksDir).filter((f) => f.endsWith(".sh"))
+      if (hookFiles.length > 0) {
+        let rootClaudeDir = join(projectDir, ".claude")
+        mkdirSync(rootClaudeDir, { recursive: true })
+        let settings = { hooks: generateHooksConfig(resolve(wsHooksDir), hookFiles) }
+        writeFileSync(join(rootClaudeDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n")
+        console.log("Generated .claude/settings.json at bare root (hooks → ws/default/)")
+      }
     }
     return
   }
