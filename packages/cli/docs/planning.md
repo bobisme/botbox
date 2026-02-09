@@ -153,3 +153,7 @@ These rules must hold for every mission:
 - **A child belongs to at most one mission** — no shared children across missions
 - **Mission cannot close with open children** — all children must be closed first
 - **One active worker per child bead** — enforced via `bead://` claims (no two agents work the same child)
+
+### Coordination
+
+See [coordination.md](coordination.md) for label conventions (`coord:interface`, `coord:blocker`, `coord:handoff`) and sibling awareness protocols.

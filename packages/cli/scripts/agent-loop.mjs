@@ -18,6 +18,9 @@ let CRITICAL_APPROVERS = [];
 let DISPATCHED_BEAD = process.env.BOTBOX_BEAD || '';
 let DISPATCHED_WORKSPACE = process.env.BOTBOX_WORKSPACE || '';
 let DISPATCHED_MISSION = process.env.BOTBOX_MISSION || '';
+let DISPATCHED_SIBLINGS = process.env.BOTBOX_SIBLINGS || '';
+let DISPATCHED_MISSION_OUTCOME = process.env.BOTBOX_MISSION_OUTCOME || '';
+let DISPATCHED_FILE_HINTS = process.env.BOTBOX_FILE_HINTS || '';
 
 // --- Load config from .botbox.json ---
 async function loadConfig() {
@@ -240,7 +243,10 @@ Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE) entirely.
 Pre-assigned bead: ${DISPATCHED_BEAD}
 Pre-assigned workspace: ${DISPATCHED_WORKSPACE}
 Workspace path: ${process.cwd()}/ws/${DISPATCHED_WORKSPACE}
-${DISPATCHED_MISSION ? `Mission context: ${DISPATCHED_MISSION} — read via maw exec default -- br show ${DISPATCHED_MISSION}` : ''}
+${DISPATCHED_MISSION ? `Mission: ${DISPATCHED_MISSION}
+${DISPATCHED_MISSION_OUTCOME ? `Mission outcome: ${DISPATCHED_MISSION_OUTCOME}` : `Read mission context: maw exec default -- br show ${DISPATCHED_MISSION}`}
+${DISPATCHED_SIBLINGS ? `\nSibling beads (other workers in this mission):\n${DISPATCHED_SIBLINGS}` : ''}
+${DISPATCHED_FILE_HINTS ? `\nAdvisory file ownership (avoid editing files owned by siblings):\n${DISPATCHED_FILE_HINTS}` : ''}` : ''}
 
 Go directly to:
 1. Verify your bead: maw exec default -- br show ${DISPATCHED_BEAD}
@@ -304,6 +310,11 @@ At the end of your work, output exactly one of these completion signals:
    Note the mission's Outcome, Constraints, and Stop criteria. Check siblings:
      maw exec default -- br list -l "mission:<mission-id>"
    Use this context to understand how your work fits into the larger effort.
+
+   COORDINATION LABELS: When working on a mission, use these labels on bus messages:
+   - coord:interface — Share API/interface contracts with siblings: bus send --agent ${AGENT} ${PROJECT} "Interface: <details>" -L coord:interface -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
+   - coord:blocker — Flag a blocking dependency on a sibling: bus send --agent ${AGENT} ${PROJECT} "Blocked by <sibling-bead>: <reason>" -L coord:blocker -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
+   - task-done — Signal completion: bus send --agent ${AGENT} ${PROJECT} "Completed <id>" -L task-done -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
 
 3. START: maw exec default -- br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}.
    bus claims stake --agent ${AGENT} "bead://${PROJECT}/<id>" -m "<id>".
@@ -509,6 +520,9 @@ async function main() {
 	console.log(`Model:     ${MODEL || 'system default'}`);
 	if (DISPATCHED_BEAD) {
 		console.log(`Dispatched: bead=${DISPATCHED_BEAD} workspace=${DISPATCHED_WORKSPACE} mission=${DISPATCHED_MISSION || 'none'}`);
+	}
+	if (DISPATCHED_SIBLINGS) {
+		console.log(`Siblings:   ${DISPATCHED_SIBLINGS.split('\n').length} sibling(s)`);
 	}
 
 	// Confirm identity

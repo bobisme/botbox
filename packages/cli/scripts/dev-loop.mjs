@@ -561,29 +561,58 @@ ${process.env.BOTBOX_MISSION ? `\nBOTBOX_MISSION is set to "${process.env.BOTBOX
 ### Dispatch Mission Workers
 
 For independent children (unblocked), dispatch workers (max ${MAX_MISSION_WORKERS} concurrent):
-- Follow the same dispatch pattern as step 5b, but add mission labels and env vars to the botty spawn:
+- Follow the same dispatch pattern as step 5b, but add mission labels and sibling context env vars:
     --label "mission:<mission-id>" \\
     --env "BOTBOX_MISSION=<mission-id>" \\
+    --env "BOTBOX_MISSION_OUTCOME=<outcome from mission bead description>" \\
+    --env "BOTBOX_SIBLINGS=<sibling-id> (<title>) [owner:<owner>, status:<status>]\\n..." \\
+    --env "BOTBOX_FILE_HINTS=<sibling-id>: likely edits <files>\\n..." \\
+
+Build the sibling context BEFORE dispatching:
+1. List all children: maw exec default -- br list -l "mission:<mission-id>" --json
+2. For each child: extract id, title, owner, status
+3. Format BOTBOX_SIBLINGS as one line per child: "<id> (<title>) [owner:<owner>, status:<status>]"
+4. Estimate file ownership hints from bead titles/descriptions (advisory, not enforced)
+5. Extract the Outcome line from the mission bead description for BOTBOX_MISSION_OUTCOME
+
 - Include mission context in each worker's bead comment:
   maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <child-id> \\
     "Mission context: <mission-id> — <outcome>. Siblings: <sibling-ids>."
 
-### Mission-Aware Monitoring
+### Checkpoint Loop (step 17)
 
-During step 6 (MONITOR), also check mission progress:
-  maw exec default -- br list -l "mission:<mission-id>" --json
-Count: N done / M total, K blocked.
-If all children are done: proceed to close mission bead.
-If some are blocked: investigate and unblock or reassign.
-Post checkpoint summary every ${CHECKPOINT_INTERVAL_SEC}s:
-  bus send --agent ${AGENT} ${PROJECT} "Mission <id> checkpoint: N/M done, K blocked" -L feedback
+After dispatching workers, enter a checkpoint loop. Run checkpoints every ${CHECKPOINT_INTERVAL_SEC} seconds.
 
-### Closing a Mission
+Each checkpoint:
+1. Count children by status:
+   maw exec default -- br list -l "mission:<mission-id>" --json
+   Tally: N open, M in_progress, K closed, J blocked
+2. Check alive workers:
+   botty list --format json
+   Cross-reference with dispatched worker names (${AGENT}/<suffix>)
+3. Check for completions (cursor-based — track last-seen message ID to avoid rescanning):
+   bus history ${PROJECT} -n 20 -L task-done --since <last-checkpoint-time>
+   Look for "Completed <bead-id>" messages from workers
+4. Detect failures:
+   If a worker is not in botty list but its bead is still in_progress → crash recovery (see step 6)
+5. Decide:
+   - All children closed → exit checkpoint loop, proceed to Mission Close (step 18)
+   - Some blocked, none in_progress → investigate blockers or rescope
+   - Workers still alive → continue checkpoint loop
+6. Post checkpoint summary:
+   bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id> checkpoint: K/${'\$'}TOTAL done, J blocked, M active" -L feedback
+
+Exit the checkpoint loop when: all children are closed, OR no workers alive and all remaining beads are blocked.
+
+### Mission Close and Synthesis (step 18)
 
 When all children are closed:
 1. Verify: maw exec default -- br list -l "mission:<mission-id>" — all should be closed
-2. Close the mission: maw exec default -- br close --actor ${AGENT} <mission-id> --reason="All children completed"
-3. Announce: bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id> complete: <title>" -L task-done
+2. Write mission log as a bead comment (synthesis of what happened):
+   maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <mission-id> \\
+     "Mission complete.\\n\\nChildren: N total, all closed.\\nKey decisions: <what changed during execution>\\nWhat worked: <patterns that succeeded>\\nWhat to avoid: <patterns that failed>\\nKey artifacts: <files/modules created or modified>"
+3. Close the mission: maw exec default -- br close --actor ${AGENT} <mission-id> --reason="All children completed"
+4. Announce: bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id> complete: <title> — N children, all done" -L task-done
 ` : ''}
 ## 6. MONITOR (if workers are dispatched)
 
@@ -672,7 +701,8 @@ Key rules:
 - All crit/jj commands in a workspace: maw exec \$WS -- crit/jj ...
 - For parallel dispatch, note limitations of this prompt-based approach
 - RISK LABELS: Always assess risk during grooming. risk:low skips review, risk:medium is standard, risk:high requires failure-mode checklist, risk:critical requires human approval.${MISSIONS_ENABLED ? `
-- MISSIONS: Enabled. Max ${MAX_MISSION_WORKERS} concurrent workers, max ${MAX_MISSION_CHILDREN} children per mission. Checkpoint every ${CHECKPOINT_INTERVAL_SEC}s.${process.env.BOTBOX_MISSION ? ` Focus on mission: ${process.env.BOTBOX_MISSION}` : ''}` : ''}
+- MISSIONS: Enabled. Max ${MAX_MISSION_WORKERS} concurrent workers, max ${MAX_MISSION_CHILDREN} children per mission. Checkpoint every ${CHECKPOINT_INTERVAL_SEC}s.${process.env.BOTBOX_MISSION ? ` Focus on mission: ${process.env.BOTBOX_MISSION}` : ''}
+- COORDINATION: Watch for coord:interface, coord:blocker, coord:handoff labels on bus messages from workers. React to coord:blocker by unblocking or reassigning.` : ''}
 - Output completion signal at end`;
 }
 
