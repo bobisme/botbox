@@ -57,6 +57,8 @@ const DOC_DESCRIPTIONS = {
   "preflight.md": "Validate toolchain health",
   "cross-channel.md": "Ask questions, report bugs, and track responses across projects",
   "report-issue.md": "Report bugs/features to other projects",
+  "coordination.md": "Mission coordination labels and sibling awareness",
+  "mission.md": "End-to-end mission lifecycle guide",
 }
 
 /** @type {Record<string, string>} */
