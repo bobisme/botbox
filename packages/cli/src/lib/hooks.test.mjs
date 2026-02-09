@@ -70,7 +70,7 @@ describe("copyHooks", () => {
     let target = join(tempDir, "hooks")
     let copied = copyHooks(target, { tools: ["botbus"] })
 
-    expect(copied.length).toBe(2)
+    expect(copied.length).toBe(3)
     for (let file of copied) {
       expect(existsSync(join(target, file))).toBe(true)
     }

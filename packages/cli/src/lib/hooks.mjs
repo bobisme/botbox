@@ -39,6 +39,11 @@ const HOOK_REGISTRY = {
     description: "Check for unread bus messages",
     eligible: (config) => config.tools.includes("botbus"),
   },
+  "claim-agent.sh": {
+    event: ["SessionStart", "PostToolUse"],
+    description: "Claim and refresh agent:// advisory lock",
+    eligible: (config) => config.tools.includes("botbus"),
+  },
 }
 
 /** @returns {string[]} List of hook filenames in the bundled hooks dir */

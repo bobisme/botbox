@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process"
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
   copyWorkflowDocs,
@@ -74,6 +74,15 @@ export function sync(opts) {
     if (!existsSync(stubClaudeMd)) {
       symlinkSync("AGENTS.md", stubClaudeMd)
       console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
+    }
+
+    // Copy .claude/settings.json to repo root so Claude Code finds hooks
+    let wsSettingsPath = join(projectDir, "ws", "default", ".claude", "settings.json")
+    if (existsSync(wsSettingsPath)) {
+      let rootClaudeDir = join(projectDir, ".claude")
+      mkdirSync(rootClaudeDir, { recursive: true })
+      copyFileSync(wsSettingsPath, join(rootClaudeDir, "settings.json"))
+      console.log("Copied .claude/settings.json to bare root")
     }
 
     return
