@@ -1,5 +1,5 @@
 import { execSync } from "node:child_process"
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import {
   copyWorkflowDocs,
@@ -76,25 +76,19 @@ export function sync(opts) {
       console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
     }
 
-    // Generate .claude/settings.json at repo root pointing to ws/default/ hooks
-    let wsHooksDir = join(projectDir, "ws", "default", ".agents", "botbox", "hooks")
-    if (existsSync(wsHooksDir)) {
-      let hookFiles = readdirSync(wsHooksDir).filter((f) => f.endsWith(".sh"))
-      if (hookFiles.length > 0) {
-        let rootClaudeDir = join(projectDir, ".claude")
-        let settingsPath = join(rootClaudeDir, "settings.json")
-        mkdirSync(rootClaudeDir, { recursive: true })
-        let settings = {}
-        if (existsSync(settingsPath)) {
-          try {
-            settings = JSON.parse(readFileSync(settingsPath, "utf-8"))
-          } catch {
-            // Overwrite if unparseable
-          }
+    // Symlink repo-root/.claude → ws/default/.claude so Claude Code
+    // finds hooks when launched from the bare repo root
+    let rootClaudeDir = join(projectDir, ".claude")
+    let wsClaudeDir = join(projectDir, "ws", "default", ".claude")
+    if (existsSync(wsClaudeDir)) {
+      let isSymlink = existsSync(rootClaudeDir) && lstatSync(rootClaudeDir).isSymbolicLink()
+      if (!isSymlink) {
+        // Remove existing .claude/ directory (stale generated copy)
+        if (existsSync(rootClaudeDir)) {
+          rmSync(rootClaudeDir, { recursive: true })
         }
-        settings.hooks = generateHooksConfig(resolve(wsHooksDir), hookFiles)
-        writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n")
-        console.log("Generated .claude/settings.json at bare root (hooks → ws/default/)")
+        symlinkSync("ws/default/.claude", rootClaudeDir)
+        console.log("Symlinked .claude → ws/default/.claude")
       }
     }
 

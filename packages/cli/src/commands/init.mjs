@@ -2,9 +2,10 @@ import { checkbox, confirm, input } from "@inquirer/prompts"
 import { execSync } from "node:child_process"
 import {
   existsSync,
+  lstatSync,
   mkdirSync,
   readFileSync,
-  readdirSync,
+  rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs"
@@ -89,16 +90,18 @@ export async function init(opts) {
       console.log("Symlinked bare-root CLAUDE.md → AGENTS.md")
     }
 
-    // Generate .claude/settings.json at repo root pointing to ws/default/ hooks
-    let wsHooksDir = join(projectDir, "ws", "default", ".agents", "botbox", "hooks")
-    if (existsSync(wsHooksDir)) {
-      let hookFiles = readdirSync(wsHooksDir).filter((f) => f.endsWith(".sh"))
-      if (hookFiles.length > 0) {
-        let rootClaudeDir = join(projectDir, ".claude")
-        mkdirSync(rootClaudeDir, { recursive: true })
-        let settings = { hooks: generateHooksConfig(resolve(wsHooksDir), hookFiles) }
-        writeFileSync(join(rootClaudeDir, "settings.json"), JSON.stringify(settings, null, 2) + "\n")
-        console.log("Generated .claude/settings.json at bare root (hooks → ws/default/)")
+    // Symlink repo-root/.claude → ws/default/.claude so Claude Code
+    // finds hooks when launched from the bare repo root
+    let rootClaudeDir = join(projectDir, ".claude")
+    let wsClaudeDir = join(projectDir, "ws", "default", ".claude")
+    if (existsSync(wsClaudeDir)) {
+      let isSymlink = existsSync(rootClaudeDir) && lstatSync(rootClaudeDir).isSymbolicLink()
+      if (!isSymlink) {
+        if (existsSync(rootClaudeDir)) {
+          rmSync(rootClaudeDir, { recursive: true })
+        }
+        symlinkSync("ws/default/.claude", rootClaudeDir)
+        console.log("Symlinked .claude → ws/default/.claude")
       }
     }
     return
