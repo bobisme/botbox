@@ -1,6 +1,6 @@
 {
   "name": "botbox",
-  "version": "0.3.5",
+  "version": "0.4.0",
   "description": "Setup and sync tool for botbox multi-agent workflows",
   "author": "Bob",
   "type": "module",
