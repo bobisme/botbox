@@ -23,21 +23,34 @@ At the end of your work, output exactly one of these completion signals:
    a. Read the review and diff: maw exec $WS -- crit review <id> and maw exec $WS -- crit diff <id>
    b. Read the full source files changed in the diff — use absolute paths (ws/$WS/...)
    c. Check project config (e.g., Cargo.toml, package.json) for dependencies and settings
-   d. Run static analysis if applicable: maw exec $WS -- cargo clippy, maw exec $WS -- oxlint — cite warnings in comments
-   e. Cross-file consistency: compare similar functions across files for uniform patterns.
+   d. RISK-AWARE REVIEW:
+      Before reviewing, check the bead's risk label:
+      - Run: maw exec default -- br show <bead-id>
+      - Look for `risk:high` or `risk:critical` labels
+
+      If the bead has `risk:high`, verify that a security reviewer has addressed the failure-mode checklist:
+      - Check for crit comments covering: production failure scenarios, detection methods,
+        rollback strategy, dependency risks, and uncertain assumptions
+      - If the failure-mode analysis is missing or incomplete, BLOCK and request security review
+
+      If the bead has `risk:critical`, ALWAYS BLOCK with comment:
+      "risk:critical requires human approval before merge"
+   e. Run static analysis if applicable: maw exec $WS -- cargo clippy, maw exec $WS -- oxlint — cite warnings in comments
+   f. Cross-file consistency: compare similar functions across files for uniform patterns.
       If one function does it right and another doesn't, that's a bug.
-   f. Boundary checks: trace user-supplied values through to where they're used.
+   g. Boundary checks: trace user-supplied values through to where they're used.
       Check arithmetic for edge cases: 0, 1, MAX, negative, empty.
-   g. For each issue found, comment with severity:
+   h. For each issue found, comment with severity:
       - CRITICAL: Security vulnerabilities, data loss, crashes in production
       - HIGH: Correctness bugs, race conditions, resource leaks
       - MEDIUM: Error handling gaps, missing validation at boundaries
       - LOW: Code quality, naming, structure
       - INFO: Suggestions, style preferences, minor improvements
       Use: maw exec $WS -- crit comment <id> "SEVERITY: <feedback>" --file <path> --line <line-or-range>
-   h. Vote:
-      - maw exec $WS -- crit block <id> --reason "..." if any CRITICAL or HIGH issues exist
-      - maw exec $WS -- crit lgtm <id> if no CRITICAL or HIGH issues
+   i. Vote:
+      - For `risk:critical` beads: ALWAYS BLOCK with comment "risk:critical requires human approval before merge"
+      - For other beads: maw exec $WS -- crit block <id> --reason "..." if any CRITICAL or HIGH issues exist
+      - maw exec $WS -- crit lgtm <id> if no CRITICAL or HIGH issues AND not risk:critical
 
 4. ANNOUNCE:
    bus send --agent {{AGENT}} {{PROJECT}} "Review complete: <review-id> — <LGTM|BLOCKED>" -L review-done

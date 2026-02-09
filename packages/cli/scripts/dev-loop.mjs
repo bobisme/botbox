@@ -396,8 +396,14 @@ Run: maw exec default -- br ready --json
 Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promise> and stop.
 
 GROOM each ready bead:
-- maw exec default -- br show <id> — ensure clear title, description, acceptance criteria, priority
+- maw exec default -- br show <id> — ensure clear title, description, acceptance criteria, priority, and risk label
 - Evaluate as lead dev: is this worth doing now? Is the approach sound? Reprioritize, close as wontfix, or ask for clarification if needed.
+- RISK ASSESSMENT: If the bead lacks a risk label, assign one based on: blast radius, data sensitivity, reversibility, dependency uncertainty.
+  - risk:low — typo fixes, doc updates, config tweaks (maw exec default -- br label add --actor ${AGENT} -l risk:low <id>)
+  - risk:medium — standard features/bugs (default, no label needed)
+  - risk:high — security-sensitive, data integrity, user-visible behavior changes
+  - risk:critical — irreversible actions, migrations, regulated changes
+  Risk can be escalated upward by any agent. Downgrades require lead approval with justification comment.
 - Comment what you changed: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "..."
 - If bead is claimed (check bus claims), skip it
 
@@ -421,26 +427,36 @@ Same as the standard worker loop:
 9. maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Progress: ..."
 10. Describe: maw exec \$WS -- jj describe -m "<id>: <summary>"
 
-If REVIEW is true:
-  11. CHECK for existing review first:
-      - Run: maw exec default -- br comments <id> | grep "Review created:"
-      - If found, extract <review-id> and skip to step 13 (don't create duplicate)
-  12. Create review (only if none exists):
-      - maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>"
-      - IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace \$WS"
-  13. bus statuses set --agent ${AGENT} "Review: <review-id>"
-  14. Request security review (if project has security reviewer):
-      - Assign: maw exec \$WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
-      - Spawn via @mention: bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
-      (The @mention triggers the auto-spawn hook — without it, no reviewer spawns!)
-  15. STOP this iteration — wait for reviewer.
+11. REVIEW (risk-aware):
+  Check the bead's risk label (maw exec default -- br show <id>). No risk label = risk:medium.
 
-If REVIEW is false:
-  11. Merge: maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main)
-  12. maw exec default -- br close --actor ${AGENT} <id> --reason="Completed"
-  13. bus claims release --agent ${AGENT} --all
-  14. maw exec default -- br sync --flush-only${pushMainStep}
-  ${PUSH_MAIN ? '15' : '14'}. bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+  RISK:LOW — Skip review:
+    Add self-review comment: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Self-review (risk:low): <what you verified>"
+    Proceed directly to merge/finish below.
+
+  RISK:MEDIUM — Standard review (if REVIEW is true):
+    CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+    Create review if none: maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>"
+    IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace \$WS"
+    Request security review:
+      maw exec \$WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
+      bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
+    STOP this iteration — wait for reviewer.
+
+  RISK:HIGH — Security review + failure-mode checklist:
+    Same as risk:medium, but add to review description: "risk:high — failure-mode checklist required."
+    MUST request security reviewer. STOP.
+
+  RISK:CRITICAL — Security review + human approval:
+    Same as risk:high, but also post: bus send --agent ${AGENT} ${PROJECT} "risk:critical review for <id>: requires human approval before merge" -L review-request
+    STOP.
+
+  If REVIEW is false (or risk:low):
+    Merge: maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main)
+    maw exec default -- br close --actor ${AGENT} <id> --reason="Completed"
+    bus claims release --agent ${AGENT} --all
+    maw exec default -- br sync --flush-only${pushMainStep}
+    bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
 
 ## 5b. PARALLEL DISPATCH (2+ beads)
 
@@ -479,26 +495,35 @@ For each completed worker:
 
 ## 7. FINISH (merge completed work)
 
-For each completed bead with a workspace:
+For each completed bead with a workspace, check the bead's risk label first:
 
-If REVIEW is true:
-  1. CHECK for existing review first:
-     - Run: maw exec default -- br comments <id> | grep "Review created:"
-     - If found, extract <review-id> and skip to step 3 (don't create duplicate)
-  2. Create review (only if none exists):
-     - maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary of changes>"
-     - IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace <ws-name>"
-  3. Request security review (if project has security reviewer):
-     - Assign: maw exec \$WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
-     - Spawn via @mention: bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
-     (The @mention triggers the auto-spawn hook — without it, no reviewer spawns!)
-  4. STOP — wait for reviewer
+RISK:LOW — Skip review:
+  Add self-review comment if not already present.
+  maw ws merge \$WS --destroy
+  maw exec default -- br close --actor ${AGENT} <id>
+  maw exec default -- br sync --flush-only${pushMainStep}
+  bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
 
-If REVIEW is false:
-  1. maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main)
-  2. maw exec default -- br close --actor ${AGENT} <id>
-  3. maw exec default -- br sync --flush-only${pushMainStep}
-  4. bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+RISK:MEDIUM — Standard review (if REVIEW is true):
+  CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+  Create review if none: maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>"
+  IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace <ws-name>"
+  Request security review:
+    maw exec \$WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
+    bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
+  STOP — wait for reviewer
+
+RISK:HIGH — Security review + failure-mode checklist:
+  Same as risk:medium, add "risk:high — failure-mode checklist required" to review description.
+
+RISK:CRITICAL — Security review + human approval:
+  Same as risk:high, plus post human approval request to bus.
+
+If REVIEW is false (regardless of risk):
+  maw ws merge \$WS --destroy
+  maw exec default -- br close --actor ${AGENT} <id>
+  maw exec default -- br sync --flush-only${pushMainStep}
+  bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
 
 After finishing all ready work:
   bus claims release --agent ${AGENT} --all
@@ -525,6 +550,7 @@ Key rules:
 - All br/bv commands: maw exec default -- br/bv ...
 - All crit/jj commands in a workspace: maw exec \$WS -- crit/jj ...
 - For parallel dispatch, note limitations of this prompt-based approach
+- RISK LABELS: Always assess risk during grooming. risk:low skips review, risk:medium is standard, risk:high requires failure-mode checklist, risk:critical requires human approval.
 - Output completion signal at end`;
 }
 

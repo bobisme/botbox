@@ -62,16 +62,52 @@ At the end of your work, output exactly one of these completion signals:
    - Missing rate limits on sensitive operations?
    - ReDoS: complex regexes with user input?
 
-   d. For each security issue found, comment with severity:
+   d. RISK-AWARE REVIEW:
+      Before reviewing, check the bead's risk label:
+      - Run: maw exec default -- br show <bead-id>
+      - Look for `risk:high` or `risk:critical` labels in the output
+
+      If the bead has `risk:high` or `risk:critical`, the FAILURE-MODE CHECKLIST is REQUIRED in addition to the security checklist above.
+
+      **FAILURE-MODE CHECKLIST** (required for risk:high and risk:critical beads):
+      Each of these questions MUST be addressed in separate crit comments:
+
+      1. **What could fail in production?**
+         - Identify specific failure scenarios (service crash, data corruption, cascade failure)
+         - Consider partial failures, timeouts, resource exhaustion
+
+      2. **How would we detect it quickly?**
+         - What metrics/logs would show the failure?
+         - How fast would we notice? (seconds, minutes, hours)
+
+      3. **What is the fastest safe rollback?**
+         - Can we rollback without data migration?
+         - Feature flag? Config change? Deployment revert?
+         - What's the rollback time estimate?
+
+      4. **What dependency could invalidate this plan?**
+         - External service changes, library updates, infrastructure assumptions
+         - What could change underneath us?
+
+      5. **What assumption is least certain?**
+         - Identify the weakest link in the design
+         - What are we most likely to be wrong about?
+
+      For each question, add a crit comment with the question as the title and your analysis.
+      Use severity INFO for these failure-mode analysis comments.
+
+   e. For each security issue found, comment with severity:
       - CRITICAL: Exploitable vulnerabilities (RCE, auth bypass, data breach)
       - HIGH: Security weaknesses likely exploitable with effort
       - MEDIUM: Defense-in-depth gaps, missing hardening
       - LOW: Security best practice violations, minor hardening
       Use: maw exec $WS -- crit comment <id> "SEVERITY: <feedback>" --file <path> --line <line-or-range>
 
-   e. Vote:
-      - maw exec $WS -- crit block <id> --reason "..." if ANY security issues exist (CRITICAL, HIGH, or MEDIUM)
-      - maw exec $WS -- crit lgtm <id> only if no security concerns found
+   f. Vote:
+      - For `risk:critical` beads: ALWAYS BLOCK, regardless of code quality.
+        Add comment: "risk:critical requires human approval before merge"
+      - For other beads: maw exec $WS -- crit block <id> --reason "..." if ANY security issues exist (CRITICAL, HIGH, or MEDIUM)
+      - maw exec $WS -- crit lgtm <id> only if no security concerns found AND not risk:critical
 
 4. ANNOUNCE:
    bus send --agent {{AGENT}} {{PROJECT}} "Security review complete: <review-id> — <LGTM|BLOCKED>" -L review-done
