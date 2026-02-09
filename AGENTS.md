@@ -144,12 +144,12 @@ maw exec $WS -- crit reply <thread-id> "message"                 # Reply to exis
 maw exec $WS -- crit lgtm <review-id> [-m "message"]             # Approve
 maw exec $WS -- crit block <review-id> --reason "..."            # Block (request changes)
 maw exec default -- crit reviews mark-merged <review-id>          # Mark as merged after workspace merge
-maw exec default -- crit inbox [--all-workspaces]                 # Show reviews/threads needing attention
+maw exec $WS -- crit inbox --agent $AGENT                        # Show reviews/threads needing attention
 ```
 
 **Key details:**
 - Always run crit commands via `maw exec <ws> --` in the workspace context
-- `crit inbox --all-workspaces` is how reviewers discover pending work
+- Reviewers iterate workspaces via `maw ws list` + `maw exec $WS -- crit inbox` per workspace
 - Agent identity via `--agent` flag or `CRIT_AGENT`/`BOTBUS_AGENT` env vars
 - `--user` flag switches to human identity ($USER) for manual reviews
 
@@ -229,7 +229,7 @@ Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 **Role detection:** Agent name suffix determines role (e.g., `myproject-security` → loads `reviewer-security.md` prompt). Falls back to generic `reviewer.md`.
 
 **Per iteration:**
-1. Check `maw exec default -- crit inbox --all-workspaces` for pending reviews
+1. Iterate workspaces via `maw ws list`, check `maw exec $WS -- crit inbox` per workspace
 2. Read review diff and source files from workspace (`ws/$WS/...`)
 3. Comment with severity: CRITICAL, HIGH, MEDIUM, LOW, INFO
 4. Vote: BLOCK if CRITICAL/HIGH issues, LGTM otherwise
@@ -450,7 +450,7 @@ Drop whatever you're doing and run the tail command. Analyze the output and repo
 4. Check workspace: `maw ws list` — is workspace still alive?
 
 ### Review not being picked up
-1. `crit inbox --agent <reviewer> --all-workspaces` — does it show the review?
+1. `maw exec $WS -- crit inbox --agent <reviewer>` — does it show the review? (check each workspace)
 2. Verify the @mention: the bus message MUST contain `@<project>-<role>` (no @ prefix in hook registration, but @ in message)
 3. Check hook: `bus hooks list` — is there a mention hook for that reviewer?
 4. Verify reviewer workspace path: reviewer reads code from workspace, not project root
@@ -486,9 +486,11 @@ See [proposal.md](.agents/botbox/proposal.md) for full workflow.
 ## Output Formats
 
 All companion tools support output formats via `--format`:
-- **text** (default) — Concise plain text. Should be token-efficient by design — IDs, key fields, and suggested next commands, without decorative prose.
-- **json** — Machine-readable structured output. Use when you need to parse fields programmatically.
-- **toon** — Ultra-compact token-optimized format. Available but rarely needed — `text` is already concise enough for most agent workflows.
+- **text** (default for agents/pipes) — Concise, structured plain text. ID-first records, two-space delimiters, no prose. Token-efficient and parseable by convention.
+- **pretty** (default for TTY) — Tables, color, box-drawing. For humans at a terminal. Never fed to LLMs or parsed.
+- **json** (machines) — Structured output. Always an object envelope (never bare arrays) with an `advice` array for warnings/suggestions.
+
+Format auto-detection: `--format` flag > `FORMAT` env > TTY→pretty / non-TTY→text. Agents always get `text` unless they explicitly request `--format json`.
 
 ## Message Labels
 
