@@ -14,6 +14,11 @@ let AGENT = '';
 let PUSH_MAIN = false;
 let CRITICAL_APPROVERS = [];
 
+// --- Dispatched worker env (set by dev-loop when spawning workers) ---
+let DISPATCHED_BEAD = process.env.BOTBOX_BEAD || '';
+let DISPATCHED_WORKSPACE = process.env.BOTBOX_WORKSPACE || '';
+let DISPATCHED_MISSION = process.env.BOTBOX_MISSION || '';
+
 // --- Load config from .botbox.json ---
 async function loadConfig() {
 	if (existsSync('.botbox.json')) {
@@ -168,6 +173,7 @@ async function hasPendingReview() {
 
 // --- Helper: check if there is work ---
 async function hasWork() {
+	if (DISPATCHED_BEAD) return true;
 	try {
 		// Check claims
 		const claimsResult = await runCommand('bus', [
@@ -226,8 +232,25 @@ COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. A
   jj:    maw exec \$WS -- jj <args>
   other: maw exec \$WS -- <command>           (cargo test, etc.)
 
-Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
-then STOP. Do not start a second task — the outer loop handles iteration.
+${DISPATCHED_BEAD && DISPATCHED_WORKSPACE ? `## DISPATCHED WORKER — FAST PATH
+
+You were dispatched by a lead dev agent with a pre-assigned bead and workspace.
+Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE) entirely.
+
+Pre-assigned bead: ${DISPATCHED_BEAD}
+Pre-assigned workspace: ${DISPATCHED_WORKSPACE}
+Workspace path: ${process.cwd()}/ws/${DISPATCHED_WORKSPACE}
+${DISPATCHED_MISSION ? `Mission context: ${DISPATCHED_MISSION} — read via maw exec default -- br show ${DISPATCHED_MISSION}` : ''}
+
+Go directly to:
+1. Verify your bead: maw exec default -- br show ${DISPATCHED_BEAD}
+2. Verify your workspace: maw ws list (confirm ${DISPATCHED_WORKSPACE} exists)
+3. Your bead is already in_progress and claimed. Proceed to step 4 (WORK).
+   Use absolute workspace path: ${process.cwd()}/ws/${DISPATCHED_WORKSPACE}
+   For commands in workspace: maw exec ${DISPATCHED_WORKSPACE} -- <command>
+
+` : ''}${DISPATCHED_BEAD ? 'You are a dispatched worker — follow the FAST PATH section below.' : `Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
+then STOP. Do not start a second task — the outer loop handles iteration.`}
 
 At the end of your work, output exactly one of these completion signals:
 - <promise>COMPLETE</promise> if you completed a task or determined there is no work
@@ -473,6 +496,10 @@ async function main() {
 	await loadConfig();
 	parseCliArgs();
 
+	if (DISPATCHED_BEAD) {
+		MAX_LOOPS = 1;
+	}
+
 	AGENT = await getAgentName();
 
 	console.log(`Agent:     ${AGENT}`);
@@ -480,6 +507,9 @@ async function main() {
 	console.log(`Max loops: ${MAX_LOOPS}`);
 	console.log(`Pause:     ${LOOP_PAUSE}s`);
 	console.log(`Model:     ${MODEL || 'system default'}`);
+	if (DISPATCHED_BEAD) {
+		console.log(`Dispatched: bead=${DISPATCHED_BEAD} workspace=${DISPATCHED_WORKSPACE} mission=${DISPATCHED_MISSION || 'none'}`);
+	}
 
 	// Confirm identity
 	try {

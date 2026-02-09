@@ -516,8 +516,25 @@ Read each bead (maw exec default -- br show <id>) and select a model based on co
 7. bus statuses set --agent ${AGENT} "Dispatch: <id>" --ttl 5m
 8. bus send --agent ${AGENT} ${PROJECT} "Dispatching <worker-name> for <id>: <title>" -L task-claim
 
-DO NOT actually spawn background processes — that's handled by bash/botty. Instead, just note:
-"Workers would be spawned here in production. For now, skip to monitoring."
+### Spawning Workers
+
+For each dispatched bead, spawn a worker via botty with hierarchical naming:
+
+  botty spawn --name "${AGENT}/<worker-suffix>" \\
+    --label worker --label "bead:<id>" \\
+    --env "BOTBUS_AGENT=${AGENT}/<worker-suffix>" \\
+    --env "BOTBOX_BEAD=<id>" \\
+    --env "BOTBOX_WORKSPACE=\$WS" \\
+    --env "BOTBUS_CHANNEL=${PROJECT}" \\
+    --env "BOTBOX_PROJECT=${PROJECT}" \\
+    --timeout ${CLAUDE_TIMEOUT} \\
+    --cwd $(pwd) \\
+    -- bun .agents/botbox/scripts/agent-loop.mjs --model <selected-model> ${PROJECT} ${AGENT}/<worker-suffix>
+
+The hierarchical name (${AGENT}/<suffix>) lets you find all your workers via \`botty list\`.
+The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell agent-loop.mjs to skip triage and go straight to the assigned work.
+
+After dispatching all workers, skip to step 6 (MONITOR).
 ${MISSIONS_ENABLED ? `
 ## 5c. MISSION (Level 4 — large task decomposition)
 
@@ -544,7 +561,9 @@ ${process.env.BOTBOX_MISSION ? `\nBOTBOX_MISSION is set to "${process.env.BOTBOX
 ### Dispatch Mission Workers
 
 For independent children (unblocked), dispatch workers (max ${MAX_MISSION_WORKERS} concurrent):
-- Follow the same dispatch pattern as step 5b
+- Follow the same dispatch pattern as step 5b, but add mission labels and env vars to the botty spawn:
+    --label "mission:<mission-id>" \\
+    --env "BOTBOX_MISSION=<mission-id>" \\
 - Include mission context in each worker's bead comment:
   maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <child-id> \\
     "Mission context: <mission-id> — <outcome>. Siblings: <sibling-ids>."
@@ -576,6 +595,24 @@ Check for completion messages:
 For each completed worker:
 - Read their progress comments: maw exec default -- br comments <id>
 - Verify the work looks reasonable (spot check key files)
+
+### Crash Recovery (dead worker detection)
+
+Check which workers are still alive: botty list --format json
+Cross-reference with your dispatched beads (check your bead:// claims).
+
+For each dispatched bead where the worker is NOT in botty list but the bead is still in_progress:
+1. Check bead comments for a "RETRY:1" marker (from a previous crash recovery attempt).
+2. If NO retry marker — first failure, reassign once:
+   - maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Worker <worker-name> died. RETRY:1 — reassigning."
+   - Check if workspace still exists (maw ws list). If destroyed, create a new one.
+   - Re-dispatch following step 5b (new worker name, same or new workspace).
+3. If "RETRY:1" marker already exists — second failure, block the bead:
+   - maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Worker died again after retry. Blocking bead."
+   - maw exec default -- br update --actor ${AGENT} <id> --status=blocked
+   - bus send --agent ${AGENT} ${PROJECT} "Bead <id> blocked: worker died twice" -L task-blocked
+   - If workspace still exists: maw ws destroy <ws> (don't merge broken work)
+   - bus claims release --agent ${AGENT} "bead://${PROJECT}/<id>"
 
 ## 7. FINISH (merge completed work)
 
@@ -678,9 +715,35 @@ async function runClaude(prompt) {
 // Track if we already announced sign-off (to avoid duplicate messages)
 let alreadySignedOff = false;
 
+// --- Kill child workers (hierarchical name pattern: AGENT/suffix) ---
+async function killChildWorkers() {
+	try {
+		let { stdout } = await runCommand('botty', ['list', '--format', 'json']);
+		let parsed = JSON.parse(stdout || '{}');
+		let agents = parsed.agents || [];
+		let prefix = AGENT + '/';
+		for (let agent of agents) {
+			if (agent.name?.startsWith(prefix)) {
+				try {
+					await runCommand('botty', ['kill', agent.name]);
+					console.log(`Killed child worker: ${agent.name}`);
+				} catch {
+					// Worker may have already exited
+				}
+			}
+		}
+	} catch {
+		// botty list failed — no workers to kill
+	}
+}
+
 // --- Cleanup handler ---
 async function cleanup() {
 	console.log('Cleaning up...');
+
+	// Kill any child workers spawned by this dev-loop
+	await killChildWorkers();
+
 	if (!alreadySignedOff) {
 		try {
 			await runCommand('bus', [
