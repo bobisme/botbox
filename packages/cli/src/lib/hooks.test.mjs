@@ -159,7 +159,7 @@ describe("generateHooksConfig", () => {
     expect(config.SessionStart).toBeDefined()
     expect(config.SessionStart).toHaveLength(1)
     expect(config.SessionStart[0]).toEqual({
-      matcher: {},
+      matcher: "",
       hooks: [
         {
           type: "command",
@@ -171,7 +171,7 @@ describe("generateHooksConfig", () => {
     expect(config.PreCompact).toBeDefined()
     expect(config.PreCompact).toHaveLength(1)
     expect(config.PreCompact[0]).toEqual({
-      matcher: {},
+      matcher: "",
       hooks: [
         {
           type: "command",
@@ -183,7 +183,7 @@ describe("generateHooksConfig", () => {
     expect(config.PostToolUse).toBeDefined()
     expect(config.PostToolUse).toHaveLength(1)
     expect(config.PostToolUse[0]).toEqual({
-      matcher: {},
+      matcher: "",
       hooks: [
         {
           type: "command",

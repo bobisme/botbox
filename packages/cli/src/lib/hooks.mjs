@@ -204,7 +204,7 @@ export function generateHooksConfig(hooksDir, hookNames) {
 
       // New format: each entry has a matcher and hooks array
       hooks[event].push({
-        matcher: {},  // Empty matcher matches all
+        matcher: "",  // Empty string matches all
         hooks: [
           {
             type: "command",
