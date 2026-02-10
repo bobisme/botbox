@@ -9,7 +9,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs"
-import { join, resolve } from "node:path"
+import { basename, dirname, join, resolve } from "node:path"
 import { ExitError } from "../lib/errors.mjs"
 import { copyWorkflowDocs, writeVersionMarker } from "../lib/docs.mjs"
 import { commit, isJjRepo } from "../lib/jj.mjs"
@@ -518,6 +518,19 @@ async function registerSpawnHook(projectDir, name, reviewers) {
   let absPath = resolve(projectDir)
   let agent = `${name}-dev`
 
+  // In maw v2, ws/default/ can be recreated by jj during workspace merges,
+  // invalidating the CWD of any process using it. Use the bare repo root
+  // (stable) for hook and spawn CWDs, with absolute script paths.
+  let hookCwd = absPath
+  let spawnCwd = absPath
+  let scriptPrefix = ".agents/botbox/scripts/"
+  if (basename(dirname(absPath)) === "ws" && existsSync(join(dirname(dirname(absPath)), ".jj"))) {
+    let bareRoot = dirname(dirname(absPath))
+    hookCwd = bareRoot
+    spawnCwd = bareRoot
+    scriptPrefix = join(absPath, ".agents", "botbox", "scripts") + "/"
+  }
+
   // Check if bus supports hooks
   try {
     execSync("bus hooks list", { stdio: "pipe", env: process.env })
@@ -537,9 +550,10 @@ async function registerSpawnHook(projectDir, name, reviewers) {
     let hooks = JSON.parse(existing)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
     // Check for existing router hook (claim-based, runs respond.mjs)
+    // Match either old CWD (ws/default/) or new CWD (bare root)
     let hasRouterHook = arr.some(
       (/** @type {any} */ h) =>
-        h.cwd === absPath &&
+        (h.cwd === hookCwd || h.cwd === absPath) &&
         h.active &&
         h.condition?.type === "claim_available" &&
         Array.isArray(h.command) &&
@@ -549,7 +563,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
       console.log("Router hook already exists, skipping")
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd ${absPath} --ttl 600 -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd ${absPath} -- bun .agents/botbox/scripts/respond.mjs ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd "${hookCwd}" --ttl 600 -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}respond.mjs" ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log("Registered router hook (respond.mjs) for all channel messages")
@@ -581,7 +595,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
 
     try {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim "agent://${reviewerAgent}" --claim-owner ${reviewerAgent} --ttl 600 --priority 1 --cwd ${absPath} -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${reviewerAgent} --cwd ${absPath} -- bun .agents/botbox/scripts/${scriptName} ${name} ${reviewerAgent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim "agent://${reviewerAgent}" --claim-owner ${reviewerAgent} --ttl 600 --priority 1 --cwd "${hookCwd}" -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${reviewerAgent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}${scriptName}" ${name} ${reviewerAgent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log(`Registered mention hook for @${reviewerAgent}`)

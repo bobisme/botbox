@@ -318,7 +318,7 @@ Migrations live in `src/migrations/index.mjs`. Each has:
 
 Migrations run automatically during `botbox sync` when the config version is behind. **When adding new botbus hook types or changing runtime behavior, add a migration.**
 
-Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add defaultAgent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks), 1.0.10 (rename snake_case config keys to camelCase), 1.0.12 (update hook cwd for maw v2).
+Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add defaultAgent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks), 1.0.10 (rename snake_case config keys to camelCase), 1.0.12 (update hook cwd for maw v2), 1.0.14 (use bare repo root for hook CWDs).
 
 ### Init vs Sync
 

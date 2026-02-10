@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process"
+import { execSync, execFileSync } from "node:child_process"
 import { existsSync, readFileSync, readdirSync, renameSync, unlinkSync, writeFileSync, mkdirSync } from "node:fs"
 import { basename, dirname, join, resolve } from "node:path"
 import { copyScripts, writeScriptsVersionMarker } from "../lib/scripts.mjs"
@@ -1144,6 +1144,173 @@ export const migrations = [
       mkdirSync(claudeDir, { recursive: true })
       writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + "\n")
       ctx.log("Regenerated .claude/settings.json hooks with new matcher format")
+    },
+  },
+  {
+    id: "1.0.14",
+    title: "Use bare repo root for hook CWDs in maw v2 projects",
+    description:
+      "Changes hook --cwd and botty spawn --cwd from ws/default/ to the bare repo root. " +
+      "ws/default/ can be recreated by jj during workspace merges, invalidating the CWD " +
+      "of any spawned agent process. The bare repo root is stable. Script paths become absolute.",
+    up(ctx) {
+      // Detect maw v2 — ws/ at project root (bare root)
+      // or we're running inside ws/default/ (re-exec'd by sync)
+      let bareRoot = null
+      let defaultWsDir = null
+      if (existsSync(join(ctx.projectDir, "ws"))) {
+        bareRoot = ctx.projectDir
+        defaultWsDir = join(ctx.projectDir, "ws", "default")
+      } else if (
+        basename(dirname(ctx.projectDir)) === "ws" &&
+        existsSync(join(dirname(dirname(ctx.projectDir)), ".jj"))
+      ) {
+        bareRoot = dirname(dirname(ctx.projectDir))
+        defaultWsDir = ctx.projectDir
+      }
+
+      if (!bareRoot || !defaultWsDir) {
+        ctx.log("Not a maw v2 project, skipping")
+        return
+      }
+
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping hook cwd migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping hook cwd migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping hook cwd migration")
+        return
+      }
+
+      // Find hooks whose cwd points to ws/default/ (the unstable path)
+      let projectHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === defaultWsDir &&
+          h.active,
+      )
+
+      if (projectHooks.length === 0) {
+        ctx.log("No hooks need cwd update (already using bare root or non-v2)")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? (project.defaultAgent || `${name}-dev`) : null
+      let absScriptDir = join(defaultWsDir, ".agents", "botbox", "scripts") + "/"
+
+      for (let hook of projectHooks) {
+        // Update command: change botty spawn --cwd and make script paths absolute
+        let newCommand = hook.command.map((/** @type {string} */ c, /** @type {number} */ i, /** @type {string[]} */ arr) => {
+          // Change --cwd value from ws/default/ to bare root
+          if (i > 0 && arr[i - 1] === "--cwd" && c === defaultWsDir) {
+            return bareRoot
+          }
+          // Make relative script paths absolute
+          if (c.startsWith(".agents/botbox/scripts/")) {
+            return absScriptDir + c.replace(".agents/botbox/scripts/", "")
+          }
+          return c
+        })
+
+        let removed = false
+        try {
+          execFileSync("bus", ["hooks", "remove", hook.id], {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          let addArgs = ["hooks", "add"]
+          if (agent) {
+            addArgs.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addArgs.push("--channel", hook.channel)
+          }
+          // Use bare root as hook cwd
+          addArgs.push("--cwd", bareRoot)
+
+          let condition = hook.condition || {}
+          if (condition.type === "claim_available" && condition.pattern) {
+            addArgs.push("--claim", condition.pattern)
+            let claimOwner = hook.claim_owner || condition.pattern.replace(/^agent:\/\//, "")
+            addArgs.push("--claim-owner", claimOwner)
+            addArgs.push("--ttl", "600")
+          }
+          if (condition.type === "mention_received" && condition.agent) {
+            let mentionAgent = condition.agent.replace(/^@/, "")
+            addArgs.push("--mention", mentionAgent)
+            if (hook.claim_pattern) {
+              addArgs.push("--claim", hook.claim_pattern)
+            }
+            let claimOwner = hook.claim_owner || mentionAgent
+            addArgs.push("--claim-owner", claimOwner)
+            addArgs.push("--ttl", "600")
+          }
+          addArgs.push("--priority", String(hook.priority ?? 0))
+          addArgs.push("--", ...newCommand)
+
+          try {
+            execFileSync("bus", addArgs, {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: cwd ws/default/ → bare root, absolute script paths`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            // Restore old hook if re-add fails
+            try {
+              let restoreCmd = ["hooks", "add"]
+              if (agent) restoreCmd.push("--agent", agent)
+              if (hook.channel) restoreCmd.push("--channel", hook.channel)
+              restoreCmd.push("--cwd", hook.cwd)
+              if (condition.type === "claim_available" && condition.pattern) {
+                restoreCmd.push("--claim", condition.pattern)
+                restoreCmd.push("--claim-owner", hook.claim_owner || condition.pattern.replace(/^agent:\/\//, ""))
+                restoreCmd.push("--ttl", "600")
+              }
+              if (condition.type === "mention_received" && condition.agent) {
+                restoreCmd.push("--mention", condition.agent.replace(/^@/, ""))
+                if (hook.claim_pattern) restoreCmd.push("--claim", hook.claim_pattern)
+                restoreCmd.push("--claim-owner", hook.claim_owner || condition.agent.replace(/^@/, ""))
+                restoreCmd.push("--ttl", "600")
+              }
+              restoreCmd.push("--priority", String(hook.priority ?? 0))
+              restoreCmd.push("--", ...hook.command)
+              execFileSync("bus", restoreCmd, { stdio: "pipe", env: process.env })
+              ctx.warn(`Re-add failed for hook ${hook.id}, restored original: ${message}`)
+            } catch {
+              ctx.warn(`Could not re-add hook ${hook.id} AND restore failed: ${message}`)
+            }
+          }
+        }
+      }
     },
   },
 ]
