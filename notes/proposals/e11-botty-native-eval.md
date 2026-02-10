@@ -1,6 +1,6 @@
 # Proposal: E11 — Botty-Native End-to-End Eval
 
-**Status**: PROPOSAL
+**Status**: ACCEPTED
 **Author**: botbox-dev
 **Date**: 2026-02-07
 **Bead**: bd-ydxa
@@ -28,7 +28,7 @@ The current eval suite has a blind spot. E10 simulates the agent workflow with c
 
 Concrete things that could break without E11 catching them:
 - dev-loop.mjs's `has_work()` function returns wrong result → agent sits idle
-- reviewer-loop.mjs doesn't parse `crit inbox --all-workspaces` correctly → reviews never picked up
+- reviewer-loop.mjs doesn't iterate workspaces via `maw ws list` + `crit inbox` per workspace correctly → reviews never picked up
 - Hook command format changes after a migration → botty spawn fails silently
 - `--pass-env` doesn't forward `BOTBUS_AGENT` → spawned agent has no identity
 - Loop script exit conditions fire too early → agent quits mid-task
@@ -161,7 +161,7 @@ bus history <channel> -n 50 > artifacts/channel.log
 # Final state
 br show <bead>
 maw ws list --format json
-crit reviews list --all-workspaces --format json
+crit reviews list --format json
 bus claims list --format json
 cargo check
 ```

@@ -1349,3 +1349,57 @@ Any of the following results in overall **FAIL**, regardless of point total:
 |-----|-------|-------|-------------|
 | E10-1 | Opus+Sonnet | 158/160 (99%) | Near-perfect. Security reviewer found 7 issues (2 CRITICAL). All agents followed full protocol. |
 | E10-2 | Opus+Sonnet | 159/160 (99%) | Reproducible. Clean run with no setup workarounds. crit FK constraint persists. |
+
+---
+
+## E11-L1: Botty-Native End-to-End (Single Agent)
+
+**Type**: Integration (single project, single agent, botty-native)
+
+**What it tests**: The full botbox spawn chain end-to-end: message arrives on channel, hook fires, botty spawns dev-loop, agent triages/claims/implements/merges/closes autonomously. No hand-crafted phase prompts or sequential `claude -p` invocations -- the system runs itself.
+
+**Setup**: `evals/scripts/e11-l1-setup.sh` creates an isolated eval environment with one Rust/Axum project ("echo"), one bead ("Add GET /version endpoint"), and registered hooks. The task-request is NOT sent during setup -- it is sent by the run script to trigger the hook chain.
+
+**Run**: `evals/scripts/e11-l1-run.sh` (orchestrator) -- sends task-request, polls for bead completion with 15-minute timeout and 5-minute stuck detection, captures artifacts, runs verification.
+
+### Scoring (50 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Hook fired and agent spawned | 5 | bus history shows agent activity, botty tail has content |
+| Bead claimed (in_progress at some point) | 5 | `br show` status is in_progress or closed |
+| Workspace created | 5 | `maw ws list` showed non-default ws, or channel history mentions workspace |
+| Code implemented and compiles | 10 | `cargo check` passes AND /version endpoint exists in source |
+| Workspace merged | 5 | No non-default workspaces remain |
+| Bead closed | 5 | `br show` status=closed |
+| Claims released | 5 | No bead:// or workspace:// claims for echo-dev |
+| Agent exited cleanly | 5 | botty list shows no running echo agents |
+| Bus labels correct | 5 | Channel history has task-claim and task-done labels |
+
+### Key Differences from E10
+
+- **No phase scripts**: One message triggers the entire workflow autonomously
+- **Tests loop scripts**: dev-loop.mjs drives agent behavior, not hand-written prompts
+- **Tests hook chain**: botbus hook registration, firing, botty spawn, env forwarding
+- **Tests iteration control**: maxLoops, pause, timeout from `.botbox.json`
+- **Polling-based observation**: 30-second polling with stuck detection instead of sequential phases
+
+### Verification
+
+```bash
+source $EVAL_DIR/.eval-env
+BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history echo -n 50     # channel timeline
+cat $EVAL_DIR/artifacts/agent-echo-dev.log                  # agent output
+cd $PROJECT_DIR && maw exec default -- br show $BEAD        # bead state
+cd $PROJECT_DIR && maw ws list                              # workspace state
+BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus claims list             # claims
+cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
+```
+
+**Pass**: >= 35 (70%), **Excellent**: >= 45 (90%)
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| (none yet) | | | |
