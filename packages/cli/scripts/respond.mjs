@@ -656,18 +656,14 @@ async function handleBead(route, channel, message) {
 }
 
 /**
- * Handle !dev — create bead (if body provided) and spawn dev-loop.
+ * Handle !dev — spawn dev-loop.
  * Also used for mid-conversation escalation (transcript will have context).
+ * Does NOT create beads — use !bead for that. The dev-loop handles its own triage.
  * @param {Route} route
  * @param {string} channel
  * @param {any} message
  */
 async function handleDev(route, channel, message) {
-  // If there's a body, create a bead first
-  if (route.body) {
-    await handleBead({ type: "bead", body: route.body }, channel, message)
-  }
-
   // Exec into dev-loop directly — we're already inside a botty PTY session,
   // so the dev-loop inherits it. Using botty spawn would kill our own session
   // (same --name) and orphan the child process.
