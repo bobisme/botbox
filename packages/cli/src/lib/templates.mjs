@@ -117,6 +117,17 @@ ${designDocLinks}
 
 **All tools have \`--help\`** with usage examples. When unsure, run \`<tool> --help\` or \`<tool> <command> --help\`.
 
+### IMPORTANT: Always Track Work in Beads
+
+**Every non-trivial change MUST have a bead**, no matter how it originates:
+- **User asks you to do something** → create a bead before starting
+- **You propose a change** → create a bead before starting
+- **Mid-conversation pivot to implementation** → create a bead before coding
+
+The only exceptions are truly microscopic changes (typo fixes, single-line tweaks) or when you are already iterating on an existing bead's implementation.
+
+Without a bead, work cannot be recovered from crashes, handed off to other agents, or tracked for review. When in doubt, create the bead — it takes seconds and prevents lost work.
+
 ### Directory Structure (maw v2)
 
 This project uses a **bare repo** layout. Source files live in workspaces under \`ws/\`, not at the project root.
@@ -190,7 +201,8 @@ jj abandon <change-id>/0   # keep one, abandon the divergent copy
 
 - Create a bead before starting work. Update status: \`open\` → \`in_progress\` → \`closed\`.
 - Post progress comments during work for crash recovery.
-- **Push to main** after completing beads (see [finish.md](.agents/botbox/finish.md)).${config.installCommand ? `\n- **Install locally** after releasing: \`${config.installCommand}\`` : ""}
+- **Push to main** after completing beads (see [finish.md](.agents/botbox/finish.md)).
+- **Update CHANGELOG.md** when releasing: add a summary of user-facing changes under the new version heading before tagging.${config.installCommand ? `\n- **Install locally** after releasing: \`${config.installCommand}\`` : ""}
 
 ### Identity
 
