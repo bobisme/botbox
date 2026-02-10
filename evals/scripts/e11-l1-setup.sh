@@ -83,7 +83,46 @@ jj new
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
   botbox init --name echo --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
 
-# --- Hooks (verify they were registered by botbox init) ---
+# --- Fix hooks: add BOTBUS_DATA_DIR to --env-inherit ---
+# botty starts agents with a clean env. botbox init registers hooks with
+# --env-inherit for BOTBUS_CHANNEL etc but NOT BOTBUS_DATA_DIR. Without it,
+# spawned agents talk to the system botbus instead of the eval's isolated one.
+#
+# Strategy: for each hook, modify its command array to append BOTBUS_DATA_DIR
+# to the --env-inherit value, then remove and re-register.
+ALL_HOOKS=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list --format json 2>/dev/null)
+
+for hook_id in $(echo "$ALL_HOOKS" | jq -r '.hooks[]?.id' 2>/dev/null); do
+  HOOK=$(echo "$ALL_HOOKS" | jq ".hooks[] | select(.id == \"$hook_id\")" 2>/dev/null)
+
+  # Build the new command: find --env-inherit arg and append BOTBUS_DATA_DIR
+  NEW_CMD=$(echo "$HOOK" | jq -c '[.command[] | if (. | startswith("BOTBUS_CHANNEL")) then (. + ",BOTBUS_DATA_DIR") else . end]')
+
+  # Extract hook properties
+  HOOK_CHANNEL=$(echo "$HOOK" | jq -r '.channel' 2>/dev/null)
+  HOOK_CWD=$(echo "$HOOK" | jq -r '.cwd' 2>/dev/null)
+  COND_TYPE=$(echo "$HOOK" | jq -r '.condition.type' 2>/dev/null)
+
+  # Remove old hook
+  BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks remove "$hook_id" 2>/dev/null || true
+
+  # Re-register with condition-specific flags
+  ADD_ARGS="--channel $HOOK_CHANNEL --cwd $HOOK_CWD"
+  if [[ "$COND_TYPE" == "claim_available" ]]; then
+    CLAIM_PATTERN=$(echo "$HOOK" | jq -r '.condition.pattern' 2>/dev/null)
+    ADD_ARGS="$ADD_ARGS --claim $CLAIM_PATTERN"
+  elif [[ "$COND_TYPE" == "mention_received" ]]; then
+    MENTION_AGENT=$(echo "$HOOK" | jq -r '.condition.agent' 2>/dev/null)
+    ADD_ARGS="$ADD_ARGS --mention $MENTION_AGENT"
+  fi
+
+  # Build command args from JSON array
+  CMD_ARGS=$(echo "$NEW_CMD" | jq -r '.[]' 2>/dev/null | while IFS= read -r arg; do printf '%q ' "$arg"; done)
+
+  BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" eval "bus hooks add $ADD_ARGS $CMD_ARGS" 2>/dev/null || \
+    echo "WARNING: Failed to update hook $hook_id with BOTBUS_DATA_DIR"
+done
+
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1
 
 # --- Seed work ---

@@ -508,6 +508,19 @@ function missingFlag(flag) {
 }
 
 /**
+ * Build the env-inherit list for botty spawn hooks.
+ * @param {boolean} pushMain - Whether pushMain is enabled in config
+ * @returns {string} Comma-separated list of environment variables
+ */
+function buildEnvInheritList(pushMain) {
+  let vars = ["BOTBUS_CHANNEL", "BOTBUS_MESSAGE_ID", "BOTBUS_AGENT", "BOTBUS_HOOK_ID"]
+  if (pushMain) {
+    vars.push("SSH_AUTH_SOCK")
+  }
+  return vars.join(",")
+}
+
+/**
  * Register auto-spawn hooks for dev agent and specialist reviewers.
  * @param {string} projectDir - Project root directory
  * @param {string} name - Project name
@@ -517,6 +530,20 @@ async function registerSpawnHook(projectDir, name, reviewers) {
   let { execSync } = await import("node:child_process")
   let absPath = resolve(projectDir)
   let agent = `${name}-dev`
+
+  // Read .botbox.json to check pushMain setting
+  let configPath = join(projectDir, ".botbox.json")
+  let pushMain = false
+  if (existsSync(configPath)) {
+    try {
+      let config = JSON.parse(readFileSync(configPath, "utf-8"))
+      pushMain = config.pushMain || false
+    } catch {
+      // Ignore parse errors, default to false
+    }
+  }
+
+  let envInherit = buildEnvInheritList(pushMain)
 
   // In maw v2, ws/default/ can be recreated by jj during workspace merges,
   // invalidating the CWD of any process using it. Use the bare repo root
@@ -563,7 +590,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
       console.log("Router hook already exists, skipping")
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd "${hookCwd}" --ttl 600 -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${agent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}respond.mjs" ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd "${hookCwd}" --ttl 600 -- botty spawn --env-inherit ${envInherit} --name ${agent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}respond.mjs" ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log("Registered router hook (respond.mjs) for all channel messages")
@@ -595,7 +622,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
 
     try {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim "agent://${reviewerAgent}" --claim-owner ${reviewerAgent} --ttl 600 --priority 1 --cwd "${hookCwd}" -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID --name ${reviewerAgent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}${scriptName}" ${name} ${reviewerAgent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --mention "${reviewerAgent}" --claim "agent://${reviewerAgent}" --claim-owner ${reviewerAgent} --ttl 600 --priority 1 --cwd "${hookCwd}" -- botty spawn --env-inherit ${envInherit} --name ${reviewerAgent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}${scriptName}" ${name} ${reviewerAgent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
       console.log(`Registered mention hook for @${reviewerAgent}`)

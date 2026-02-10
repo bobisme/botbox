@@ -1313,6 +1313,159 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.15",
+    title: "Add SSH_AUTH_SOCK to hook env-inherit when pushMain is true",
+    description:
+      "Updates botty spawn hooks to include SSH_AUTH_SOCK in --env-inherit " +
+      "when config.pushMain is true, so agents can push to GitHub.",
+    up(ctx) {
+      // Check if pushMain is enabled
+      let pushMain = (ctx.config && ctx.config.pushMain) || false
+      if (!pushMain) {
+        ctx.log("pushMain is false, skipping SSH_AUTH_SOCK migration")
+        return
+      }
+
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping SSH_AUTH_SOCK migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping SSH_AUTH_SOCK migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping SSH_AUTH_SOCK migration")
+        return
+      }
+
+      // Find hooks for this project that use --env-inherit but don't include SSH_AUTH_SOCK
+      let projectHooks = hooks.filter(
+        (/** @type {any} */ h) =>
+          h.cwd === ctx.projectDir &&
+          h.active &&
+          Array.isArray(h.command) &&
+          h.command.includes("--env-inherit") &&
+          !h.command.some((/** @type {string} */ c) => c.includes("SSH_AUTH_SOCK")),
+      )
+
+      if (projectHooks.length === 0) {
+        ctx.log("No hooks need SSH_AUTH_SOCK update")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      let agent = name ? (project.defaultAgent || `${name}-dev`) : null
+
+      for (let hook of projectHooks) {
+        // Update command: add SSH_AUTH_SOCK to the env-inherit value
+        let newCommand = hook.command.map((/** @type {string} */ c, /** @type {number} */ i, /** @type {string[]} */ arr) => {
+          // If this is the value after --env-inherit
+          if (i > 0 && arr[i - 1] === "--env-inherit") {
+            // Add SSH_AUTH_SOCK to the list
+            return c + ",SSH_AUTH_SOCK"
+          }
+          return c
+        })
+
+        let removed = false
+        try {
+          execFileSync("bus", ["hooks", "remove", hook.id], {
+            stdio: "pipe",
+            env: process.env,
+          })
+          removed = true
+        } catch {
+          ctx.warn(`Could not remove hook ${hook.id}, skipping`)
+        }
+
+        if (removed) {
+          let addArgs = ["hooks", "add"]
+          if (agent) {
+            addArgs.push("--agent", agent)
+          }
+          if (hook.channel) {
+            addArgs.push("--channel", hook.channel)
+          }
+          if (hook.cwd) {
+            addArgs.push("--cwd", hook.cwd)
+          }
+
+          let condition = hook.condition || {}
+          if (condition.type === "claim_available" && condition.pattern) {
+            addArgs.push("--claim", condition.pattern)
+            let claimOwner = hook.claim_owner || condition.pattern.replace(/^agent:\/\//, "")
+            addArgs.push("--claim-owner", claimOwner)
+            addArgs.push("--ttl", "600")
+          }
+          if (condition.type === "mention_received" && condition.agent) {
+            let mentionAgent = condition.agent.replace(/^@/, "")
+            addArgs.push("--mention", mentionAgent)
+            if (hook.claim_pattern) {
+              addArgs.push("--claim", hook.claim_pattern)
+            }
+            let claimOwner = hook.claim_owner || mentionAgent
+            addArgs.push("--claim-owner", claimOwner)
+            addArgs.push("--ttl", "600")
+          }
+          addArgs.push("--priority", String(hook.priority ?? 0))
+          addArgs.push("--", ...newCommand)
+
+          try {
+            execFileSync("bus", addArgs, {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Updated hook ${hook.id}: added SSH_AUTH_SOCK to env-inherit`)
+          } catch (error) {
+            let message = error instanceof Error ? error.message : String(error)
+            // Restore old hook if re-add fails
+            try {
+              let restoreCmd = ["hooks", "add"]
+              if (agent) restoreCmd.push("--agent", agent)
+              if (hook.channel) restoreCmd.push("--channel", hook.channel)
+              if (hook.cwd) restoreCmd.push("--cwd", hook.cwd)
+              if (condition.type === "claim_available" && condition.pattern) {
+                restoreCmd.push("--claim", condition.pattern)
+                restoreCmd.push("--claim-owner", hook.claim_owner || condition.pattern.replace(/^agent:\/\//, ""))
+                restoreCmd.push("--ttl", "600")
+              }
+              if (condition.type === "mention_received" && condition.agent) {
+                restoreCmd.push("--mention", condition.agent.replace(/^@/, ""))
+                if (hook.claim_pattern) restoreCmd.push("--claim", hook.claim_pattern)
+                restoreCmd.push("--claim-owner", hook.claim_owner || condition.agent.replace(/^@/, ""))
+                restoreCmd.push("--ttl", "600")
+              }
+              restoreCmd.push("--priority", String(hook.priority ?? 0))
+              restoreCmd.push("--", ...hook.command)
+              execFileSync("bus", restoreCmd, { stdio: "pipe", env: process.env })
+              ctx.warn(`Re-add failed for hook ${hook.id}, restored original: ${message}`)
+            } catch {
+              ctx.warn(`Could not re-add hook ${hook.id} AND restore failed: ${message}`)
+            }
+          }
+        }
+      }
+    },
+  },
 ]
 
 /**
