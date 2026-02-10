@@ -118,11 +118,6 @@ function runInDefault(cmd, args = []) {
 	return runCommand('maw', ['exec', 'default', '--', cmd, ...args]);
 }
 
-// --- Helper: run command in a named workspace (for crit, jj) ---
-function runInWorkspace(ws, cmd, args = []) {
-	return runCommand('maw', ['exec', ws, '--', cmd, ...args]);
-}
-
 // --- Helper: generate agent name if not provided ---
 async function getAgentName() {
 	if (AGENT) return AGENT;
@@ -391,10 +386,10 @@ At the end of your work, output exactly one of these completion signals:
      If approval found, record it: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Human approval: <approver> via bus message <msg-id>"
    maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Completed by ${AGENT}".
    maw exec default -- br close --actor ${AGENT} <id> --reason="Completed" --suggest-next.
+   bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done.
    maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main; if conflict, preserve and announce).
    bus claims release --agent ${AGENT} --all.
    maw exec default -- br sync --flush-only.${pushMainStep}
-   bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done.
    Then proceed to step 8 (RELEASE CHECK).
 
 8. RELEASE CHECK (before signaling COMPLETE):

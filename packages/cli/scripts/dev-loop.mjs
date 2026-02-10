@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
-import { readFile, writeFile, stat, appendFile, truncate } from 'fs/promises';
+import { readFile, stat, appendFile, truncate } from 'fs/promises';
 import { existsSync } from 'fs';
 import { parseArgs } from 'util';
 
@@ -143,11 +143,6 @@ async function runCommand(cmd, args = []) {
 // --- Helper: run command in default workspace (for br, bv, jj on main) ---
 function runInDefault(cmd, args = []) {
 	return runCommand('maw', ['exec', 'default', '--', cmd, ...args]);
-}
-
-// --- Helper: run command in a named workspace (for crit, jj) ---
-function runInWorkspace(ws, cmd, args = []) {
-	return runCommand('maw', ['exec', ws, '--', cmd, ...args]);
 }
 
 // --- Helper: generate agent name if not provided ---
@@ -491,9 +486,9 @@ Same as the standard worker loop:
   If REVIEW is false (or risk:low):
     Merge: maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main)
     maw exec default -- br close --actor ${AGENT} <id> --reason="Completed"
+    bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
     bus claims release --agent ${AGENT} --all
     maw exec default -- br sync --flush-only${pushMainStep}
-    bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
 
 ## 5b. PARALLEL DISPATCH (2+ beads)
 
@@ -651,8 +646,8 @@ RISK:LOW — Skip review:
   Add self-review comment if not already present.
   maw ws merge \$WS --destroy
   maw exec default -- br close --actor ${AGENT} <id>
-  maw exec default -- br sync --flush-only${pushMainStep}
   bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+  maw exec default -- br sync --flush-only${pushMainStep}
 
 RISK:MEDIUM — Standard review (if REVIEW is true):
   CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
@@ -672,8 +667,8 @@ RISK:CRITICAL — Security review + human approval:
 If REVIEW is false (regardless of risk):
   maw ws merge \$WS --destroy
   maw exec default -- br close --actor ${AGENT} <id>
-  maw exec default -- br sync --flush-only${pushMainStep}
   bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+  maw exec default -- br sync --flush-only${pushMainStep}
 
 After finishing all ready work:
   bus claims release --agent ${AGENT} --all

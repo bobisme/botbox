@@ -640,6 +640,8 @@ async function handleBead(route, channel, message) {
       AGENT,
       channel,
       `Created ${beadId}: ${title}`,
+      "-L",
+      "feedback",
     ])
     return beadId
   } catch (err) {
@@ -756,6 +758,8 @@ async function handleMission(route, channel, message) {
       AGENT,
       channel,
       `Mission created: ${beadId}: ${title}`,
+      "-L",
+      "feedback",
     ])
   } catch (err) {
     console.error("Error creating mission bead:", err.message)
