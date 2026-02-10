@@ -64,15 +64,17 @@ program
 
 program
   .command("run-agent <type>")
-  .description("Run an agent with pretty real-time output (e.g., claude)")
+  .description("Run an agent with real-time output (e.g., claude)")
   .option("-p, --prompt <text>", "Prompt text for the agent")
   .option("-m, --model <name>", "Model to use (e.g., opus, sonnet, haiku)")
   .option("-t, --timeout <seconds>", "Timeout in seconds", "600")
+  .option("-f, --format <format>", "Output format: pretty (color/glyphs) or text (ASCII, no color)")
   .action(async (type, options) => {
     await runAgent(type, {
       prompt: options.prompt,
       model: options.model,
       timeout: parseInt(options.timeout, 10),
+      format: options.format,
     })
   })
 

@@ -2,7 +2,19 @@
 import { spawn } from 'child_process';
 
 /**
- * Run an agent with pretty real-time output
+ * Detect output format: explicit flag > FORMAT env > TTY auto-detect
+ * @param {string} [explicit] - Explicit format from --format flag
+ * @returns {"pretty" | "text"}
+ */
+function detectFormat(explicit) {
+	if (explicit === 'pretty' || explicit === 'text') return explicit;
+	let env = process.env['FORMAT'];
+	if (env === 'pretty' || env === 'text') return env;
+	return process.stdout.isTTY ? 'pretty' : 'text';
+}
+
+/**
+ * Run an agent with real-time output
  * @param {string} agentType - The type of agent to run (e.g., 'claude')
  * @param {object} options - Command options
  */
@@ -11,13 +23,15 @@ export async function runAgent(agentType, options) {
 		throw new Error(`Unsupported agent type: ${agentType}. Currently only 'claude' is supported.`);
 	}
 
-	const { prompt, model, timeout = 600 } = options;
+	let { prompt, model, timeout = 600, format: formatFlag } = options;
+	let format = detectFormat(formatFlag);
+	let style = format === 'pretty' ? prettyStyle : textStyle;
 
 	if (!prompt) {
 		throw new Error('Prompt is required. Use --prompt or -p flag.');
 	}
 
-	const args = [
+	let args = [
 		'--dangerously-skip-permissions',
 		'--allow-dangerously-skip-permissions',
 		'--verbose',
@@ -32,30 +46,26 @@ export async function runAgent(agentType, options) {
 	args.push('-p', prompt);
 
 	return new Promise((resolve, reject) => {
-		const proc = spawn('claude', args);
-		proc.stdin?.end(); // Close stdin immediately
+		let proc = spawn('claude', args);
+		proc.stdin?.end();
 
 		let output = '';
 		let resultReceived = false;
 		let timeoutKiller = null;
 		let overallTimeout = null;
 
-		// Parse JSON stream line-by-line
 		proc.stdout?.on('data', (data) => {
-			const lines = data.toString().split('\n');
-			for (const line of lines) {
+			let lines = data.toString().split('\n');
+			for (let line of lines) {
 				if (!line.trim()) continue;
 				output += line + '\n';
 
 				try {
-					const parsed = JSON.parse(line);
-					prettyPrint(parsed);
+					let parsed = JSON.parse(line);
+					printEvent(parsed, style);
 
-					// Detect completion signal
 					if (parsed.type === 'result') {
 						resultReceived = true;
-
-						// Give 2s grace period, then kill if hung
 						timeoutKiller = setTimeout(() => {
 							console.error('Warning: Process hung after completion, killing...');
 							proc.kill('SIGKILL');
@@ -70,19 +80,11 @@ export async function runAgent(agentType, options) {
 		let detectedError = null;
 
 		proc.stderr?.on('data', (data) => {
-			const stderr = data.toString();
-			// Detect fatal API errors
-			if (stderr.includes('API Error: 5') || stderr.includes('500')) {
-				detectedError = 'API Error: Server error (5xx)';
-				console.error(`\n${YELLOW}FATAL:${RESET} ${detectedError}`);
-			} else if (stderr.includes('rate limit') || stderr.includes('Rate limit') || stderr.includes('429')) {
-				detectedError = 'API Error: Rate limit exceeded';
-				console.error(`\n${YELLOW}FATAL:${RESET} ${detectedError}`);
-			} else if (stderr.includes('overloaded') || stderr.includes('503')) {
-				detectedError = 'API Error: Service overloaded';
-				console.error(`\n${YELLOW}FATAL:${RESET} ${detectedError}`);
+			let stderr = data.toString();
+			detectedError = detectApiError(stderr);
+			if (detectedError) {
+				console.error(`\n${style.yellow}FATAL:${style.reset} ${detectedError}`);
 			} else if (stderr.includes('Error') || stderr.includes('error')) {
-				// Show other errors
 				console.error(stderr);
 			}
 		});
@@ -96,8 +98,7 @@ export async function runAgent(agentType, options) {
 			} else if (code === 0) {
 				resolve({ output, code });
 			} else {
-				// Include detected error in rejection message
-				const errorMsg = detectedError
+				let errorMsg = detectedError
 					? `${detectedError} (exit code ${code})`
 					: `Agent exited with code ${code}`;
 				reject(new Error(errorMsg));
@@ -110,7 +111,6 @@ export async function runAgent(agentType, options) {
 			reject(err);
 		});
 
-		// Overall timeout
 		overallTimeout = setTimeout(() => {
 			if (!resultReceived) {
 				console.error(`Timeout after ${timeout}s`);
@@ -121,94 +121,168 @@ export async function runAgent(agentType, options) {
 	});
 }
 
-// --- ANSI formatting ---
-const BOLD = '\x1b[1m';
-const DIM = '\x1b[2m';
-const RESET = '\x1b[0m';
-const GREEN = '\x1b[32m';
-const CYAN = '\x1b[36m';
-const YELLOW = '\x1b[33m';
+/**
+ * Detect fatal API errors from stderr output
+ * @param {string} stderr - stderr text
+ * @returns {string | null} Error message if detected, null otherwise
+ */
+function detectApiError(stderr) {
+	if (stderr.includes('API Error: 5') || stderr.includes('500')) {
+		return 'API Error: Server error (5xx)';
+	}
+	if (stderr.includes('rate limit') || stderr.includes('Rate limit') || stderr.includes('429')) {
+		return 'API Error: Rate limit exceeded';
+	}
+	if (stderr.includes('overloaded') || stderr.includes('503')) {
+		return 'API Error: Service overloaded';
+	}
+	return null;
+}
+
+// --- Style objects ---
 
 /**
- * Format markdown text with ANSI colors
+ * @typedef {object} OutputStyle
+ * @property {string} bold
+ * @property {string} dim
+ * @property {string} reset
+ * @property {string} green
+ * @property {string} cyan
+ * @property {string} yellow
+ * @property {string} bullet
+ * @property {string} toolArrow
+ * @property {string} checkmark
+ * @property {(text: string) => string} formatMarkdown
+ */
+
+/** @type {OutputStyle} Pretty mode: ANSI colors + Unicode glyphs */
+const prettyStyle = {
+	bold: '\x1b[1m',
+	dim: '\x1b[2m',
+	reset: '\x1b[0m',
+	green: '\x1b[32m',
+	cyan: '\x1b[36m',
+	yellow: '\x1b[33m',
+	bullet: '\u2022',
+	toolArrow: '\u25b6',
+	checkmark: '\u2713',
+	formatMarkdown: formatMarkdownPretty,
+};
+
+/** @type {OutputStyle} Text mode: no color, ASCII-only glyphs */
+const textStyle = {
+	bold: '',
+	dim: '',
+	reset: '',
+	green: '',
+	cyan: '',
+	yellow: '',
+	bullet: '-',
+	toolArrow: '>',
+	checkmark: '+',
+	formatMarkdown: formatMarkdownText,
+};
+
+/**
+ * Format markdown text with ANSI colors (pretty mode)
  * @param {string} text - Markdown text to format
  * @returns {string} ANSI-formatted text
  */
-function formatMarkdown(text) {
-	// Code blocks (```...```)
-	text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-		return `\n${DIM}${code.trim()}${RESET}\n`;
-	});
-
-	// Inline code (`...`)
-	text = text.replace(/`([^`]+)`/g, `${CYAN}$1${RESET}`);
-
-	// Bold (**...**)
-	text = text.replace(/\*\*([^*]+)\*\*/g, `${BOLD}$1${RESET}`);
-
-	// Headers (### ...)
-	text = text.replace(/^(#{1,3})\s+(.+)$/gm, (match, hashes, title) => {
-		return `${BOLD}${YELLOW}${title}${RESET}`;
-	});
-
+function formatMarkdownPretty(text) {
+	let s = prettyStyle;
+	text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_m, _l, code) =>
+		`\n${s.dim}${code.trim()}${s.reset}\n`);
+	text = text.replace(/`([^`]+)`/g, `${s.cyan}$1${s.reset}`);
+	text = text.replace(/\*\*([^*]+)\*\*/g, `${s.bold}$1${s.reset}`);
+	text = text.replace(/^(#{1,3})\s+(.+)$/gm, (_m, _h, title) =>
+		`${s.bold}${s.yellow}${title}${s.reset}`);
 	return text;
 }
 
 /**
- * Pretty print JSON stream events
- * @param {object} event - Parsed JSON event
+ * Format markdown text as plain ASCII (text mode).
+ * Strips markdown syntax, preserves readable content.
+ * @param {string} text - Markdown text to format
+ * @returns {string} Plain text
  */
-function prettyPrint(event) {
+function formatMarkdownText(text) {
+	text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (_m, _l, code) =>
+		`\n${code.trim()}\n`);
+	text = text.replace(/`([^`]+)`/g, '$1');
+	text = text.replace(/\*\*([^*]+)\*\*/g, '$1');
+	text = text.replace(/^(#{1,3})\s+(.+)$/gm, '$2');
+	return text;
+}
+
+/**
+ * Print a text/thinking event
+ * @param {object} event
+ * @param {OutputStyle} style
+ */
+function printTextEvent(event, style) {
+	if (!event.text) return;
+	let firstLine = event.text.split('\n')[0].slice(0, 120);
+	if (!firstLine.trim()) return;
+	let text = event.text.length > 120 ? firstLine + '...' : firstLine;
+	console.log(`${style.dim}${style.bullet} ${text}${style.reset}`);
+}
+
+/**
+ * Print an assistant event (text response or tool use)
+ * @param {object} event
+ * @param {OutputStyle} style
+ */
+function printAssistantEvent(event, style) {
+	if (!event.message?.content) return;
+	for (let item of event.message.content) {
+		if (item.type === 'text' && item.text) {
+			let formatted = style.formatMarkdown(item.text);
+			console.log(`\n${formatted}`);
+		} else if (item.type === 'tool_use') {
+			let toolName = item.name;
+			let truncatedInput = JSON.stringify(item.input || {}).slice(0, 80);
+			let inputStr = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
+			console.log(`\n${style.toolArrow} ${style.bold}${toolName}${style.reset} ${style.dim}${inputStr}${style.reset}`);
+		}
+	}
+}
+
+/**
+ * Print a user event (tool results)
+ * @param {object} event
+ * @param {OutputStyle} style
+ */
+function printUserEvent(event, style) {
+	if (!event.message?.content) return;
+	for (let item of event.message.content) {
+		if (item.type !== 'tool_result') continue;
+		let content = item.content || '';
+		let contentStr = typeof content === 'string' ? content : JSON.stringify(content);
+		let truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
+		let resultText = contentStr.length > 100 ? truncated + '...' : truncated;
+		console.log(`  ${style.green}${style.checkmark}${style.reset} ${style.dim}${resultText}${style.reset}`);
+	}
+}
+
+/**
+ * Print a JSON stream event using the given style
+ * @param {object} event - Parsed JSON event
+ * @param {OutputStyle} style - Output style (pretty or text)
+ */
+function printEvent(event, style) {
 	switch (event.type) {
 		case 'text':
-			// Thinking or response text - show first line only
-			if (event.text) {
-				const firstLine = event.text.split('\n')[0].slice(0, 120);
-				if (firstLine.trim()) {
-					const text = event.text.length > 120 ? firstLine + '...' : firstLine;
-					console.log(`${DIM}• ${text}${RESET}`);
-				}
-			}
+			printTextEvent(event, style);
 			break;
-
 		case 'assistant':
-			// Assistant messages can contain text, tool_use, or both
-			if (event.message?.content) {
-				for (const item of event.message.content) {
-					if (item.type === 'text' && item.text) {
-						const formatted = formatMarkdown(item.text);
-						console.log(`\n${formatted}`);
-					} else if (item.type === 'tool_use') {
-						const toolName = item.name;
-						const truncatedInput = JSON.stringify(item.input || {}).slice(0, 80);
-						const args = truncatedInput.length >= 80 ? truncatedInput + '...' : truncatedInput;
-						console.log(`\n▶ ${BOLD}${toolName}${RESET} ${DIM}${args}${RESET}`);
-					}
-				}
-			}
+			printAssistantEvent(event, style);
 			break;
-
 		case 'user':
-			// User messages contain tool results
-			if (event.message?.content) {
-				for (const item of event.message.content) {
-					if (item.type === 'tool_result') {
-						const content = item.content || '';
-						const contentStr = typeof content === 'string' ? content : JSON.stringify(content);
-						const truncated = contentStr.slice(0, 100).replace(/\n/g, ' ');
-						const resultText = contentStr.length > 100 ? truncated + '...' : truncated;
-						console.log(`  ${GREEN}✓${RESET} ${DIM}${resultText}${RESET}`);
-					}
-				}
-			}
+			printUserEvent(event, style);
 			break;
-
 		case 'result':
-			// Handled separately in main loop
 			break;
-
 		default:
-			// Unknown event type, skip (system events, etc.)
 			break;
 	}
 }
