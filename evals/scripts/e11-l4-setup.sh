@@ -71,11 +71,17 @@ regex = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 csv = "1"
+thiserror = "2"
 CARGO_EOF
 
-# --- src/main.rs (clap skeleton with todo!() subcommands) ---
+# --- src/main.rs (clap dispatch — delegates to modules) ---
 cat > src/main.rs << 'RUST_EOF'
 use clap::{Parser, Subcommand};
+
+mod error;
+mod stats;
+mod search;
+mod convert;
 
 #[derive(Parser)]
 #[command(name = "futil", version, about = "File utility CLI")]
@@ -86,42 +92,277 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Show line, word, and byte counts for a file
+    /// Analyze file statistics: lines, words, bytes, and optionally top words
     Stats {
-        /// Path to the file
-        path: String,
+        /// Paths to files (supports multiple)
+        #[arg(required = true)]
+        paths: Vec<String>,
+        /// Output as JSON
+        #[arg(long)]
+        json: bool,
+        /// Show N most frequent words
+        #[arg(long, value_name = "N")]
+        top_words: Option<usize>,
+        /// Include character count (distinct from byte count for UTF-8)
+        #[arg(long)]
+        chars: bool,
     },
-    /// Search for a regex pattern in a file
+    /// Search for regex patterns with context and output modes
     Search {
         /// Regex pattern to search for
         pattern: String,
-        /// Path to the file
-        path: String,
+        /// Paths to files (supports multiple)
+        #[arg(required = true)]
+        paths: Vec<String>,
+        /// Lines of context after each match
+        #[arg(short = 'A', long, default_value = "0")]
+        after_context: usize,
+        /// Lines of context before each match
+        #[arg(short = 'B', long, default_value = "0")]
+        before_context: usize,
+        /// Lines of context (both before and after)
+        #[arg(short = 'C', long)]
+        context: Option<usize>,
+        /// Case-insensitive matching
+        #[arg(short = 'i', long)]
+        ignore_case: bool,
+        /// Only print count of matching lines
+        #[arg(short = 'c', long)]
+        count: bool,
+        /// Only print filenames containing matches
+        #[arg(short = 'l', long)]
+        files_with_matches: bool,
+        /// Invert match — print non-matching lines
+        #[arg(short = 'v', long)]
+        invert_match: bool,
+        /// Output results as JSON
+        #[arg(long)]
+        json: bool,
     },
-    /// Convert between JSON and CSV formats
+    /// Convert between JSON, CSV, and line-delimited JSON formats
     Convert {
         /// Input file path
         input: String,
-        /// Output format
+        /// Output format: json, csv, or jsonl
         #[arg(short, long)]
         format: String,
+        /// Select/reorder fields (comma-separated)
+        #[arg(long, value_delimiter = ',')]
+        fields: Option<Vec<String>>,
+        /// Sort output rows by this field
+        #[arg(long)]
+        sort_by: Option<String>,
+        /// Pretty-print JSON output
+        #[arg(long)]
+        pretty: bool,
+        /// Write output to file instead of stdout
+        #[arg(short, long)]
+        output: Option<String>,
     },
 }
 
 fn main() {
     let cli = Cli::parse();
 
-    match cli.command {
-        Commands::Stats { path: _ } => {
-            todo!("Implement stats: count lines, words, and bytes")
+    let result = match cli.command {
+        Commands::Stats { paths, json, top_words, chars } => {
+            stats::run(&paths, json, top_words, chars)
         }
-        Commands::Search { pattern: _, path: _ } => {
-            todo!("Implement search: find regex matches with line numbers")
+        Commands::Search {
+            pattern, paths, after_context, before_context,
+            context, ignore_case, count, files_with_matches,
+            invert_match, json,
+        } => {
+            let (before, after) = if let Some(c) = context {
+                (c, c)
+            } else {
+                (before_context, after_context)
+            };
+            search::run(&pattern, &paths, before, after, ignore_case,
+                        count, files_with_matches, invert_match, json)
         }
-        Commands::Convert { input: _, format: _ } => {
-            todo!("Implement convert: transform between JSON and CSV")
+        Commands::Convert { input, format, fields, sort_by, pretty, output } => {
+            convert::run(&input, &format, fields.as_deref(), sort_by.as_deref(),
+                         pretty, output.as_deref())
         }
+    };
+
+    if let Err(e) = result {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
     }
+}
+RUST_EOF
+
+# --- src/error.rs (shared error type + helpers — all modules depend on this) ---
+cat > src/error.rs << 'RUST_EOF'
+//! Shared error types and file-handling utilities for futil subcommands.
+//!
+//! All subcommand modules use FutilError for consistent error handling.
+//! Implement this first — stats, search, and convert all depend on it.
+//!
+//! Required functions to implement:
+//!   validate_file(path) — check existence, read contents, return Ok(contents)
+//!   detect_format(path) — guess file format from extension (.json, .csv, .jsonl)
+//!   write_output(content, output_path) — write to file or stdout
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum FutilError {
+    #[error("File not found: {0}")]
+    FileNotFound(String),
+
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Invalid regex pattern: {0}")]
+    InvalidRegex(String),
+
+    #[error("Invalid format '{0}' — expected 'json', 'csv', or 'jsonl'")]
+    InvalidFormat(String),
+
+    #[error("CSV error: {0}")]
+    Csv(#[from] csv::Error),
+
+    #[error("JSON error: {0}")]
+    Json(#[from] serde_json::Error),
+
+    #[error("No data in input file: {0}")]
+    EmptyInput(String),
+
+    #[error("Field '{0}' not found in data")]
+    FieldNotFound(String),
+}
+
+pub fn validate_file(_path: &str) -> Result<String, FutilError> {
+    todo!("Check file exists, read to string, return contents or FileNotFound")
+}
+
+pub fn detect_format(_path: &str) -> Result<&'static str, FutilError> {
+    todo!("Check extension: .json→json, .csv→csv, .jsonl→jsonl, else InvalidFormat")
+}
+
+pub fn write_output(_content: &str, _output_path: Option<&str>) -> Result<(), FutilError> {
+    todo!("If output_path is Some, write to file; if None, print to stdout")
+}
+RUST_EOF
+
+# --- src/stats.rs (todo stub) ---
+cat > src/stats.rs << 'RUST_EOF'
+//! futil stats — comprehensive file statistics.
+//!
+//! Counts lines, words, bytes for each input file. Supports multiple files
+//! with per-file and total summary rows. Optional features:
+//!   --json          output as JSON array of stat objects
+//!   --chars         include character count (distinct from bytes for UTF-8)
+//!   --top-words N   show the N most frequent words across all files
+//!
+//! Plain output format (per file):
+//!   <path>: lines=N words=N bytes=N [chars=N]
+//! With multiple files, append a "total:" summary line.
+//!
+//! JSON output: array of {"path","lines","words","bytes","chars"} objects.
+//! With --top-words: add "top_words": [{"word","count"},...] to each JSON object.
+//!
+//! Must validate each file exists using error::validate_file.
+
+use crate::error::FutilError;
+
+pub fn run(
+    _paths: &[String],
+    _json: bool,
+    _top_words: Option<usize>,
+    _chars: bool,
+) -> Result<(), FutilError> {
+    todo!("Implement stats: multi-file, optional JSON output, top-words frequency, char counting")
+}
+RUST_EOF
+
+# --- src/search.rs (todo stub) ---
+cat > src/search.rs << 'RUST_EOF'
+//! futil search — regex search with context lines and output modes.
+//!
+//! Search for a regex pattern across one or more files. Supports:
+//!   -A N / -B N / -C N  context lines (after / before / both)
+//!   -i                   case-insensitive matching
+//!   -c                   count-only mode (just print match count per file)
+//!   -l                   files-only mode (just print filenames with matches)
+//!   -v                   invert match (print non-matching lines)
+//!   --json               output results as JSON
+//!
+//! Plain output format:
+//!   With one file:  "N: <line>"
+//!   With multiple:  "<path>:N: <line>"
+//!   Context lines:  "N- <line>" (non-matching context)
+//!   Match groups separated by "--" separator between non-adjacent matches
+//!
+//! JSON output format:
+//!   [{"path","line_number","text","is_match"},...] (includes context lines)
+//!
+//! Count mode: "<path>: N matches" per file
+//! Files mode: one filename per line
+//!
+//! Must validate regex using error::FutilError::InvalidRegex.
+//! Must validate each file using error::validate_file.
+
+use crate::error::FutilError;
+
+#[allow(clippy::too_many_arguments)]
+pub fn run(
+    _pattern: &str,
+    _paths: &[String],
+    _before_context: usize,
+    _after_context: usize,
+    _ignore_case: bool,
+    _count: bool,
+    _files_with_matches: bool,
+    _invert_match: bool,
+    _json: bool,
+) -> Result<(), FutilError> {
+    todo!("Implement search: regex with context, case-insensitive, count, files-only, invert, JSON output")
+}
+RUST_EOF
+
+# --- src/convert.rs (todo stub) ---
+cat > src/convert.rs << 'RUST_EOF'
+//! futil convert — format conversion between JSON, CSV, and JSONL.
+//!
+//! Supports three formats: json (array of objects), csv (with headers),
+//! jsonl (one JSON object per line). Auto-detects input format from extension.
+//!
+//! Features:
+//!   --fields f1,f2   select and reorder output fields
+//!   --sort-by field  sort rows by a field (string comparison)
+//!   --pretty         pretty-print JSON output (ignored for CSV)
+//!   --output path    write to file instead of stdout
+//!
+//! Conversion rules:
+//!   JSON→CSV:  union of all object keys becomes header row, missing values empty
+//!   CSV→JSON:  each row becomes an object, numeric strings auto-convert to numbers
+//!   JSON→JSONL: one compact JSON object per line
+//!   JSONL→JSON: collect into JSON array
+//!   CSV→JSONL:  each row as one JSON line
+//!   JSONL→CSV:  collect objects, emit CSV
+//!
+//! --fields filters AND reorders columns. Unknown fields → error.
+//! --sort-by sorts ascending. Field must exist in data.
+//!
+//! Must validate format via error::FutilError::InvalidFormat.
+//! Must validate file via error::validate_file.
+//! Must detect input format via error::detect_format.
+
+use crate::error::FutilError;
+
+pub fn run(
+    _input: &str,
+    _format: &str,
+    _fields: Option<&[String]>,
+    _sort_by: Option<&str>,
+    _pretty: bool,
+    _output: Option<&str>,
+) -> Result<(), FutilError> {
+    todo!("Implement convert: 6 format pairs, field selection, sorting, pretty-print, file output")
 }
 RUST_EOF
 
@@ -134,18 +375,64 @@ Numbers like 42 and 100 appear here too.
 The quick brown fox jumps over the lazy dog.
 DATA_EOF
 
+cat > data/words.txt << 'DATA_EOF'
+the cat sat on the mat
+the dog lay on the rug
+the bird flew over the house
+the fish swam in the pond
+the cat chased the bird
+the dog barked at the cat
+the bird sang in the tree
+the fish jumped out of the pond
+DATA_EOF
+
+cat > data/log.txt << 'DATA_EOF'
+2024-01-15 08:00:01 INFO  Server started on port 8080
+2024-01-15 08:00:02 DEBUG Loading configuration from config.toml
+2024-01-15 08:00:03 INFO  Database connection established
+2024-01-15 08:01:15 WARN  Slow query detected: SELECT * FROM users (2.3s)
+2024-01-15 08:01:16 INFO  Request: GET /api/users (200) 45ms
+2024-01-15 08:02:30 ERROR Connection refused: redis://localhost:6379
+2024-01-15 08:02:31 WARN  Falling back to in-memory cache
+2024-01-15 08:03:00 INFO  Request: POST /api/users (201) 120ms
+2024-01-15 08:03:01 DEBUG User created: id=42 name="Alice"
+2024-01-15 08:04:00 ERROR Timeout: GET /api/reports took 30.1s
+2024-01-15 08:04:01 INFO  Request: GET /api/health (200) 2ms
+2024-01-15 08:05:00 INFO  Shutting down gracefully
+DATA_EOF
+
 cat > data/sample.csv << 'DATA_EOF'
-name,age,city
-Alice,30,New York
-Bob,25,San Francisco
-Charlie,35,Chicago
+name,age,city,email,score
+Alice,30,New York,alice@example.com,92.5
+Bob,25,San Francisco,bob@test.org,88.0
+Charlie,35,Chicago,charlie@example.com,95.2
+Diana,28,Boston,diana@test.org,91.0
+Eve,32,Seattle,eve@example.com,87.5
 DATA_EOF
 
 cat > data/sample.json << 'DATA_EOF'
 [
-  {"name": "Alice", "age": 30, "city": "New York"},
-  {"name": "Bob", "age": 25, "city": "San Francisco"},
-  {"name": "Charlie", "age": 35, "city": "Chicago"}
+  {"name": "Alice", "age": 30, "city": "New York", "email": "alice@example.com", "score": 92.5},
+  {"name": "Bob", "age": 25, "city": "San Francisco", "email": "bob@test.org", "score": 88.0},
+  {"name": "Charlie", "age": 35, "city": "Chicago", "email": "charlie@example.com", "score": 95.2},
+  {"name": "Diana", "age": 28, "city": "Boston", "email": "diana@test.org", "score": 91.0},
+  {"name": "Eve", "age": 32, "city": "Seattle", "email": "eve@example.com", "score": 87.5}
+]
+DATA_EOF
+
+cat > data/sample.jsonl << 'DATA_EOF'
+{"name":"Alice","age":30,"city":"New York","score":92.5}
+{"name":"Bob","age":25,"city":"San Francisco","score":88.0}
+{"name":"Charlie","age":35,"city":"Chicago","score":95.2}
+{"name":"Diana","age":28,"city":"Boston","score":91.0}
+{"name":"Eve","age":32,"city":"Seattle","score":87.5}
+DATA_EOF
+
+cat > data/nested.json << 'DATA_EOF'
+[
+  {"id": 1, "user": {"name": "Alice", "role": "admin"}, "active": true},
+  {"id": 2, "user": {"name": "Bob", "role": "editor"}, "active": false},
+  {"id": 3, "user": {"name": "Charlie", "role": "viewer"}, "active": true}
 ]
 DATA_EOF
 
@@ -173,7 +460,9 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
 # Patch .botbox.json: enable missions, disable review, set models
 # ============================================================
 cd "$PROJECT_DIR"
-CONFIG_FILE="ws/default/.botbox.json"
+CONFIG_FILE=".botbox.json"
+# After maw init, .botbox.json stays at bare repo root (not ws/default/).
+# Hook commands use --cwd <project-root>, so scripts find it here.
 PATCHED=$(jq '
   .review.enabled = false |
   .agents.dev.model = "opus" |

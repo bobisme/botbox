@@ -36,6 +36,10 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 | E10-1 | Full Lifecycle (2 projects, 3 agents, 8 phases) | Opus+Sonnet | 2 | 158/160 (99%) | Near-perfect. Security reviewer found 7 issues (2 CRITICAL). All agents followed protocol. |
 | E10-2 | Full Lifecycle (2 projects, 3 agents, 8 phases) | Opus+Sonnet | 2 | 159/160 (99%) | Reproducible. Clean run with no setup workarounds needed. crit FK constraint persists. |
 | E11-L3-1 | Botty-Native Full Lifecycle (2 projects, 3 agents) | Opus | 2 | 133/140 (95%) | First botty-native eval. All agents spawn via hooks. Cross-project coordination organic. |
+| E11-L4-1 | Mission (simple project) | Opus | 1+4 | 68/125 (54%) | Agent worked solo — single-file project made decomposition irrational. |
+| E11-L4-6 | Mission (modular project) | Opus | 1+4 | 37/125 (30% cap) | Uncapped 93/125 (74%). Perfect protocol, but tasks ~30 LOC each — agent rationally chose solo. |
+| E11-L4-7 | Mission (bulked specs) | Opus+Sonnet | 1+4 | 39/130 (30% cap) | Uncapped 108/130 (83%). Agent used Task tool instead of botty spawn — bypassed coordination. |
+| E11-L4-8 | Mission (botty required) | Opus+Sonnet | 1+4 | 119/130 (92%) | **First full mission success.** 3 botty workers, dependency-aware dispatch, 46 tests, ~8 min. |
 
 ## Key Learnings
 
@@ -82,6 +86,12 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - **Cargo path dependencies break across `maw init`** — `path = "../beta"` in Cargo.toml resolves relative to the workspace. After `maw init` moves files to `ws/default/`, the path changes. Fix: compile both projects before running `botbox init` on either.
 - **E11-L3 validates the full botty-native spawn chain** — hooks → botty spawn → loop scripts → cross-project coordination → review cycle. All autonomous from a single task-request. 133/140 (95%), only friction points lost.
 - **crit workspace confusion is a persistent friction source** — Agents run `maw exec default -- crit ...` instead of `maw exec <ws> -- crit ...`. This accounted for 2/9 tool errors in E11-L3-1. The distinction (br = always default, crit = always workspace) is documented but agents still get confused when switching between the two.
+- **Mission eval: tasks must be substantial enough for parallelism** — E11-L4-1/L4-6 failed because subcommand specs were ~30 LOC each, making the agent rationally choose solo work. After bulking specs to ~100-200 LOC per subcommand with multiple flags and modes, the agent correctly chose parallel dispatch.
+- **Agents will use Task tool over botty spawn if not explicitly told** — E11-L4-7 showed the agent dispatching 3 Claude Code Task subagents instead of botty spawn workers. Task subagents are faster but bypass all coordination infrastructure (no observability, no crash recovery, no bus messages, no maxWorkers). Explicit "use botty spawn, NOT Task tool" guidance in the prompt fixed this.
+- **`--pass-env` vs `--env-inherit`** — The dev-loop prompt template said `--pass-env` but botty uses `--env-inherit`. Agents recover by checking `--help` but it costs a retry. The prompt template should match the actual CLI.
+- **`br list -l` only shows open beads by default** — Run/verify scripts must use `--all` when looking up mission beads and children that may be closed. The agent closes mission beads before the run script captures artifacts.
+- **Bash associative array expansion with `set -u`** — `${!ARRAY[@]+${!ARRAY[@]}}` is unreliable. Use `if [[ ${#ARRAY[@]} -gt 0 ]]; then for k in "${!ARRAY[@]}"; do` instead.
+- **Dependency-aware dispatch works** — E11-L4-8 correctly did error.rs first (blocker), merged it, then dispatched 3 parallel workers for the unblocked children. The dependency graph was correctly interpreted.
 
 ## Upstream Tool Versions (as of 2026-01-31)
 

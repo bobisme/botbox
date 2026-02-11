@@ -62,32 +62,85 @@ echo "--- hooks: OK ---"
 echo ""
 
 # --- Build mission spec ---
-MISSION_SPEC='!mission Implement all three futil subcommands
-Outcome: A working futil CLI where all three subcommands (stats, search, convert) produce correct output.
+MISSION_SPEC='!mission Implement all futil subcommands and shared error handling
+Outcome: A working futil CLI where all three subcommands (stats, search, convert) produce correct output with all flags working, consistent error handling via the shared error module, and comprehensive unit tests.
 
-## Subcommand specs
+## Architecture
 
-### futil stats <path>
-Read the file and print line count, word count, and byte count.
-Output format: "lines: N  words: N  bytes: N"
-Must handle missing files with a clear error message.
+The project has 4 source files with a dependency structure:
+- src/error.rs — shared FutilError type + helper functions (ALL subcommands depend on this)
+- src/stats.rs — file statistics with multiple output modes (depends on error.rs)
+- src/search.rs — regex search with context, modes, and multi-file support (depends on error.rs)
+- src/convert.rs — format conversion between JSON, CSV, JSONL with field ops (depends on error.rs)
+- src/main.rs — clap dispatch (already wired with all flags, do NOT modify)
 
-### futil search <pattern> <path>
-Search for regex matches in the file, printing matching lines with line numbers.
-Output format: "N: <matching line>" for each match.
-Must handle invalid regex with a clear error message.
-Must handle missing files with a clear error message.
+Each subcommand module has a todo!() stub. The error module has the type skeleton but needs three helper functions implemented. Read the doc comments in each file for the full specification.
 
-### futil convert <input> --format json|csv
-Read input file and convert to the target format.
-- JSON to CSV: read JSON array of objects, write CSV with headers from object keys.
-- CSV to JSON: read CSV with headers, write JSON array of objects.
-Must handle invalid input with a clear error message.
-Sample data files exist in data/ directory for testing.
+## Component specs
 
-Success metric: cargo test passes with at least 3 tests, all subcommands produce correct output on sample data.
-Constraints: Use existing dependencies (clap, regex, serde, serde_json, csv). No new dependencies.
-Stop criteria: All three subcommands work correctly on sample data files in data/.'
+### 1. src/error.rs — shared error handling and utilities (implement FIRST)
+The FutilError enum is defined with all variants. Implement three helper functions:
+  - validate_file(path) → Result<String, FutilError>: check file exists, read to string, return contents
+  - detect_format(path) → Result<&str, FutilError>: check extension (.json→"json", .csv→"csv", .jsonl→"jsonl")
+  - write_output(content, output_path) → Result<(), FutilError>: write to file if Some, or print to stdout
+Add unit tests for all three functions (happy path + error cases).
+
+### 2. src/stats.rs — futil stats [OPTIONS] <paths...>
+Comprehensive file statistics for one or more files. Requirements:
+  - Count lines, words, bytes for each file
+  - With multiple files: per-file rows PLUS a "total:" summary row
+  - --json: output as JSON array of objects with path/lines/words/bytes/chars fields
+  - --chars: include character count (count Unicode chars, distinct from byte count)
+  - --top-words N: show N most frequent words (case-insensitive), sorted by frequency desc
+    In plain mode: append "top words: word1(N), word2(N), ..." after stats
+    In JSON mode: add "top_words": [{"word":"the","count":5},...] array
+  - Use error::validate_file for all file loading
+  - Add unit tests: basic counts, multi-file totals, JSON output, top-words, UTF-8 chars
+
+### 3. src/search.rs — futil search [OPTIONS] <pattern> <paths...>
+Regex search with grep-like features across one or more files. Requirements:
+  - Basic: print matching lines with line numbers "N: <line>"
+  - Multi-file: prefix with filename "<path>:N: <line>"
+  - -A N: show N lines of context after each match
+  - -B N: show N lines of context before each match
+  - -C N: shorthand for -A N -B N
+  - Context lines printed as "N- <line>" (dash not colon)
+  - Non-adjacent match groups separated by "--" line
+  - -i: case-insensitive matching (wrap pattern in (?i))
+  - -c: count-only mode — print "<path>: N matches" per file
+  - -l: files-only mode — print just filenames containing matches
+  - -v: invert match — print lines that do NOT match
+  - --json: output as JSON array [{"path","line_number","text","is_match"},...]
+  - Use error::validate_file for file loading
+  - Use FutilError::InvalidRegex for bad patterns (catch regex compilation error)
+  - Add unit tests: basic match, context lines, case-insensitive, count, files-only, invert, multi-file
+
+### 4. src/convert.rs — futil convert [OPTIONS] <input> --format <fmt>
+Format conversion supporting JSON, CSV, and JSONL. Requirements:
+  - Auto-detect input format from extension using error::detect_format
+  - All 6 conversion pairs: json↔csv, json↔jsonl, csv↔jsonl
+  - JSON→CSV: union of all object keys as headers, missing values as empty strings
+  - CSV→JSON: each row becomes object, parse numeric strings to numbers automatically
+  - JSONL→JSON and JSON→JSONL: collect/split line-delimited JSON
+  - CSV↔JSONL: via intermediate representation
+  - --fields f1,f2: select AND reorder output fields (error if field not in data)
+  - --sort-by field: sort rows ascending by field value (string comparison, error if field missing)
+  - --pretty: pretty-print JSON/JSONL output with indentation
+  - --output path: write to file instead of stdout (use error::write_output)
+  - Use error::validate_file for input loading, error::detect_format for format detection
+  - Add unit tests: each format pair, field selection, sorting, pretty-print, numeric auto-conversion
+
+## Dependencies between components
+- error.rs BLOCKS stats.rs, search.rs, and convert.rs (they all use FutilError + helpers)
+- stats.rs, search.rs, and convert.rs are INDEPENDENT of each other (can be done in parallel)
+- Each subcommand is a substantial implementation (~100-200 lines) best done as separate tasks
+
+## Test data
+Sample data files in data/: sample.txt, words.txt, log.txt, sample.csv, sample.json, sample.jsonl, nested.json
+
+Success metric: cargo test passes with comprehensive tests in each module; all subcommands produce correct output on sample data; all flags work as documented.
+Constraints: Use existing dependencies only (clap, regex, serde, serde_json, csv, thiserror). Do not modify src/main.rs.
+Stop criteria: All three subcommands fully working with all flags, comprehensive unit tests passing.'
 
 # --- Send !mission message (triggers router hook → respond.mjs → dev-loop) ---
 echo "--- Sending !mission to futil channel ($(date +%H:%M:%S)) ---"
@@ -111,8 +164,9 @@ CHILD_COUNT=0
 CHILDREN_CLOSED=0
 
 # Worker tracking
-declare -A KNOWN_WORKERS
-declare -A WORKER_LOG_CAPTURED
+declare -A KNOWN_WORKERS=()
+declare -A WORKER_LOG_CAPTURED=()
+KNOWN_WORKER_COUNT=0
 
 # Phase timing
 DEV_SPAWN_TIME=""
@@ -164,9 +218,11 @@ while true; do
   if [[ -n "$WORKER_LIST" ]]; then
     while IFS= read -r worker_id; do
       [[ -z "$worker_id" ]] && continue
-      if [[ -z "${KNOWN_WORKERS[$worker_id]+_}" ]]; then
-        KNOWN_WORKERS["$worker_id"]=1
-        WORKER_LOG_CAPTURED["$worker_id"]=0
+      wkey="${worker_id//\//_}"
+      if [[ -z "${KNOWN_WORKERS[$wkey]+_}" ]]; then
+        KNOWN_WORKERS["$wkey"]="$worker_id"
+        WORKER_LOG_CAPTURED["$wkey"]=0
+        KNOWN_WORKER_COUNT=$((KNOWN_WORKER_COUNT + 1))
         echo "  NEW WORKER: $worker_id"
         LAST_ACTIVITY_TIME=$(date +%s)
         if [[ -z "$FIRST_WORKER_TIME" ]]; then
@@ -180,22 +236,25 @@ while true; do
   fi
 
   # Check for workers that disappeared — capture their logs
-  for wid in "${!KNOWN_WORKERS[@]}"; do
-    if ! echo "$WORKER_LIST" | grep -q "^${wid}$" 2>/dev/null; then
-      if [[ "${WORKER_LOG_CAPTURED[$wid]}" -eq 0 ]]; then
-        SAFE_NAME="${wid//\//_}"
-        botty tail "$wid" -n 500 > "$ARTIFACTS/agent-${SAFE_NAME}.log" 2>/dev/null || true
-        WORKER_LOG_CAPTURED["$wid"]=1
-        echo "  worker EXITED: $wid (log captured)"
-        LAST_ACTIVITY_TIME=$(date +%s)
+  # KNOWN_WORKERS keys are sanitized (/ → _), values are original worker IDs
+  if [[ ${#KNOWN_WORKERS[@]} -gt 0 ]]; then
+    for wkey in "${!KNOWN_WORKERS[@]}"; do
+      orig_id="${KNOWN_WORKERS[$wkey]}"
+      if ! echo "$WORKER_LIST" | grep -qF "$orig_id" 2>/dev/null; then
+        if [[ "${WORKER_LOG_CAPTURED[$wkey]}" -eq 0 ]]; then
+          botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
+          WORKER_LOG_CAPTURED["$wkey"]=1
+          echo "  worker EXITED: $orig_id (log captured)"
+          LAST_ACTIVITY_TIME=$(date +%s)
+        fi
       fi
-    fi
-  done
+    done
+  fi
 
   # Discover mission bead
   cd "$PROJECT_DIR"
   if [[ -z "$MISSION_BEAD" ]]; then
-    MISSION_BEADS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list -l mission --format json 2>/dev/null || echo '[]')
+    MISSION_BEADS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l mission --format json 2>/dev/null || echo '[]')
     MISSION_BEAD=$(echo "$MISSION_BEADS" | jq -r '.[0].id // empty' 2>/dev/null || echo "")
     if [[ -z "$MISSION_BEAD" ]]; then
       # Try alternative JSON shape
@@ -211,7 +270,7 @@ while true; do
 
   # Track children if mission exists
   if [[ -n "$MISSION_BEAD" ]]; then
-    CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list -l "mission:$MISSION_BEAD" --format json 2>/dev/null || echo '[]')
+    CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_BEAD" --format json 2>/dev/null || echo '[]')
     # Try both JSON shapes
     NEW_CHILD_COUNT=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
     NEW_CLOSED=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
@@ -307,13 +366,15 @@ for RNAME in "futil-respond" "respond"; do
 done
 
 # Worker logs (capture any remaining)
-for wid in "${!KNOWN_WORKERS[@]}"; do
-  SAFE_NAME="${wid//\//_}"
-  if [[ ! -f "$ARTIFACTS/agent-${SAFE_NAME}.log" ]] || [[ "${WORKER_LOG_CAPTURED[$wid]}" -eq 0 ]]; then
-    botty tail "$wid" -n 500 > "$ARTIFACTS/agent-${SAFE_NAME}.log" 2>/dev/null || true
-    echo "  worker log: $ARTIFACTS/agent-${SAFE_NAME}.log"
-  fi
-done
+if [[ ${#KNOWN_WORKERS[@]} -gt 0 ]]; then
+  for wkey in "${!KNOWN_WORKERS[@]}"; do
+    orig_id="${KNOWN_WORKERS[$wkey]}"
+    if [[ ! -f "$ARTIFACTS/agent-${wkey}.log" ]] || [[ "${WORKER_LOG_CAPTURED[$wkey]}" -eq 0 ]]; then
+      botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
+      echo "  worker log: $ARTIFACTS/agent-${wkey}.log"
+    fi
+  done
+fi
 
 # Any other agents we missed
 for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
@@ -353,7 +414,10 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list > "$ARTIFACTS/claims-state.tx
   echo "(no claims)" > "$ARTIFACTS/claims-state.txt"
 
 # Final status file
-WORKER_NAMES=$(printf '%s\n' "${!KNOWN_WORKERS[@]}" | sort)
+WORKER_NAMES=""
+if [[ $KNOWN_WORKER_COUNT -gt 0 ]]; then
+  WORKER_NAMES=$(for wkey in "${!KNOWN_WORKERS[@]}"; do echo "${KNOWN_WORKERS[$wkey]}"; done | sort)
+fi
 cat > "$ARTIFACTS/final-status.txt" << EOF
 FUTIL_DEV_STATUS=$FINAL_STATUS_DEV
 MISSION_BEAD=${MISSION_BEAD:-none}
@@ -389,7 +453,7 @@ echo "Final status:"
 echo "  futil-dev: $FINAL_STATUS_DEV"
 echo "  Mission bead: ${MISSION_BEAD:-none}"
 echo "  Children: $CHILDREN_CLOSED/$CHILD_COUNT closed"
-echo "  Workers discovered: ${#KNOWN_WORKERS[@]}"
+echo "  Workers discovered: $KNOWN_WORKER_COUNT"
 echo "Elapsed: $(( $(date +%s) - START_TIME ))s"
 echo ""
 echo "Phase timing:"

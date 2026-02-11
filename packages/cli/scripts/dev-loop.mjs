@@ -336,6 +336,8 @@ COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. A
   crit:  maw exec \$WS -- crit <args>
   jj:    maw exec \$WS -- jj <args>
   other: maw exec \$WS -- <command>           (cargo test, etc.)
+Inside \`maw exec <ws>\`, CWD is already \`ws/<ws>/\`. Use \`maw exec default -- ls src/\`, NOT \`maw exec default -- ls ws/default/src/\`.
+For file reads/edits outside maw exec, use the full absolute path: \`ws/<ws>/src/...\`
 ${previousContext}
 Execute exactly ONE dev cycle. Triage inbox, assess ready beads, either work on one yourself
 or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
@@ -523,10 +525,16 @@ Read each bead (maw exec default -- br show <id>) and select a model based on co
 
 ### Spawning Workers
 
+IMPORTANT: You MUST use \`botty spawn\` to create workers. Do NOT use Claude Code's built-in Task tool for worker dispatch.
+Why: botty workers are independently observable (\`botty tail\`, \`botty list\`), survive your session crashing,
+have independent timeouts, participate in botbus coordination (claims, messages, status), and respect maxWorkers limits.
+The Task tool creates in-process subagents that bypass all of this infrastructure — no crash recovery, no observability, no coordination.
+
 For each dispatched bead, spawn a worker via botty with hierarchical naming:
 
   botty spawn --name "${AGENT}/<worker-suffix>" \\
     --label worker --label "bead:<id>" \\
+    --env-inherit BOTBUS_CHANNEL,BOTBUS_DATA_DIR \\
     --env "BOTBUS_AGENT=${AGENT}/<worker-suffix>" \\
     --env "BOTBOX_BEAD=<id>" \\
     --env "BOTBOX_WORKSPACE=\$WS" \\
@@ -565,6 +573,8 @@ ${process.env.BOTBOX_MISSION ? `\nBOTBOX_MISSION is set to "${process.env.BOTBOX
 
 ### Dispatch Mission Workers
 
+IMPORTANT: Use \`botty spawn\` for mission workers — NOT the Task tool. See step 5b for why.
+
 For independent children (unblocked), dispatch workers (max ${MAX_MISSION_WORKERS} concurrent):
 - Follow the same dispatch pattern as step 5b, but add mission labels and sibling context env vars:
     --label "mission:<mission-id>" \\
@@ -590,7 +600,7 @@ After dispatching workers, enter a checkpoint loop. Run checkpoints every ${CHEC
 
 Each checkpoint:
 1. Count children by status:
-   maw exec default -- br list -l "mission:<mission-id>" --json
+   maw exec default -- br list --all -l "mission:<mission-id>" --json
    Tally: N open, M in_progress, K closed, J blocked
 2. Check alive workers:
    botty list --format json
@@ -598,14 +608,15 @@ Each checkpoint:
 3. Check for completions (cursor-based — track last-seen message ID to avoid rescanning):
    bus history ${PROJECT} -n 20 -L task-done --since <last-checkpoint-time>
    Look for "Completed <bead-id>" messages from workers
-4. Detect failures:
+4. Post checkpoint to channel (REQUIRED — crash recovery depends on this):
+   bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id> checkpoint: K/${'\$'}TOTAL done, J blocked, M active" -L feedback
+   If this session crashes, the next iteration uses these messages to reconstruct mission state.
+5. Detect failures:
    If a worker is not in botty list but its bead is still in_progress → crash recovery (see step 6)
-5. Decide:
+6. Decide:
    - All children closed → exit checkpoint loop, proceed to Mission Close (step 18)
    - Some blocked, none in_progress → investigate blockers or rescope
    - Workers still alive → continue checkpoint loop
-6. Post checkpoint summary:
-   bus send --agent ${AGENT} ${PROJECT} "Mission <mission-id> checkpoint: K/${'\$'}TOTAL done, J blocked, M active" -L feedback
 
 Exit the checkpoint loop when: all children are closed, OR no workers alive and all remaining beads are blocked.
 

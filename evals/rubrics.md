@@ -1675,10 +1675,10 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 **Prerequisite fix**: agent-loop.mjs was missing `review.enabled` config reading. Workers now read `REVIEW = config.review?.enabled ?? true` and skip review steps when false, preventing deadlock with missions + no reviewer.
 
-**Single project**: `futil` — file utility CLI with three `todo!()` subcommands:
-- `futil stats <path>` — line/word/byte counts
-- `futil search <pattern> <path>` — regex search with line numbers
-- `futil convert <input> --format json|csv` — format conversion
+**Single project**: `futil` — file utility CLI with three substantial `todo!()` subcommands:
+- `futil stats <paths...>` — multi-file statistics with --json, --chars, --top-words N
+- `futil search <pattern> <paths...>` — regex search with -A/-B/-C context, -i, -c, -l, -v, --json
+- `futil convert <input> --format json|csv|jsonl` — 6 format pairs with --fields, --sort-by, --pretty, --output
 
 **Config**:
 ```json
@@ -1703,7 +1703,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 **Run**: `evals/scripts/e11-l4-run.sh` (30 min timeout)
 **Verify**: `evals/scripts/e11-l4-verify.sh`
 
-### Scoring (~125 pts)
+### Scoring (~130 pts)
 
 #### Mission Recognition (15 pts)
 
@@ -1749,14 +1749,15 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 | Mission bead closed | 5 | Mission bead status=closed |
 | Synthesis comment | 5 | Mission bead comment references completion/decisions/artifacts |
 
-#### Code Correctness (20 pts)
+#### Code Correctness (25 pts)
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
 | cargo check passes | 5 | `maw exec default -- cargo check` |
-| 2+ subcommands implemented | 5 | Non-todo match arms or separate module files |
-| Shared module/utility exists | 5 | Extra .rs files or mod declarations |
-| 1+ subcommand works on sample data | 5 | `cargo run -- stats data/sample.txt` produces output |
+| 2+ subcommands implemented | 5 | todo!() removed from module files |
+| Shared error module helpers | 5 | validate_file + detect_format + write_output implemented |
+| 2+ subcommands work on sample data | 5 | stats/search/convert produce correct output |
+| Feature flags work | 5 | --json, -c, -i, --fields verified (tiered scoring) |
 
 #### Friction Efficiency (10 pts)
 
@@ -1784,4 +1785,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| (none yet) | | | |
+| 1 (simple project) | opus | 68/125 (54%) | Agent worked solo — single file made decomposition irrational |
+| 2-5 (script bugs) | opus | — | Various bash footguns: `((0++))`, `grep -c` double output, `/` in array keys |
+| 6 (modular project) | opus | 37/125 (30% cap) | Uncapped 93/125 — perfect protocol but tasks too small (~30 LOC each) |
+| 7+ (bulked specs) | opus | — | Substantial subcommands: multi-file, context, 6 format pairs, field ops |

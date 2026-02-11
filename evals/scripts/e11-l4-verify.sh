@@ -115,7 +115,7 @@ echo "=== Decomposition (25 pts) ==="
 echo ""
 
 # Get children
-CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list -l "mission:$MISSION_BEAD" --format json 2>/dev/null || echo '[]')
+CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_BEAD" --format json 2>/dev/null || echo '[]')
 # Normalize JSON shape
 ACTUAL_CHILD_COUNT=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
 
@@ -159,23 +159,27 @@ echo ""
 echo "--- Check 7: Inter-child dependency ---"
 HAS_INTER_DEP=false
 # Check if any child blocks another child
-DEP_ADD_COUNT=$(echo "$DEV_LOG" | grep -ci "br dep add" 2>/dev/null || echo "0")
+DEP_ADD_COUNT=$(echo "$DEV_LOG" | grep -ci "br dep add" 2>/dev/null) || DEP_ADD_COUNT=0
 if [[ "$DEP_ADD_COUNT" -ge 1 ]]; then
   HAS_INTER_DEP=true
 fi
 check "Inter-child dependency exists (dep add count=$DEP_ADD_COUNT)" "$($HAS_INTER_DEP && echo 0 || echo 1)" 5
 
 # Check 8: Clear titles (5 pts)
+# Requires children to exist — vacuous pass is wrong
 echo ""
 echo "--- Check 8: Clear child titles ---"
-CLEAR_TITLES=true
-for cid in $CHILD_IDS; do
-  CHILD_TITLE=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$cid" --format json 2>/dev/null | jq -r '.[0].title // ""' 2>/dev/null || echo "")
-  if [[ ${#CHILD_TITLE} -lt 5 ]]; then
-    CLEAR_TITLES=false
-    warn "Child $cid has unclear title: '$CHILD_TITLE'"
-  fi
-done
+CLEAR_TITLES=false
+if [[ "$ACTUAL_CHILD_COUNT" -gt 0 ]]; then
+  CLEAR_TITLES=true
+  for cid in $CHILD_IDS; do
+    CHILD_TITLE=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$cid" --format json 2>/dev/null | jq -r '.[0].title // ""' 2>/dev/null || echo "")
+    if [[ ${#CHILD_TITLE} -lt 5 ]]; then
+      CLEAR_TITLES=false
+      warn "Child $cid has unclear title: '$CHILD_TITLE'"
+    fi
+  done
+fi
 check "Child beads have clear titles" "$($CLEAR_TITLES && echo 0 || echo 1)" 5
 
 # ============================================================
@@ -186,17 +190,22 @@ echo "=== Worker Dispatch (25 pts) ==="
 echo ""
 
 # Extract worker info from final status
-WORKER_NAMES=$(echo "$FINAL_STATUS" | grep -oP 'WORKER_NAMES=\K.*' || echo "")
-WORKER_COUNT=$(echo "$WORKER_NAMES" | grep -c "." 2>/dev/null || echo "0")
+# Worker names can be on separate lines after "WORKER_NAMES:" header
+WORKER_NAMES=$(echo "$FINAL_STATUS" | sed -n '/^WORKER_NAMES/,$ p' | tail -n +2 | grep -v '^$' || echo "")
+WORKER_COUNT=0
+if [[ -n "$WORKER_NAMES" ]]; then
+  WORKER_COUNT=$(echo "$WORKER_NAMES" | wc -l)
+fi
 
 # Check 9: Workers spawned (5 pts)
+# Only count actual hierarchical workers (name contains /), not the dev agent itself
 echo "--- Check 9: Workers spawned ---"
 WORKERS_SPAWNED=false
 if [[ "$WORKER_COUNT" -ge 1 ]]; then
   WORKERS_SPAWNED=true
 fi
-# Also check dev log for botty spawn
-if echo "$DEV_LOG" | grep -qi "botty spawn"; then
+# Check dev log for botty spawn with hierarchical name pattern (agent/worker)
+if echo "$DEV_LOG" | grep -i "botty spawn" | grep -q "/"; then
   WORKERS_SPAWNED=true
 fi
 check "Workers spawned ($WORKER_COUNT discovered)" "$($WORKERS_SPAWNED && echo 0 || echo 1)" 5
@@ -214,13 +223,16 @@ echo "--- Check 10: Multiple workers ---"
 check "2+ workers spawned ($WORKER_COUNT)" "$([ "$WORKER_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
 # Check 11: Workspace per worker (5 pts)
+# Must create workspaces specifically for workers, not just for the dev agent's own work.
+# Look for 2+ workspace creations (one for dev is normal, 2+ means workers got workspaces).
 echo ""
 echo "--- Check 11: Workspace per worker ---"
-WS_CREATED=false
-if echo "$DEV_LOG" | grep -qi "maw ws create"; then
-  WS_CREATED=true
+WS_CREATE_COUNT=$(echo "$DEV_LOG" | grep -ci "maw ws create" 2>/dev/null) || WS_CREATE_COUNT=0
+WORKER_WS=false
+if [[ "$WS_CREATE_COUNT" -ge 2 ]]; then
+  WORKER_WS=true
 fi
-check "Workspaces created for workers" "$($WS_CREATED && echo 0 || echo 1)" 5
+check "Workspaces created for workers ($WS_CREATE_COUNT ws creates)" "$($WORKER_WS && echo 0 || echo 1)" 5
 
 # Check 12: Mission env vars (5 pts)
 echo ""
@@ -229,16 +241,31 @@ HAS_MISSION_ENV=false
 if echo "$DEV_LOG" | grep -qi "BOTBOX_MISSION\|BOTBOX_SIBLINGS\|BOTBOX_MISSION_OUTCOME"; then
   HAS_MISSION_ENV=true
 fi
+# Also check channel history and bead comments for mission context
+if echo "$CHANNEL_HISTORY" | grep -qi "mission.*context\|mission.*bd-"; then
+  HAS_MISSION_ENV=true
+fi
+# Check if workers received mission context via bead comments
+for cid in $CHILD_IDS; do
+  CHILD_COMMENTS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br comments "$cid" 2>/dev/null || echo "")
+  if echo "$CHILD_COMMENTS" | grep -qi "mission.*context\|BOTBOX_MISSION"; then
+    HAS_MISSION_ENV=true
+    break
+  fi
+done
 check "Mission env vars set on workers (BOTBOX_MISSION, etc.)" "$($HAS_MISSION_ENV && echo 0 || echo 1)" 5
 
-# Check 13: Claims staked (5 pts)
+# Check 13: Claims staked for workers (5 pts)
+# Must have 2+ claim stake calls (dev stakes its own, workers need additional claims)
 echo ""
-echo "--- Check 13: Claims staked ---"
-HAS_CLAIMS=false
-if echo "$DEV_LOG" | grep -qi "bus claims stake"; then
-  HAS_CLAIMS=true
+echo "--- Check 13: Claims staked for workers ---"
+CLAIM_COUNT=$(echo "$DEV_LOG" | grep -ci "bus claims stake" 2>/dev/null) || CLAIM_COUNT=0
+HAS_WORKER_CLAIMS=false
+if [[ "$CLAIM_COUNT" -ge 3 ]]; then
+  # Dev stakes 1-2 for itself (bead + workspace), workers need more
+  HAS_WORKER_CLAIMS=true
 fi
-check "Claims staked for beads/workspaces" "$($HAS_CLAIMS && echo 0 || echo 1)" 5
+check "Claims staked for workers ($CLAIM_COUNT total stakes)" "$($HAS_WORKER_CLAIMS && echo 0 || echo 1)" 5
 
 # ============================================================
 # Monitoring (15 pts)
@@ -271,13 +298,19 @@ fi
 check "Count/status info in checkpoint" "$($HAS_COUNT_INFO && echo 0 || echo 1)" 5
 
 # Check 16: Worker completion detected (5 pts)
+# Must detect actual worker completion — not just the dev closing its own work.
+# Look for patterns specific to monitoring workers: "worker.*exit", "child.*closed", merge of worker workspace.
 echo ""
 echo "--- Check 16: Worker completion detected ---"
 COMPLETION_DETECTED=false
-if echo "$DEV_LOG" | grep -qi "complet\|task-done\|worker.*finish\|child.*closed"; then
-  COMPLETION_DETECTED=true
+if echo "$DEV_LOG" | grep -qi "worker.*finish\|worker.*exit\|child.*closed\|maw ws merge.*--destroy"; then
+  # "maw ws merge --destroy" with 2+ occurrences indicates worker workspace merges
+  MERGE_COUNT=$(echo "$DEV_LOG" | grep -ci "maw ws merge" 2>/dev/null) || MERGE_COUNT=0
+  if [[ "$MERGE_COUNT" -ge 2 ]]; then
+    COMPLETION_DETECTED=true
+  fi
 fi
-if echo "$CHANNEL_HISTORY" | grep -qi "complet.*bd-\|task-done"; then
+if echo "$DEV_LOG" | grep -qi "worker.*complet\|child.*done"; then
   COMPLETION_DETECTED=true
 fi
 check "Worker completion detected" "$($COMPLETION_DETECTED && echo 0 || echo 1)" 5
@@ -292,6 +325,7 @@ echo ""
 # Check 17: All children closed (5 pts)
 echo "--- Check 17: All children closed ---"
 ALL_CHILDREN_CLOSED=false
+CLOSED_COUNT=0
 if [[ "$ACTUAL_CHILD_COUNT" -gt 0 ]]; then
   CLOSED_COUNT=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
   if [[ "$CLOSED_COUNT" -ge "$ACTUAL_CHILD_COUNT" ]]; then
@@ -339,68 +373,87 @@ fi
 check "cargo check passes" "$($CARGO_OK && echo 0 || echo 1)" 5
 
 # Check 21: 2+ subcommands implemented (5 pts)
+# Module files exist as stubs — check that todo!() was REMOVED (i.e., actually implemented)
 echo ""
 echo "--- Check 21: Subcommands implemented ---"
-MAIN_RS="$PROJECT_DIR/ws/default/src/main.rs"
 IMPL_COUNT=0
-# Check for implementations by looking for non-todo match arms or separate modules
-if [[ -f "$MAIN_RS" ]]; then
-  # Count subcommands that don't have todo!()
-  if ! grep -A 3 'Stats' "$MAIN_RS" 2>/dev/null | grep -q 'todo!'; then
-    IMPL_COUNT=$((IMPL_COUNT + 1))
-  fi
-  if ! grep -A 3 'Search' "$MAIN_RS" 2>/dev/null | grep -q 'todo!'; then
-    IMPL_COUNT=$((IMPL_COUNT + 1))
-  fi
-  if ! grep -A 3 'Convert' "$MAIN_RS" 2>/dev/null | grep -q 'todo!'; then
-    IMPL_COUNT=$((IMPL_COUNT + 1))
-  fi
-fi
-# Also check for separate module files
 for mod_name in stats search convert; do
-  if [[ -f "$PROJECT_DIR/ws/default/src/${mod_name}.rs" ]]; then
+  MOD_FILE="$PROJECT_DIR/ws/default/src/${mod_name}.rs"
+  if [[ -f "$MOD_FILE" ]] && ! grep -q 'todo!' "$MOD_FILE" 2>/dev/null; then
     IMPL_COUNT=$((IMPL_COUNT + 1))
   fi
 done
-# Cap at 3 (may have counted both main.rs and module file)
-[[ "$IMPL_COUNT" -gt 3 ]] && IMPL_COUNT=3
 check "2+ subcommands implemented (found=$IMPL_COUNT)" "$([ "$IMPL_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
-# Check 22: Shared module/utility (5 pts)
+# Check 22: Shared error module implemented (5 pts)
+# error.rs has stubs for validate_file, detect_format, write_output — check they're implemented
 echo ""
-echo "--- Check 22: Shared module or utility ---"
-HAS_SHARED=false
-# Check for any extra .rs files (indicating module organization)
-SRC_FILES=$(find "$PROJECT_DIR/ws/default/src" -name "*.rs" -not -name "main.rs" 2>/dev/null | wc -l || echo "0")
-if [[ "$SRC_FILES" -ge 1 ]]; then
-  HAS_SHARED=true
+echo "--- Check 22: Shared error module implemented ---"
+ERROR_RS="$PROJECT_DIR/ws/default/src/error.rs"
+HELPER_COUNT=0
+if [[ -f "$ERROR_RS" ]] && ! grep -q 'todo!' "$ERROR_RS" 2>/dev/null; then
+  # Check for actual implementations of the three helpers
+  grep -q 'fn validate_file\|fn read_file\|fn load_file' "$ERROR_RS" 2>/dev/null && HELPER_COUNT=$((HELPER_COUNT + 1))
+  grep -q 'fn detect_format\|fn guess_format\|fn infer_format' "$ERROR_RS" 2>/dev/null && HELPER_COUNT=$((HELPER_COUNT + 1))
+  grep -q 'fn write_output\|fn output_to' "$ERROR_RS" 2>/dev/null && HELPER_COUNT=$((HELPER_COUNT + 1))
 fi
-# Also check for mod declarations in main.rs
-if [[ -f "$MAIN_RS" ]] && grep -q "^mod " "$MAIN_RS" 2>/dev/null; then
-  HAS_SHARED=true
-fi
-check "Shared module or utility exists (extra src files=$SRC_FILES)" "$($HAS_SHARED && echo 0 || echo 1)" 5
+check "Shared error module helpers implemented ($HELPER_COUNT/3)" "$([ "$HELPER_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
-# Check 23: 1+ subcommand works (5 pts)
+# Check 23: Subcommands work on sample data (5 pts)
 echo ""
-echo "--- Check 23: Subcommand works on sample data ---"
-SUBCOMMAND_WORKS=false
-# Try running a subcommand
+echo "--- Check 23: Subcommands work on sample data ---"
+WORKING_COUNT=0
 if BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo build --quiet 2>/dev/null; then
   # Try stats on sample.txt
-  STATS_OUTPUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- stats data/sample.txt 2>/dev/null || echo "")
-  if echo "$STATS_OUTPUT" | grep -qiE "line|word|byte|[0-9]+"; then
-    SUBCOMMAND_WORKS=true
+  STATS_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- stats data/sample.txt 2>/dev/null || echo "")
+  if echo "$STATS_OUT" | grep -qiE "line|word|byte|[0-9]+"; then
+    WORKING_COUNT=$((WORKING_COUNT + 1))
   fi
   # Try search
-  if ! $SUBCOMMAND_WORKS; then
-    SEARCH_OUTPUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- search "Hello" data/sample.txt 2>/dev/null || echo "")
-    if echo "$SEARCH_OUTPUT" | grep -qi "Hello"; then
-      SUBCOMMAND_WORKS=true
-    fi
+  SEARCH_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- search "Hello" data/sample.txt 2>/dev/null || echo "")
+  if echo "$SEARCH_OUT" | grep -qi "Hello"; then
+    WORKING_COUNT=$((WORKING_COUNT + 1))
+  fi
+  # Try convert
+  CONVERT_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- convert data/sample.json --format csv 2>/dev/null || echo "")
+  if echo "$CONVERT_OUT" | grep -qi "Alice"; then
+    WORKING_COUNT=$((WORKING_COUNT + 1))
   fi
 fi
-check "At least 1 subcommand works on sample data" "$($SUBCOMMAND_WORKS && echo 0 || echo 1)" 5
+check "Subcommands working on sample data ($WORKING_COUNT/3)" "$([ "$WORKING_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
+
+# Check 23b: Flags work (5 pts) — bonus for expanded feature set
+echo ""
+echo "--- Check 23b: Feature flags work ---"
+FLAGS_WORKING=0
+if BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo build --quiet 2>/dev/null; then
+  # stats --json
+  SJ=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- stats --json data/sample.txt 2>/dev/null || echo "")
+  echo "$SJ" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
+  # search -c (count mode)
+  SC=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- search -c "the" data/words.txt 2>/dev/null || echo "")
+  echo "$SC" | grep -qE "[0-9]+" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
+  # search -i (case insensitive)
+  SI=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- search -i "HELLO" data/sample.txt 2>/dev/null || echo "")
+  echo "$SI" | grep -qi "Hello" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
+  # convert --fields
+  CF=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- convert data/sample.json --format csv --fields name,age 2>/dev/null || echo "")
+  echo "$CF" | grep -qi "Alice" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
+fi
+TOTAL=$((TOTAL + 5))
+if [[ "$FLAGS_WORKING" -ge 3 ]]; then
+  echo "PASS (5 pts): $FLAGS_WORKING/4 feature flags work"
+  SCORE=$((SCORE + 5)); PASS=$((PASS + 1))
+elif [[ "$FLAGS_WORKING" -ge 2 ]]; then
+  echo "PARTIAL (3/5 pts): $FLAGS_WORKING/4 feature flags work"
+  SCORE=$((SCORE + 3)); PASS=$((PASS + 1))
+elif [[ "$FLAGS_WORKING" -ge 1 ]]; then
+  echo "PARTIAL (1/5 pts): $FLAGS_WORKING/4 feature flags work"
+  SCORE=$((SCORE + 1)); PASS=$((PASS + 1))
+else
+  echo "FAIL (0/5 pts): No feature flags work ($FLAGS_WORKING/4)"
+  FAIL=$((FAIL + 1))
+fi
 
 # ============================================================
 # Friction Efficiency (10 pts)
