@@ -208,23 +208,26 @@ check "br sync called" "$($BR_SYNC_CALLED && echo 0 || echo 1)" 2
 # Check 12: Bus labels correct (4 pts)
 echo ""
 echo "--- Check 12: Bus labels correct ---"
+# Labels are metadata, not visible in text format — must use JSON
+LIVE_HISTORY_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history "$(basename "$PROJECT_DIR")" -n 100 --format json 2>/dev/null || echo '{"messages":[]}')
 LIVE_HISTORY=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history "$(basename "$PROJECT_DIR")" -n 100 2>/dev/null || echo "")
+ALL_LABELS=$(echo "$LIVE_HISTORY_JSON" | jq -r '[.messages[].labels // [] | .[]] | .[]' 2>/dev/null || echo "")
 LABELS_OK=true
 HAS_TASK_CLAIM=false
 HAS_REVIEW_REQUEST=false
 HAS_REVIEW_DONE=false
 HAS_TASK_DONE=false
 
-if echo "$LIVE_HISTORY" | grep -qi "task-claim\|claim"; then
+if echo "$ALL_LABELS" | grep -q "task-claim"; then
   HAS_TASK_CLAIM=true
 fi
-if echo "$LIVE_HISTORY" | grep -qi "review-request"; then
+if echo "$ALL_LABELS" | grep -q "review-request"; then
   HAS_REVIEW_REQUEST=true
 fi
-if echo "$LIVE_HISTORY" | grep -qi "review-done"; then
+if echo "$ALL_LABELS" | grep -q "review-done"; then
   HAS_REVIEW_DONE=true
 fi
-if echo "$LIVE_HISTORY" | grep -qi "task-done"; then
+if echo "$ALL_LABELS" | grep -q "task-done"; then
   HAS_TASK_DONE=true
 fi
 
@@ -401,8 +404,8 @@ check "Endpoint exists and is wired" "$($ENDPOINT_EXISTS && echo 0 || echo 1)" 3
 echo ""
 echo "--- Check 27: Defect fixed in final code ---"
 DEFECT_FIXED=false
-# Check if main.rs has path canonicalization or security fix
-if [[ -f "$MAIN_RS" ]] && grep -qi "canonical\|starts_with\|path.*validat" "$MAIN_RS" 2>/dev/null; then
+# Check if main.rs has path traversal protection (various valid approaches)
+if [[ -f "$MAIN_RS" ]] && grep -qi "canonical\|starts_with\|path.*validat\|ParentDir\|parent_dir\|traversal\|\.\.\/" "$MAIN_RS" 2>/dev/null; then
   DEFECT_FIXED=true
 fi
 check "Planted defect fixed in final code" "$($DEFECT_FIXED && echo 0 || echo 1)" 5

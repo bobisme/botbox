@@ -170,22 +170,22 @@ while true; do
   # Check for completion
   if [[ "$BEAD_STATUS" == "closed" ]]; then
     echo "  Bead is CLOSED — dev agent completed the task!"
-    # Give agents a moment to finish cleanup (release claims, sync, exit)
-    sleep 10
-    # Check if agents exited
-    BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
-    DEV_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
-    REVIEWER_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
-    if [[ -z "$DEV_STILL_RUNNING" ]]; then
-      FINAL_STATUS_DEV="completed"
-    else
-      FINAL_STATUS_DEV="completed-still-running"
-    fi
-    if [[ -z "$REVIEWER_STILL_RUNNING" ]]; then
-      FINAL_STATUS_REVIEWER="completed"
-    else
-      FINAL_STATUS_REVIEWER="completed-still-running"
-    fi
+    # Give agents time to finish cleanup (release claims, sync, exit)
+    # Dev-loop needs to cycle through hasWork() check which takes an iteration
+    FINAL_STATUS_DEV="completed-still-running"
+    FINAL_STATUS_REVIEWER="completed"
+    for WAIT_I in 1 2 3 4 5 6; do
+      sleep 15
+      BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+      DEV_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
+      REVIEWER_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
+      [[ -z "$DEV_STILL_RUNNING" ]] && FINAL_STATUS_DEV="completed"
+      [[ -n "$REVIEWER_STILL_RUNNING" ]] && FINAL_STATUS_REVIEWER="completed-still-running"
+      if [[ -z "$DEV_STILL_RUNNING" && -z "$REVIEWER_STILL_RUNNING" ]]; then
+        break
+      fi
+      echo "  Waiting for agents to exit... (${WAIT_I}/6)"
+    done
     break
   fi
 
