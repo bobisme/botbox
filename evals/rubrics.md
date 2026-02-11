@@ -1664,3 +1664,124 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
 | L3-1 | Opus 4.6 | 133/140 (95%) EXCELLENT | First botty-native full lifecycle. All agents spawned via hooks. 9 tool errors from crit workspace confusion. |
+
+---
+
+## E11-L4: Mission Eval (Parallel Worker Dispatch via Missions)
+
+**Type**: Integration (single project, multi-agent, botty-native, mission framework)
+
+**What it tests**: The full mission lifecycle in dev-loop.mjs (Level 4): `!mission` handler in respond.mjs creates a mission bead, dev-loop decomposes it into child beads, dispatches parallel workers with mission context (BOTBOX_MISSION, BOTBOX_SIBLINGS, BOTBOX_FILE_HINTS), monitors via checkpoints, and synthesizes results. Review is disabled to isolate the mission framework.
+
+**Prerequisite fix**: agent-loop.mjs was missing `review.enabled` config reading. Workers now read `REVIEW = config.review?.enabled ?? true` and skip review steps when false, preventing deadlock with missions + no reviewer.
+
+**Single project**: `futil` — file utility CLI with three `todo!()` subcommands:
+- `futil stats <path>` — line/word/byte counts
+- `futil search <pattern> <path>` — regex search with line numbers
+- `futil convert <input> --format json|csv` — format conversion
+
+**Config**:
+```json
+{
+  "review": { "enabled": false },
+  "agents": {
+    "dev": { "model": "opus", "timeout": 900, "missions": { "enabled": true, "maxWorkers": 3, "maxChildren": 8, "checkpointIntervalSec": 30 } },
+    "worker": { "model": "sonnet", "timeout": 600 }
+  }
+}
+```
+
+**Expected flow**:
+1. `!mission <spec>` → respond.mjs creates mission bead → execs dev-loop with BOTBOX_MISSION
+2. Dev-loop decomposes into 3+ child beads with `mission:<id>` labels
+3. Dev-loop dispatches workers (`futil-dev/<random>`) for independent children
+4. Workers implement subcommands in parallel workspaces
+5. Dev-loop monitors via checkpoint loop
+6. Dev-loop synthesizes results, closes mission bead
+
+**Setup**: `evals/scripts/e11-l4-setup.sh`
+**Run**: `evals/scripts/e11-l4-run.sh` (30 min timeout)
+**Verify**: `evals/scripts/e11-l4-verify.sh`
+
+### Scoring (~125 pts)
+
+#### Mission Recognition (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Bead with `mission` label | 5 | `br show` labels include "mission" |
+| Structured description (Outcome/Success/Constraints) | 5 | Mission bead description has structured fields |
+| Dev-loop identified mission context | 5 | Dev log references BOTBOX_MISSION or mission bead |
+
+#### Decomposition (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| 3+ child beads created | 5 | `br list -l mission:<id>` count >= 3 |
+| Children have `mission:<id>` labels | 5 | Label check on each child |
+| Parent dependencies wired | 5 | `br dep add` in dev log or deps on child beads |
+| Inter-child dependency exists | 5 | At least one `br dep add` between children |
+| Clear child titles | 5 | All titles >= 5 chars |
+
+#### Worker Dispatch (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Workers spawned | 5 | `botty list` discovers workers |
+| 2+ workers | 5 | Worker count >= 2 |
+| Workspace per worker | 5 | `maw ws create` in dev log |
+| Mission env vars set | 5 | BOTBOX_MISSION, BOTBOX_SIBLINGS in dev log |
+| Claims staked | 5 | `bus claims stake` in dev log |
+
+#### Monitoring (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Checkpoint message posted | 5 | Channel history has checkpoint/progress message |
+| Count/status info in checkpoint | 5 | Message contains N/M counts |
+| Worker completion detected | 5 | Dev log or channel shows completion detection |
+
+#### Synthesis (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| All children closed | 5 | All child beads status=closed |
+| Mission bead closed | 5 | Mission bead status=closed |
+| Synthesis comment | 5 | Mission bead comment references completion/decisions/artifacts |
+
+#### Code Correctness (20 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| cargo check passes | 5 | `maw exec default -- cargo check` |
+| 2+ subcommands implemented | 5 | Non-todo match arms or separate module files |
+| Shared module/utility exists | 5 | Extra .rs files or mod declarations |
+| 1+ subcommand works on sample data | 5 | `cargo run -- stats data/sample.txt` produces output |
+
+#### Friction Efficiency (10 pts)
+
+| Check | Full | Partial | Zero |
+|-------|------|---------|------|
+| Tool errors | 0 (5 pts) | 1-5 (3 pts) | >15 (0 pts) |
+| --help + retries | 0 (5 pts) | 1-3 (3 pts) | >8 (0 pts) |
+
+#### Critical Fail Conditions
+
+1. **Mission never created** → score = 0
+2. **No workers spawned** → score capped at 30%
+
+**Pass**: >= 70%, **Excellent**: >= 85%
+
+### Key Differences from L3
+
+- **Mission framework**: Tests Level 4 (decomposition + parallel workers under a mission envelope), not Level 3 (independent pre-existing beads)
+- **No review cycle**: `review.enabled=false` isolates mission mechanics from review complexity
+- **Dynamic worker discovery**: Run script discovers workers via `botty list` (hierarchical names `futil-dev/<random>`)
+- **Single project**: No cross-project coordination — focuses purely on mission lifecycle
+- **Agent-loop.mjs fix**: Workers now read REVIEW config, enabling no-review fast path
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| (none yet) | | | |

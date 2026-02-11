@@ -135,7 +135,7 @@ describe("renderAgentsMd", () => {
     })
     expect(result).toContain("### Reviews")
     expect(result).toContain("crit")
-    expect(result).toContain("@<project>-<role>")
+    expect(result).toContain("--reviewers")
   })
 
   test("managed section contains cross-project communication", () => {

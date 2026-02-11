@@ -13,12 +13,9 @@ Request a review using crit and announce it in the project channel.
 
 ## How Reviewer Spawning Works
 
-**Important**: There are TWO steps to request a specialist reviewer:
+**Important**: Creating a review with `--reviewers` assigns the reviewer in crit (metadata), but does NOT spawn them. You still need an @mention in a bus message to trigger the spawn hook.
 
-1. **crit assignment** — Records who should review (metadata only, does NOT spawn)
-2. **@mention in bus message** — Triggers the auto-spawn hook (THIS spawns the reviewer)
-
-The botbus hook system watches for @mentions. When you send a message containing `@myproject-security`, the hook spawns the security reviewer agent. The crit `--reviewers` flag alone does nothing to spawn — it only records the assignment.
+The botbus hook system watches for @mentions. When you send a message containing `@myproject-security`, the hook spawns the security reviewer agent.
 
 ## Steps
 
@@ -53,11 +50,16 @@ The botbus hook system watches for @mentions. When you send a message containing
 
 4. If requesting a **specialist reviewer** (e.g., security):
    ```bash
-   # Step 1: Assign reviewer in crit (records who should review)
-   maw exec $WS -- crit reviews request <review-id> --reviewers $BOTBOX_PROJECT-security --agent $AGENT
+   # Step 1: Create review with reviewer assignment (one command)
+   maw exec $WS -- crit reviews create --agent $AGENT --title "<title>" --description "<summary>" --reviewers $BOTBOX_PROJECT-security
 
    # Step 2: Announce with @mention (TRIGGERS THE SPAWN)
    bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> @$BOTBOX_PROJECT-security" -L review-request
+   ```
+
+   If the review already exists (re-request after fixes), use `crit reviews request` instead:
+   ```bash
+   maw exec $WS -- crit reviews request <review-id> --reviewers $BOTBOX_PROJECT-security --agent $AGENT
    ```
 
    The reviewer name MUST match the project pattern: `<project>-<role>` (e.g., `myproject-security`, `botbus-security`). Do NOT use generic names like `security-reviewer` — those won't match any hooks.

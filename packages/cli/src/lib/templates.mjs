@@ -221,11 +221,16 @@ bus claims release --agent $AGENT --all  # when done
 
 ### Reviews
 
-Use \`@<project>-<role>\` mentions to request reviews:
+Create a review with reviewer assignment in one command, then @mention to spawn:
 
 \`\`\`bash
-maw exec $WS -- crit reviews request <review-id> --reviewers $PROJECT-security --agent $AGENT
+maw exec $WS -- crit reviews create --agent $AGENT --title "..." --description "..." --reviewers $PROJECT-security
 bus send --agent $AGENT $PROJECT "Review requested: <review-id> @$PROJECT-security" -L review-request
+\`\`\`
+
+For re-requests after fixing feedback, use \`crit reviews request\`:
+\`\`\`bash
+maw exec $WS -- crit reviews request <review-id> --reviewers $PROJECT-security --agent $AGENT
 \`\`\`
 
 The @mention triggers the auto-spawn hook for the reviewer.

@@ -480,11 +480,9 @@ Same as the standard worker loop:
 
   RISK:MEDIUM — Standard review (if REVIEW is true):
     CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
-    Create review if none: maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>"
+    Create review with reviewer (if none exists): maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>" --reviewers ${PROJECT}-security
     IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace \$WS"
-    Request security review:
-      maw exec \$WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
-      bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
+    Spawn reviewer via @mention: bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
     STOP this iteration — wait for reviewer.
 
   RISK:HIGH — Security review + failure-mode checklist:
@@ -664,11 +662,9 @@ Already reviewed and approved (LGTM — reached from unfinished work check step 
 
 Not yet reviewed — RISK:LOW or RISK:MEDIUM (REVIEW is true):
   CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
-  Create review if none: maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>"
+  Create review with reviewer (if none exists): maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>" --reviewers ${PROJECT}-security
   IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace <ws-name>"
-  Request security review:
-    maw exec \$WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
-    bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
+  Spawn reviewer via @mention: bus send --agent ${AGENT} ${PROJECT} "Review requested: <review-id> for <id> @${PROJECT}-security" -L review-request
   STOP — wait for reviewer
 
 Not yet reviewed — RISK:HIGH — Security review + failure-mode checklist:

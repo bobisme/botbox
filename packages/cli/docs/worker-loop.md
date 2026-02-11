@@ -126,14 +126,14 @@ After completing the implementation:
 - Proceed directly to step 6 (Finish)
 
 **risk:medium** (default) — Standard review:
-- Create a crit review with bead context: `maw exec $WS -- crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary of changes, what was done, why>"`
+- Create a crit review with reviewer assignment: `maw exec $WS -- crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary of changes, what was done, why>" --reviewers <reviewer>`
+  - `--reviewers` assigns the reviewer in the same command (e.g., `--reviewers myproject-security`)
   - Running via `maw exec $WS --` ensures crit knows which workspace contains the changes
   - Always include the bead ID in the description so reviewers have context
   - Explain what changed and why, not just a summary
 - Add a comment to the bead: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Review requested: <review-id>, workspace: $WS (ws/$WS/)"`
 - **If requesting a specialist reviewer** (e.g., security):
-  - Assign them: `maw exec $WS -- crit reviews request <review-id> --reviewers <reviewer> --agent $AGENT`
-  - Announce with @mention: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>, @<reviewer>" -L review-request`
+  - Announce with @mention to trigger spawn: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>, @<reviewer>" -L review-request`
   - The @mention triggers auto-spawn hooks
 - **If requesting a general code review**:
   - Spawn a subagent to perform the review
@@ -141,16 +141,14 @@ After completing the implementation:
 - **STOP this iteration.** Do NOT close the bead, merge the workspace, or release claims. The reviewer will process the review, and you will resume in the next iteration via step 0.
 
 **risk:high** — Security review with failure-mode checklist:
-- Create crit review with note in description: `maw exec $WS -- crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary>. risk:high — failure-mode checklist required. Please answer: 1) What failure modes exist? 2) What edge cases need validation? 3) How can we roll back if this breaks? 4) What monitoring/alerts should we add? 5) What input validation is needed?"`
+- Create crit review with security reviewer: `maw exec $WS -- crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary>. risk:high — failure-mode checklist required. Please answer: 1) What failure modes exist? 2) What edge cases need validation? 3) How can we roll back if this breaks? 4) What monitoring/alerts should we add? 5) What input validation is needed?" --reviewers $BOTBOX_PROJECT-security`
 - Add comment to bead: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Review requested: <review-id>, workspace: $WS (ws/$WS/)"`
-- Request security reviewer: `maw exec $WS -- crit reviews request <review-id> --reviewers $BOTBOX_PROJECT-security --agent $AGENT`
 - Announce with @mention: `bus send --agent $AGENT $BOTBOX_PROJECT "Review requested: <review-id> for <bead-id>, @$BOTBOX_PROJECT-security" -L review-request`
 - **STOP this iteration.**
 
 **risk:critical** — Security review + human approval:
-- Create crit review: `maw exec $WS -- crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary>. risk:critical — requires human approval before merge."`
+- Create crit review with security reviewer: `maw exec $WS -- crit reviews create --agent $AGENT --title "<bead-title>" --description "For <bead-id>: <summary>. risk:critical — requires human approval before merge." --reviewers $BOTBOX_PROJECT-security`
 - Add comment to bead: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Review requested: <review-id>, workspace: $WS (ws/$WS/)"`
-- Request security reviewer: `maw exec $WS -- crit reviews request <review-id> --reviewers $BOTBOX_PROJECT-security --agent $AGENT`
 - Post to bus requesting human approval: `bus send --agent $AGENT $BOTBOX_PROJECT "risk:critical review for <bead-id>: requires human approval before merge. Review: <review-id> @<approver>" -L review-request`
   - List of approvers from `.botbox.json` → `project.criticalApprovers`
   - If no `criticalApprovers` configured, use project lead: `@$BOTBOX_PROJECT-lead`

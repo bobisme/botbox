@@ -136,8 +136,8 @@ Distributed code review system for jj. Reviews are tied to jj change IDs, with f
 
 **Review lifecycle:**
 ```bash
-maw exec $WS -- crit reviews create --agent $AGENT --title "..."  # Create review from workspace diff
-maw exec $WS -- crit reviews request <id> --reviewers <name> --agent $AGENT  # Assign reviewer(s)
+maw exec $WS -- crit reviews create --agent $AGENT --title "..." --reviewers <name>  # Create review + assign reviewer
+maw exec $WS -- crit reviews request <id> --reviewers <name> --agent $AGENT  # Re-assign reviewer (after fixes)
 maw exec $WS -- crit review <id> [--format json] [--since time]  # Show full review with threads
 maw exec $WS -- crit comment --file <path> --line <n> <review-id> "msg"  # Add line comment
 maw exec $WS -- crit reply <thread-id> "message"                 # Reply to existing thread
