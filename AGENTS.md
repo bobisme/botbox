@@ -83,7 +83,7 @@ SQLite-backed channel messaging system. Default output is `text` format (concise
 **Core commands:**
 - `bus send [--agent $AGENT] <channel> "message" [-L label]` — Post message to channel. Labels categorize messages (task-request, review-request, task-done, feedback, etc.)
 - `bus inbox [--channels <ch>] [--mentions] [--mark-read]` — Check unread messages. `--mentions` checks all channels for @agent mentions. `--count-only` for just the count.
-- `bus history <channel> [-n count] [--from agent] [--since time]` — Browse message history. `bus history projects` shows the project registry.
+- `bus history <channel> [-n count] [--from agent] [--since time]` — Browse message history. Channel can also be passed as `-c/--channel <ch>`. `bus history projects` shows the project registry.
 - `bus search <query> [-c channel]` — Full-text search (FTS5 syntax)
 - `bus wait [-c channel] [--mention] [-L label] [-t timeout]` — Block until matching message arrives. Used by respond.mjs for follow-up conversations.
 - `bus watch [-c channel] [--all]` — Stream messages in real-time
