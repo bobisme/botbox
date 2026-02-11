@@ -1403,3 +1403,133 @@ cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
 | (none yet) | | | |
+
+---
+
+## E11-L2: Botty-Native Review Cycle (Dev + Reviewer)
+
+**Type**: Integration (single project, two agents, botty-native)
+
+**What it tests**: The full review spawn chain: dev agent requests review with @mention, reviewer hook fires, botty spawns reviewer, both agents coordinate asynchronously through crit + botbus. Tests whether the planted defect is found, blocked, fixed, re-reviewed, and LGTMd — all through the real hook/spawn infrastructure, not hand-crafted prompts.
+
+**Prerequisite**: E11-L1 validates the core spawn chain. L2 adds the reviewer hook and review cycle.
+
+**Setup**: `evals/scripts/e11-l2-setup.sh` creates an isolated eval environment with one Rust/Axum project, one bead ("Add file serving endpoint at GET /files/:name"), registered dev-loop AND reviewer hooks, planted defect (path traversal likely). The task-request is sent by the run script to trigger the dev-loop spawn.
+
+**Run**: `evals/scripts/e11-l2-run.sh` (orchestrator) — sends task-request, polls for bead completion with 20-minute timeout and 5-minute stuck detection, captures artifacts from both agents, runs verification.
+
+### Scoring (95 pts)
+
+#### Spawn Chain (20 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Router hook fired (respond.mjs spawned) | 4 | bus history shows spawn activity, respond log exists |
+| respond.mjs triaged as work (not chat/question) | 4 | dev-loop spawned, not conversational mode |
+| dev-loop spawned by respond.mjs | 4 | botty tail shows dev agent content, channel history shows dev start |
+| Reviewer hook fired on @mention | 4 | botty tail shows reviewer content, channel history shows reviewer spawn |
+| Both agents exited cleanly | 4 | botty list empty after timeout, final-status.txt shows "completed" for both |
+
+#### Protocol Compliance (30 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Bead status transitions (open → in_progress → closed) | 5 | `br show` status=closed, channel history shows claims |
+| Progress comments posted to bead | 3 | `br show` comment count > 1 |
+| Workspace created with maw ws create | 3 | `maw ws list` showed non-default ws during run, or bead closed (merged) |
+| Claims staked (bead:// and workspace://) | 4 | Channel history or bead state shows claims |
+| Claims released after work | 5 | `bus claims list --agent $DEV` shows no bead:// or workspace:// claims |
+| br sync called | 2 | Dev agent log shows `br sync` |
+| Bus labels correct (task-claim, review-request, review-done, task-done) | 4 | `bus history` shows all 4 labels |
+| Channel announcements (start, progress, completion) | 4 | Channel history shows lifecycle messages |
+
+#### Review Cycle (30 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| crit reviews create from workspace diff | 3 | Dev log shows `crit reviews create` |
+| crit reviews request with @reviewer mention | 3 | Dev log shows `crit reviews request`, channel has @mention |
+| Bus message contains @mention (triggers hook) | 2 | Channel history has @reviewer |
+| Reviewer read code from workspace path (ws/$WS/) | 3 | Reviewer log shows workspace path reads |
+| Reviewer identified planted defect | 5 | Reviewer log mentions defect (path traversal, security, etc.) |
+| Reviewer BLOCKed review | 3 | Reviewer log shows `crit block` |
+| Dev addressed feedback in workspace | 3 | Dev log shows fix, reply to thread |
+| Dev re-requested review after fix | 2 | Dev log shows re-request |
+| Reviewer re-reviewed from workspace (not cached) | 3 | Reviewer log shows re-read of source |
+| Reviewer LGTMd after fix | 2 | Reviewer log shows `crit lgtm` |
+| crit reviews mark-merged after merge | 1 | Dev log shows mark-merged |
+
+#### Code Correctness (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| cargo check passes on main | 5 | `maw exec default -- cargo check` succeeds |
+| Endpoint exists and is wired | 3 | src/main.rs has /files route |
+| Planted defect fixed in final code | 5 | src/main.rs has canonicalize or path validation |
+| Response format matches spec | 2 | StatusCode 404/500 handling present |
+
+#### Friction Extraction (diagnostic, not scored)
+
+Measured from agent logs, reported but not factored into the 95-point total. Used to drive tool improvement priorities.
+
+| Metric | How to extract |
+|--------|---------------|
+| Tool errors (exit code 1/2) | `grep -c "Exit code [12]" agent-*.log` |
+| --help lookups (mid-session) | `grep -c "\-\-help" agent-*.log` |
+| Retry attempts | `grep -c "retry\|again" agent-*.log` |
+| Path confusion instances | `grep -c "No such file\|path.*not found" agent-*.log` |
+| Duplicate operations | `grep -c "already.*exists" agent-*.log` |
+| Iteration counts | `grep -c "iteration\|loop.*start" agent-*.log` per agent |
+| Time per phase | Timestamps from run script (spawn, first claim, review request, LGTM, merge) |
+| Total elapsed time | Run script timeout vs actual completion time |
+
+**Summary:**
+```
+Spawn Chain:          20 pts
+Protocol Compliance:  30 pts
+Review Cycle:         30 pts
+Code Correctness:     15 pts
+                     ───────
+Total:                95 pts
+
+Pass: ≥66 (69%)
+Excellent: ≥81 (85%)
+```
+
+### Key Differences from E10
+
+- **No phase scripts**: One message triggers the entire dev + review workflow autonomously
+- **Tests loop scripts**: dev-loop.mjs AND reviewer-loop.mjs drive behavior
+- **Tests both hook types**: Router hook (claim-based) spawns dev, mention hook spawns reviewer
+- **Tests async coordination**: Dev must wait for reviewer to complete (separate botty session)
+- **Polling-based observation**: 30-second polling with stuck detection instead of sequential phases
+- **Friction extraction**: Diagnostic only — used to identify tool UX issues, not part of the score
+
+### Expected Results
+
+| Model | Dev Agent | Reviewer | Expected Score | Reasoning |
+|-------|-----------|----------|----------------|-----------|
+| Opus | Opus | Opus | 75-90 (79-95%) | Strong at coordination and security review. May hit context limits on complex fixes. |
+| Sonnet | Sonnet | Opus | 65-85 (68-89%) | Dev may struggle with re-review loop. Opus reviewer should catch defect. |
+| Haiku | Haiku | Sonnet | 40-60 (42-63%) | Likely misses subtleties in both dev and review. May rubber-stamp or over-block. |
+
+### Verification
+
+```bash
+source $EVAL_DIR/.eval-env
+BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history "$(basename "$PROJECT_DIR")" -n 100
+cat $EVAL_DIR/artifacts/agent-$DEV_AGENT.log | tail -100
+cat $EVAL_DIR/artifacts/agent-$REVIEWER.log | tail -100
+cd $PROJECT_DIR && maw exec default -- br show $BEAD
+cd $PROJECT_DIR && maw ws list
+BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus claims list
+cd $PROJECT_DIR && maw exec default -- cargo check
+```
+
+**Pass**: >= 66 (69%), **Excellent**: >= 81 (85%)
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| (none yet) | | | |
