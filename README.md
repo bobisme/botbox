@@ -6,15 +6,18 @@ Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps proj
 
 ## Eval Results
 
-16 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the botbox protocol (triage, claim, start, work, finish, release) when driven by `scripts/agent-loop.sh`.
+32 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the botbox protocol when driven autonomously through the botty-native spawn chain (hooks → botty spawn → loop scripts).
 
-| Model  | Best Score | Eval Version        | Key Result                                                  |
-| ------ | ---------- | ------------------- | ----------------------------------------------------------- |
-| Opus   | 100%       | L2 (single session) | Perfect protocol compliance                                 |
-| Sonnet | 99%        | v3 (inbox triage)   | Handles full inbox + beads lifecycle                        |
-| Haiku  | 94%        | v2.1 (beads only)   | Excellent on pre-groomed tasks; struggles with inbox triage |
+| Eval | Model | Score | What it tests |
+|------|-------|-------|---------------|
+| **E11-L3** | Opus | 133/140 (95%) | Full lifecycle: 2 projects, 3 agents, cross-project coordination, security review cycle — all from a single task-request |
+| **E10** | Opus+Sonnet | 159/160 (99%) | 8-phase scripted lifecycle: 2 projects, 3 agents, cross-project bug discovery, review block/fix/LGTM |
+| **E11-L2** | Opus | 97/105 (92%) | Botty-native dev + reviewer: single project, review cycle through real hooks |
+| **R5** | Opus | 70/70 (100%) | Cross-project coordination: file bugs in external projects via bus channels |
+| **R4** | Sonnet | 95/95 (100%) | Integration: full triage → work → review → merge lifecycle |
+| **R8** | Opus | 49/65 (75%) | Adversarial review: multi-file security bugs requiring cross-file reasoning |
 
-**Takeaway**: Sonnet handles the full protocol including inbox triage. Haiku matches Sonnet on core task execution (94% vs 94-99%) but fails on message classification — use it for pre-triaged work. See [evals/results/](evals/results/README.md) for all 16 runs, scoring rubrics, and detailed findings.
+**Takeaway**: The full autonomous pipeline works. Agents spawn via hooks, coordinate across projects via bus channels, review each other's code via crit, and merge work through maw — all without human intervention. Friction comes from CLI typos, not protocol failures. See [evals/results/](evals/results/README.md) for all 32 runs and detailed findings.
 
 ## What is botbox?
 
@@ -92,17 +95,20 @@ These are the source of truth. When botbox updates, run `botbox sync` to pull ch
 
 ## Agent loop
 
-`scripts/agent-loop.sh` drives autonomous agent workers:
+Agents are spawned automatically via botbus hooks when messages arrive on project channels. The spawn chain:
 
-```bash
-# Run a Sonnet worker (full protocol including inbox)
-CLAUDE_MODEL=sonnet bash scripts/agent-loop.sh my-project
-
-# Run a Haiku worker (best for pre-groomed beads)
-CLAUDE_MODEL=haiku bash scripts/agent-loop.sh my-project
+```
+message → botbus hook → botty spawn → loop script (respond.mjs → dev-loop.mjs)
 ```
 
-The script handles agent leases, work detection (`has_work()`), one-bead-per-iteration discipline, and cleanup on exit. Each iteration spawns a `claude -p` session that executes one triage-start-work-finish cycle.
+Loop scripts (`.agents/botbox/scripts/`) drive the autonomous workflow:
+
+- **respond.mjs** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
+- **dev-loop.mjs** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
+- **agent-loop.mjs** — Worker. Sequential: triage → start → work → review → finish.
+- **reviewer-loop.mjs** — Reviewer. Processes crit reviews, votes LGTM or BLOCK.
+
+No manual agent management needed — send a message to a project channel and the hook chain handles the rest.
 
 ## Ecosystem
 
