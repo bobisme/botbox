@@ -148,10 +148,10 @@ project-root/          ← bare repo (no source files here)
 - \`ws/default/\` is the main workspace — beads, config, and project files live here
 - **Never merge or destroy the default workspace.** It is where other branches merge INTO, not something you merge.
 - Agent workspaces (\`ws/<name>/\`) are isolated jj commits for concurrent work
-- Use \`maw exec <ws> -- <command>\` to run commands in a workspace context
-- Use \`maw exec default -- br|bv ...\` for beads commands (always in default workspace)
-- Use \`maw exec <ws> -- crit ...\` for review commands (always in the review's workspace)
-- Never run \`br\`, \`bv\`, \`crit\`, or \`jj\` directly — always go through \`maw exec\`
+- **ALL commands must go through \`maw exec\`** — this includes \`br\`, \`bv\`, \`crit\`, \`jj\`, \`cargo\`, \`bun\`, and any project tool. Never run them directly from the bare repo root.
+- Use \`maw exec default -- <command>\` for beads (\`br\`, \`bv\`) and general project commands
+- Use \`maw exec <agent-ws> -- <command>\` for workspace-scoped commands (\`crit\`, \`jj describe\`, \`cargo check\`)
+- **crit commands must run in the review's workspace**, not default: \`maw exec <ws> -- crit ...\`
 
 ### Beads Quick Reference
 

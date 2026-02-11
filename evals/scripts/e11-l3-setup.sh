@@ -25,6 +25,8 @@ mkdir -p "$EVAL_BASE"
 EVAL_DIR=$(mktemp -d "$EVAL_BASE/e11-l3-XXXXXXXXXX")
 ALPHA_DIR="$EVAL_DIR/alpha"
 BETA_DIR="$EVAL_DIR/beta"
+ALPHA_REMOTE="$EVAL_DIR/alpha-remote.git"
+BETA_REMOTE="$EVAL_DIR/beta-remote.git"
 mkdir -p "$ALPHA_DIR" "$BETA_DIR" "$EVAL_DIR/artifacts"
 
 ALPHA_DEV="alpha-dev"
@@ -44,10 +46,17 @@ bus init
 } > "$EVAL_DIR/artifacts/tool-versions.env"
 
 # ============================================================
+# Fake git remotes (so maw push / maw release succeed)
+# ============================================================
+git init --bare "$BETA_REMOTE"
+git init --bare "$ALPHA_REMOTE"
+
+# ============================================================
 # Beta project (validation library)
 # ============================================================
 cd "$BETA_DIR"
 jj git init
+jj git remote add origin "$BETA_REMOTE"
 
 cargo init --lib --name beta
 
@@ -137,6 +146,7 @@ cargo test
 
 jj describe -m "beta: validation library"
 jj bookmark create main -r @
+jj git push --bookmark main
 jj new
 
 # ============================================================
@@ -149,6 +159,7 @@ jj new
 # Cargo.toml would move to ws/default/ and alpha's cargo check would fail.
 cd "$ALPHA_DIR"
 jj git init
+jj git remote add origin "$ALPHA_REMOTE"
 
 mkdir -p src files
 
@@ -234,6 +245,7 @@ cargo check
 
 jj describe -m "alpha: initial API with health and debug endpoints"
 jj bookmark create main -r @
+jj git push --bookmark main
 jj new
 
 # ============================================================
