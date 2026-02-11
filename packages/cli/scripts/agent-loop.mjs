@@ -266,8 +266,16 @@ At the end of your work, output exactly one of these completion signals:
      * Find the review: maw exec $WS -- crit review <review-id>
      * Check review status: maw exec \$WS -- crit review <review-id>
      * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
-     * If BLOCKED (changes requested): follow .agents/botbox/review-response.md to fix issues
-       in the workspace, re-request review, then STOP this iteration.
+     * If BLOCKED (changes requested): fix the issues, then re-request review:
+       1. Read threads: maw exec $WS -- crit review <review-id> (threads show inline with comments)
+       2. For each unresolved thread with reviewer feedback:
+          - Fix the code in the workspace (use absolute WS_PATH for file edits)
+          - Reply: maw exec $WS -- crit reply <thread-id> --agent ${AGENT} "Fixed: <what you did>"
+          - Resolve: maw exec $WS -- crit threads resolve <thread-id> --agent ${AGENT}
+       3. Update commit: maw exec $WS -- jj describe -m "<id>: <summary> (addressed review feedback)"
+       4. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers ${PROJECT}-security --agent ${AGENT}
+       5. Announce: bus send --agent ${AGENT} ${PROJECT} "Review updated: <review-id> — addressed feedback @${PROJECT}-security" -L review-response
+       STOP this iteration — wait for re-review.
      * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
      * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
    - If no review comment (work was in progress when session ended):
