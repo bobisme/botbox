@@ -96,6 +96,16 @@ FINAL_STATUS_ALPHA_DEV="unknown"
 FINAL_STATUS_ALPHA_SECURITY="unknown"
 FINAL_STATUS_BETA_DEV="unknown"
 
+# Track previous running state for incremental log capture.
+# When an agent transitions from running → not running, we capture its log
+# immediately. Without this, agents that restart (e.g., alpha-security for
+# initial review then re-review) would have their first session's log
+# overwritten by botty's new session.
+PREV_ALPHA_DEV_RUNNING=""
+PREV_ALPHA_SEC_RUNNING=""
+PREV_BETA_DEV_RUNNING=""
+ALPHA_SEC_LOG_SEQ=0
+
 # Phase timing
 ALPHA_DEV_SPAWN_TIME=""
 ALPHA_SECURITY_SPAWN_TIME=""
@@ -161,6 +171,16 @@ while true; do
   if [[ -n "$RESPOND_RUNNING" ]]; then
     echo "  respond: RUNNING ($RESPOND_RUNNING)"
   fi
+
+  # Incremental log capture: when an agent stops, save its log before re-spawn overwrites it
+  if [[ -n "$PREV_ALPHA_SEC_RUNNING" && -z "$ALPHA_SEC_RUNNING" ]]; then
+    ALPHA_SEC_LOG_SEQ=$((ALPHA_SEC_LOG_SEQ + 1))
+    botty tail "$ALPHA_SECURITY" -n 500 > "$ARTIFACTS/agent-${ALPHA_SECURITY}-session${ALPHA_SEC_LOG_SEQ}.log" 2>/dev/null || true
+    echo "  (captured alpha-security session $ALPHA_SEC_LOG_SEQ log)"
+  fi
+  PREV_ALPHA_DEV_RUNNING="$ALPHA_DEV_RUNNING"
+  PREV_ALPHA_SEC_RUNNING="$ALPHA_SEC_RUNNING"
+  PREV_BETA_DEV_RUNNING="$BETA_DEV_RUNNING"
 
   # Check alpha bead status
   cd "$ALPHA_DIR"
@@ -254,11 +274,24 @@ echo ""
 # --- Capture artifacts ---
 echo "--- Capturing artifacts ---"
 
-# Agent logs
+# Agent logs — capture final session, then prepend any earlier session logs
 for AGENT_NAME in "$ALPHA_DEV" "$ALPHA_SECURITY" "$BETA_DEV"; do
   botty tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${AGENT_NAME}.log" 2>/dev/null || \
     echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${AGENT_NAME}.log"
   echo "  log: $ARTIFACTS/agent-${AGENT_NAME}.log"
+done
+
+# Merge earlier session logs (e.g., alpha-security initial review before re-review)
+for SESSION_LOG in "$ARTIFACTS"/agent-*-session*.log; do
+  [[ -f "$SESSION_LOG" ]] || continue
+  AGENT_BASE=$(echo "$SESSION_LOG" | sed 's/-session[0-9]*\.log/.log/')
+  if [[ -f "$AGENT_BASE" ]]; then
+    # Prepend session log to main log (earlier sessions first)
+    TMPMERGE=$(mktemp)
+    { echo "=== Earlier session ==="; cat "$SESSION_LOG"; echo ""; echo "=== Final session ==="; cat "$AGENT_BASE"; } > "$TMPMERGE"
+    mv "$TMPMERGE" "$AGENT_BASE"
+    echo "  merged: $SESSION_LOG → $AGENT_BASE"
+  fi
 done
 
 # Respond agent logs (may be multiple — alpha-respond, beta-respond)

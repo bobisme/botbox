@@ -139,13 +139,14 @@ jj describe -m "beta: validation library"
 jj bookmark create main -r @
 jj new
 
-# botbox init: maw init (bare repo + ws/default/), br init, crit init, hooks
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name beta --type library --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
-
 # ============================================================
 # Alpha project (API with planted defects)
 # ============================================================
+# NOTE: Both projects are set up and compiled BEFORE running botbox init on
+# either. botbox init runs maw init which moves files to ws/default/ (bare repo
+# layout). Alpha depends on beta via `path = "../beta"`, which needs beta's
+# Cargo.toml at the project root. If we ran botbox init on beta first, that
+# Cargo.toml would move to ws/default/ and alpha's cargo check would fail.
 cd "$ALPHA_DIR"
 jj git init
 
@@ -235,7 +236,16 @@ jj describe -m "alpha: initial API with health and debug endpoints"
 jj bookmark create main -r @
 jj new
 
-# botbox init: maw init, br init, crit init, hooks (dev-loop + reviewer)
+# ============================================================
+# Initialize both projects with botbox (maw v2 bare repo layout)
+# ============================================================
+# Now that both projects compile, run botbox init. This moves source files
+# to ws/default/ and creates the bare repo structure.
+cd "$BETA_DIR"
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
+  botbox init --name beta --type library --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+
+cd "$ALPHA_DIR"
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
   botbox init --name alpha --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
 

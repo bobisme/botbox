@@ -35,6 +35,7 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 | R7-1 | Planning (Decomposition + Execution) | Opus | 1+7 | 76/95 (80%) | Diamond DAG (7 subtasks, 3 parallel). Completed 3/7 before context limit. 8 tests pass. |
 | E10-1 | Full Lifecycle (2 projects, 3 agents, 8 phases) | Opus+Sonnet | 2 | 158/160 (99%) | Near-perfect. Security reviewer found 7 issues (2 CRITICAL). All agents followed protocol. |
 | E10-2 | Full Lifecycle (2 projects, 3 agents, 8 phases) | Opus+Sonnet | 2 | 159/160 (99%) | Reproducible. Clean run with no setup workarounds needed. crit FK constraint persists. |
+| E11-L3-1 | Botty-Native Full Lifecycle (2 projects, 3 agents) | Opus | 2 | 133/140 (95%) | First botty-native eval. All agents spawn via hooks. Cross-project coordination organic. |
 
 ## Key Learnings
 
@@ -162,3 +163,4 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - [R7-1](2026-02-01-planning-r7-run1-opus.md)
 - [E10-1](2026-02-06-e10-run1-opus.md)
 - [E10-2](2026-02-07-e10-run2-opus.md)
+- [E11-L3-1](2026-02-11-e11-l3-run1-opus.md)

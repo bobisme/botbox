@@ -1663,4 +1663,4 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| (none yet) | | | |
+| L3-1 | Opus 4.6 | 133/140 (95%) EXCELLENT | First botty-native full lifecycle. All agents spawned via hooks. 9 tool errors from crit workspace confusion. |
