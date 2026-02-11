@@ -421,7 +421,7 @@ check "Response format matches spec" "$($FORMAT_OK && echo 0 || echo 1)" 2
 # Friction Extraction (diagnostic, not scored)
 # ============================================================
 echo ""
-echo "=== Friction Extraction (diagnostic) ==="
+echo "=== Friction Efficiency (10 pts) ==="
 echo ""
 
 echo "Analyzing agent logs for friction signals..."
@@ -465,10 +465,61 @@ echo "  Path confusion instances: $PATH_CONFUSION"
 echo "  Duplicate operations: $DUPLICATE_OPS"
 echo ""
 
-TOTAL_FRICTION=$((DEV_ERRORS + DEV_HELP_LOOKUPS + DEV_RETRIES + REVIEWER_ERRORS + REVIEWER_HELP_LOOKUPS + REVIEWER_RETRIES + PATH_CONFUSION + DUPLICATE_OPS))
+# Totals across both agents
+TOTAL_ERRORS=$((DEV_ERRORS + REVIEWER_ERRORS))
+TOTAL_HELP=$((DEV_HELP_LOOKUPS + REVIEWER_HELP_LOOKUPS))
+TOTAL_RETRIES=$((DEV_RETRIES + REVIEWER_RETRIES))
+TOTAL_FRICTION=$((TOTAL_ERRORS + TOTAL_HELP + TOTAL_RETRIES + PATH_CONFUSION + DUPLICATE_OPS))
+echo "Totals: $TOTAL_ERRORS errors, $TOTAL_HELP --help, $TOTAL_RETRIES retries, $PATH_CONFUSION path confusion, $DUPLICATE_OPS duplicates"
 echo "Total friction signals: $TOTAL_FRICTION"
 echo ""
 
+# --- Check 29: Tool errors ---
+echo "--- Check 29: Tool errors ---"
+TOTAL=$((TOTAL + 5))
+if [[ "$TOTAL_ERRORS" -eq 0 ]]; then
+  echo "PASS (5 pts): Zero tool errors"
+  SCORE=$((SCORE + 5)); PASS=$((PASS + 1))
+elif [[ "$TOTAL_ERRORS" -le 5 ]]; then
+  echo "PARTIAL (3/5 pts): $TOTAL_ERRORS tool errors (threshold: ≤5)"
+  SCORE=$((SCORE + 3)); PASS=$((PASS + 1))
+else
+  echo "FAIL (0/5 pts): $TOTAL_ERRORS tool errors (threshold: ≤5)"
+  FAIL=$((FAIL + 1))
+fi
+echo ""
+
+# --- Check 30: --help lookups ---
+echo "--- Check 30: --help lookups ---"
+TOTAL=$((TOTAL + 3))
+if [[ "$TOTAL_HELP" -eq 0 ]]; then
+  echo "PASS (3 pts): Zero --help lookups"
+  SCORE=$((SCORE + 3)); PASS=$((PASS + 1))
+elif [[ "$TOTAL_HELP" -le 2 ]]; then
+  echo "PARTIAL (2/3 pts): $TOTAL_HELP --help lookups (threshold: ≤2)"
+  SCORE=$((SCORE + 2)); PASS=$((PASS + 1))
+else
+  echo "FAIL (0/3 pts): $TOTAL_HELP --help lookups (threshold: ≤2)"
+  FAIL=$((FAIL + 1))
+fi
+echo ""
+
+# --- Check 31: Retry attempts ---
+echo "--- Check 31: Retry attempts ---"
+TOTAL=$((TOTAL + 2))
+if [[ "$TOTAL_RETRIES" -eq 0 ]]; then
+  echo "PASS (2 pts): Zero retry attempts"
+  SCORE=$((SCORE + 2)); PASS=$((PASS + 1))
+elif [[ "$TOTAL_RETRIES" -le 2 ]]; then
+  echo "PARTIAL (1/2 pts): $TOTAL_RETRIES retries (threshold: ≤2)"
+  SCORE=$((SCORE + 1)); PASS=$((PASS + 1))
+else
+  echo "FAIL (0/2 pts): $TOTAL_RETRIES retries (threshold: ≤2)"
+  FAIL=$((FAIL + 1))
+fi
+echo ""
+
+# Additional diagnostics (not scored)
 # Phase timing (from artifacts if captured)
 if [[ -f "$ARTIFACTS/phase-times.log" ]]; then
   echo "Phase timing:"
@@ -477,8 +528,8 @@ if [[ -f "$ARTIFACTS/phase-times.log" ]]; then
 fi
 
 # Iteration counts (from logs)
-DEV_ITERATIONS=$(grep -c "iteration\|loop.*start" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null || echo "unknown")
-REVIEWER_ITERATIONS=$(grep -c "iteration\|loop.*start" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || echo "unknown")
+DEV_ITERATIONS=$(grep -c "iteration\|loop.*start" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null) || DEV_ITERATIONS=0
+REVIEWER_ITERATIONS=$(grep -c "iteration\|loop.*start" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null) || REVIEWER_ITERATIONS=0
 echo "Iterations:"
 echo "  Dev agent: $DEV_ITERATIONS"
 echo "  Reviewer agent: $REVIEWER_ITERATIONS"
@@ -497,7 +548,7 @@ echo ""
 
 if [[ "$FAIL" -eq 0 ]]; then
   echo "RESULT: ALL CHECKS PASSED ($SCORE/$TOTAL)"
-elif [[ "$SCORE" -ge 66 ]]; then
+elif [[ "$SCORE" -ge 70 ]]; then
   echo "RESULT: PASS ($SCORE/$TOTAL) — $FAIL checks failed"
 else
   echo "RESULT: FAIL ($SCORE/$TOTAL) — $FAIL checks failed"

@@ -1468,15 +1468,20 @@ cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
 | Planted defect fixed in final code | 5 | src/main.rs has canonicalize or path validation |
 | Response format matches spec | 2 | StatusCode 404/500 handling present |
 
-#### Friction Extraction (diagnostic, not scored)
+#### Friction Efficiency (10 pts)
 
-Measured from agent logs, reported but not factored into the 95-point total. Used to drive tool improvement priorities.
+Scored from agent logs. Friction = wasted tokens, wasted time. Counts are summed across both agents.
+
+| Check | Full | Partial | Zero | How to extract |
+|-------|------|---------|------|---------------|
+| Tool errors (exit code 1/2) | 0 errors (5 pts) | 1-5 errors (3 pts) | >5 errors (0 pts) | `grep -c "Exit code [12]" agent-*.log` |
+| --help lookups (mid-session) | 0 lookups (3 pts) | 1-2 lookups (2 pts) | >2 lookups (0 pts) | `grep -c "\-\-help" agent-*.log` |
+| Retry attempts | 0 retries (2 pts) | 1-2 retries (1 pt) | >2 retries (0 pts) | `grep -c "retry\|again" agent-*.log` |
+
+Additional diagnostics (not scored, but tracked for improvement priorities):
 
 | Metric | How to extract |
 |--------|---------------|
-| Tool errors (exit code 1/2) | `grep -c "Exit code [12]" agent-*.log` |
-| --help lookups (mid-session) | `grep -c "\-\-help" agent-*.log` |
-| Retry attempts | `grep -c "retry\|again" agent-*.log` |
 | Path confusion instances | `grep -c "No such file\|path.*not found" agent-*.log` |
 | Duplicate operations | `grep -c "already.*exists" agent-*.log` |
 | Iteration counts | `grep -c "iteration\|loop.*start" agent-*.log` per agent |
@@ -1489,11 +1494,12 @@ Spawn Chain:          20 pts
 Protocol Compliance:  30 pts
 Review Cycle:         30 pts
 Code Correctness:     15 pts
+Friction Efficiency:  10 pts
                      ───────
-Total:                95 pts
+Total:               105 pts
 
-Pass: ≥66 (69%)
-Excellent: ≥81 (85%)
+Pass: ≥70 (67%)
+Excellent: ≥89 (85%)
 ```
 
 ### Key Differences from E10
@@ -1503,7 +1509,7 @@ Excellent: ≥81 (85%)
 - **Tests both hook types**: Router hook (claim-based) spawns dev, mention hook spawns reviewer
 - **Tests async coordination**: Dev must wait for reviewer to complete (separate botty session)
 - **Polling-based observation**: 30-second polling with stuck detection instead of sequential phases
-- **Friction extraction**: Diagnostic only — used to identify tool UX issues, not part of the score
+- **Friction scoring**: Tool errors, --help lookups, and retries are scored (10 pts) to create pressure for CLI discoverability improvements
 
 ### Expected Results
 
