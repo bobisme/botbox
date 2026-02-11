@@ -78,6 +78,10 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - **`crit reviews list` FK constraint bug** — Threads created referencing reviews not yet in SQLite index. Manifests as "Failed to apply event (type: ThreadCreated) FOREIGN KEY constraint failed". Needs crit fix. Workaround: grep agent logs for review IDs.
 - **Tool JSON key names are inconsistent** — `maw ws list` omits `path`, `crit reviews list` uses `review_id` not `id`, `crit review` uses `thread_id` not `id`. Eval scripts must match actual JSON schemas.
 - **`agent://` claims are hook-managed** — When hooks fire on announcements, they re-stake `agent://` claims. Verify scripts should only check for work claims (`bead://`, `workspace://`).
+- **`botty tail` only shows the last session** — When an agent restarts (e.g., alpha-security spawned twice for initial review + re-review), the first session's log is lost from `botty tail`. Verify scripts must also check channel history as a fallback. Run scripts should capture incremental logs when agents transition from running to not running.
+- **Cargo path dependencies break across `maw init`** — `path = "../beta"` in Cargo.toml resolves relative to the workspace. After `maw init` moves files to `ws/default/`, the path changes. Fix: compile both projects before running `botbox init` on either.
+- **E11-L3 validates the full botty-native spawn chain** — hooks → botty spawn → loop scripts → cross-project coordination → review cycle. All autonomous from a single task-request. 133/140 (95%), only friction points lost.
+- **crit workspace confusion is a persistent friction source** — Agents run `maw exec default -- crit ...` instead of `maw exec <ws> -- crit ...`. This accounted for 2/9 tool errors in E11-L3-1. The distinction (br = always default, crit = always workspace) is documented but agents still get confused when switching between the two.
 
 ## Upstream Tool Versions (as of 2026-01-31)
 
