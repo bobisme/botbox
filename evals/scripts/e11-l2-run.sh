@@ -108,8 +108,8 @@ while true; do
 
   # Check botty — are agents running?
   BOTTY_JSON=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
-  DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.name == \"$DEV_AGENT\") | .name" 2>/dev/null || echo "")
-  REVIEWER_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.name == \"$REVIEWER\") | .name" 2>/dev/null || echo "")
+  DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
+  REVIEWER_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
 
   if [[ -n "$DEV_RUNNING" ]]; then
     echo "  Dev agent: RUNNING"
@@ -174,8 +174,8 @@ while true; do
     sleep 10
     # Check if agents exited
     BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
-    DEV_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.name == \"$DEV_AGENT\") | .name" 2>/dev/null || echo "")
-    REVIEWER_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.name == \"$REVIEWER\") | .name" 2>/dev/null || echo "")
+    DEV_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
+    REVIEWER_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
     if [[ -z "$DEV_STILL_RUNNING" ]]; then
       FINAL_STATUS_DEV="completed"
     else
@@ -194,8 +194,8 @@ while true; do
   if [[ $IDLE_TIME -ge $STUCK_THRESHOLD ]]; then
     echo "  WARNING: No activity for ${IDLE_TIME}s (threshold: ${STUCK_THRESHOLD}s)"
     # Check if agents are still alive
-    DEV_ALIVE=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.name == \"$DEV_AGENT\") | .name" 2>/dev/null || echo "")
-    REVIEWER_ALIVE=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.name == \"$REVIEWER\") | .name" 2>/dev/null || echo "")
+    DEV_ALIVE=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
+    REVIEWER_ALIVE=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
     if [[ -z "$DEV_ALIVE" && -z "$REVIEWER_ALIVE" ]]; then
       echo "  Both agents exited without closing bead — marking as agent-exited"
       FINAL_STATUS_DEV="agent-exited"
@@ -227,7 +227,7 @@ botty tail "respond" -n 500 > "$ARTIFACTS/agent-respond.log" 2>/dev/null || \
   echo "(respond agent not found or already exited)" > "$ARTIFACTS/agent-respond.log"
 
 # Also try to capture any dev-loop worker agents
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.name // empty' 2>/dev/null || true); do
+for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   if [[ "$agent_name" != "$DEV_AGENT" && "$agent_name" != "$REVIEWER" && "$agent_name" != "respond" ]]; then
     botty tail "$agent_name" -n 500 > "$ARTIFACTS/agent-${agent_name}.log" 2>/dev/null || true
     echo "  worker log: $ARTIFACTS/agent-${agent_name}.log"
@@ -280,7 +280,7 @@ botty kill "$DEV_AGENT" 2>/dev/null || true
 botty kill "$REVIEWER" 2>/dev/null || true
 botty kill "respond" 2>/dev/null || true
 # Kill any worker agents that might still be running
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.name // empty' 2>/dev/null || true); do
+for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   botty kill "$agent_name" 2>/dev/null || true
 done
 echo "  All agents stopped."

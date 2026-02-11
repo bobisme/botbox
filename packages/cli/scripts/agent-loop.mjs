@@ -340,7 +340,10 @@ At the end of your work, output exactly one of these completion signals:
    First, check the bead's risk label: maw exec default -- br show <id> — look for risk:low, risk:high, or risk:critical labels.
    No risk label = risk:medium (standard review, current default).
 
-   RISK:LOW PATH — Skip review entirely:
+   RISK:LOW PATH (REVIEW is true) — Lightweight review:
+     Same as RISK:MEDIUM below. risk:low still gets reviewed when REVIEW is true — the reviewer can fast-track it.
+
+   RISK:LOW PATH (REVIEW is false) — Self-review:
      Describe the change: maw exec \$WS -- jj describe -m "<id>: <summary>".
      Add self-review comment: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Self-review (risk:low): <brief what you verified — tests pass, change is correct>"
      Go directly to step 7 (FINISH). No crit review needed.
@@ -377,7 +380,7 @@ At the end of your work, output exactly one of these completion signals:
        bus send --agent ${AGENT} ${PROJECT} "risk:critical review for <id>: requires human approval before merge. ${CRITICAL_APPROVERS.length > 0 ? 'Approvers: ' + CRITICAL_APPROVERS.join(', ') : 'Check project.criticalApprovers in .botbox.json'}" -L review-request
      STOP this iteration.
 
-7. FINISH (only reached after LGTM from step 0, or if risk:low self-review):
+7. FINISH (only reached after LGTM from step 0, or if risk:low self-review when REVIEW is false):
    If a review was conducted:
      maw exec default -- crit reviews mark-merged <review-id> --agent ${AGENT}.
    RISK:CRITICAL CHECK — Before merging a risk:critical bead:
@@ -414,7 +417,7 @@ Key rules:
 - If a tool behaves unexpectedly, report it: bus send --agent ${AGENT} ${PROJECT} "Tool issue: <details>" -L tool-issue.
 - STOP after completing one task or determining no work. Do not loop.
 - Always output <promise>COMPLETE</promise> or <promise>BLOCKED</promise> at the end.
-- RISK LABELS: Check bead risk labels before review. risk:low skips review, risk:medium is standard, risk:high requires failure-mode checklist, risk:critical requires human approval.`;
+- RISK LABELS: Check bead risk labels before review. When REVIEW is true, ALL risk levels go through review (risk:low gets lightweight review, risk:medium standard, risk:high failure-mode checklist, risk:critical human approval). When REVIEW is false, risk:low can self-review.`;
 }
 
 // --- Run agent via botbox run-agent ---

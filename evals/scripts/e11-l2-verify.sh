@@ -428,17 +428,21 @@ echo "Analyzing agent logs for friction signals..."
 echo ""
 
 # Count tool errors in dev log
-DEV_ERRORS=$(grep -c "Exit code [12]" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null || echo "0")
-DEV_HELP_LOOKUPS=$(grep -c "\-\-help" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null || echo "0")
-DEV_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null || echo "0")
+# NOTE: grep -c outputs "0" and exits 1 when no matches — use VAR=$(grep -c ...) || VAR=0 to avoid
+# the broken $(grep -c ... || echo "0") pattern that produces "0\n0"
+DEV_ERRORS=$(grep -c "Exit code [12]" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null) || DEV_ERRORS=0
+DEV_HELP_LOOKUPS=$(grep -c "\-\-help" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null) || DEV_HELP_LOOKUPS=0
+DEV_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null) || DEV_RETRIES=0
 
 # Count tool errors in reviewer log
-REVIEWER_ERRORS=$(grep -c "Exit code [12]" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || echo "0")
-REVIEWER_HELP_LOOKUPS=$(grep -c "\-\-help" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || echo "0")
-REVIEWER_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || echo "0")
+REVIEWER_ERRORS=$(grep -c "Exit code [12]" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null) || REVIEWER_ERRORS=0
+REVIEWER_HELP_LOOKUPS=$(grep -c "\-\-help" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null) || REVIEWER_HELP_LOOKUPS=0
+REVIEWER_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null) || REVIEWER_RETRIES=0
 
-# Count path confusion (wrong workspace references)
-PATH_CONFUSION=$(grep -c "No such file\|cannot find\|path.*not found" "$ARTIFACTS/agent-${DEV_AGENT}.log" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || echo "0")
+# Count path confusion (wrong workspace references) — grep -c per file to avoid multiline output
+_PC_DEV=$(grep -c "No such file\|cannot find\|path.*not found" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null) || _PC_DEV=0
+_PC_REV=$(grep -c "No such file\|cannot find\|path.*not found" "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null) || _PC_REV=0
+PATH_CONFUSION=$((_PC_DEV + _PC_REV))
 
 # Count duplicate operations
 DUPLICATE_OPS=0

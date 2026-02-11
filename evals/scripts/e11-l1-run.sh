@@ -140,7 +140,7 @@ botty tail "$ECHO_DEV" -n 500 > "$ARTIFACTS/agent-echo-dev.log" 2>/dev/null || \
 echo "  agent log: $ARTIFACTS/agent-echo-dev.log"
 
 # Also try to capture any dev-loop worker agents
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.name // empty' 2>/dev/null || true); do
+for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   if [[ "$agent_name" != "$ECHO_DEV" ]]; then
     botty tail "$agent_name" -n 500 > "$ARTIFACTS/agent-${agent_name}.log" 2>/dev/null || true
     echo "  worker log: $ARTIFACTS/agent-${agent_name}.log"
@@ -178,7 +178,7 @@ echo ""
 echo "--- Cleaning up agents ---"
 botty kill "$ECHO_DEV" 2>/dev/null || true
 # Kill any worker agents that might still be running
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.name // empty' 2>/dev/null || true); do
+for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   botty kill "$agent_name" 2>/dev/null || true
 done
 echo "  All agents stopped."

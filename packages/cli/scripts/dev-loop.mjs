@@ -462,7 +462,10 @@ Same as the standard worker loop:
 11. REVIEW (risk-aware):
   Check the bead's risk label (maw exec default -- br show <id>). No risk label = risk:medium.
 
-  RISK:LOW — Skip review:
+  RISK:LOW (and REVIEW is true) — Lightweight review:
+    Same as RISK:MEDIUM below. risk:low still gets reviewed when REVIEW is true — the reviewer can fast-track it.
+
+  RISK:LOW (and REVIEW is false) — Self-review:
     Add self-review comment: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Self-review (risk:low): <what you verified>"
     Proceed directly to merge/finish below.
 
@@ -483,7 +486,7 @@ Same as the standard worker loop:
     Same as risk:high, but also post: bus send --agent ${AGENT} ${PROJECT} "risk:critical review for <id>: requires human approval before merge" -L review-request
     STOP.
 
-  If REVIEW is false (or risk:low):
+  If REVIEW is false:
     Merge: maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main)
     maw exec default -- br close --actor ${AGENT} <id> --reason="Completed"
     bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
@@ -642,14 +645,7 @@ For each dispatched bead where the worker is NOT in botty list but the bead is s
 
 For each completed bead with a workspace, check the bead's risk label first:
 
-RISK:LOW — Skip review:
-  Add self-review comment if not already present.
-  maw ws merge \$WS --destroy
-  maw exec default -- br close --actor ${AGENT} <id>
-  bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
-  maw exec default -- br sync --flush-only${pushMainStep}
-
-RISK:MEDIUM — Standard review (if REVIEW is true):
+RISK:LOW or RISK:MEDIUM — Review (if REVIEW is true):
   CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
   Create review if none: maw exec \$WS -- crit reviews create --agent ${AGENT} --title "<id>: <title>" --description "<summary>"
   IMMEDIATELY record: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Review created: <review-id> in workspace <ws-name>"
@@ -695,7 +691,7 @@ Key rules:
 - All br/bv commands: maw exec default -- br/bv ...
 - All crit/jj commands in a workspace: maw exec \$WS -- crit/jj ...
 - For parallel dispatch, note limitations of this prompt-based approach
-- RISK LABELS: Always assess risk during grooming. risk:low skips review, risk:medium is standard, risk:high requires failure-mode checklist, risk:critical requires human approval.${MISSIONS_ENABLED ? `
+- RISK LABELS: Always assess risk during grooming. When REVIEW is true, ALL risk levels go through review (risk:low gets lightweight review, risk:medium standard, risk:high failure-mode checklist, risk:critical human approval). When REVIEW is false, risk:low can self-review.${MISSIONS_ENABLED ? `
 - MISSIONS: Enabled. Max ${MAX_MISSION_WORKERS} concurrent workers, max ${MAX_MISSION_CHILDREN} children per mission. Checkpoint every ${CHECKPOINT_INTERVAL_SEC}s.${process.env.BOTBOX_MISSION ? ` Focus on mission: ${process.env.BOTBOX_MISSION}` : ''}
 - COORDINATION: Watch for coord:interface, coord:blocker, coord:handoff labels on bus messages from workers. React to coord:blocker by unblocking or reassigning.` : ''}
 - Output completion signal at end`;
