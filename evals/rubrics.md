@@ -1538,4 +1538,129 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
+| L2-1 | Opus | 82/95 (86%) | First run — friction scoring drove prompt improvements |
+| L2-2 | Opus | 97/105 (92%) | Post-prompt-fix run — zero friction review cycle |
+
+---
+
+## E11-L3: Botty-Native Full Lifecycle (Two Projects, Three Agents)
+
+**Type**: Integration (multi-project, multi-agent, botty-native)
+
+**What it tests**: The complete botbox system end-to-end across two projects with three agents, all spawned via real hooks/botty/loop-scripts. Same scenario as E10 but through the real system — one task-request triggers everything autonomously.
+
+**Three agents:**
+- `alpha-dev` — Dev-loop on alpha channel (router hook)
+- `alpha-security` — Reviewer on alpha channel (mention hook)
+- `beta-dev` — Dev-loop on beta channel (router hook)
+
+**Two planted defects:**
+- **Beta**: `validate_email` rejects `+` in email local part (overly strict whitelist)
+- **Alpha**: `/debug` endpoint exposes `api_secret` in JSON response
+
+**Expected flow:**
+1. Router hook fires → respond.mjs → spawns alpha-dev via dev-loop
+2. Alpha-dev triages, claims bead, implements POST /users
+3. Alpha-dev discovers beta validate_email rejects +, posts to beta channel
+4. Beta router hook fires → beta-dev investigates, fixes, announces on alpha channel
+5. Alpha-dev resumes, creates crit review, @mentions alpha-security
+6. Alpha-security mention hook fires → reviews, finds /debug vulnerability, BLOCKs
+7. Alpha-dev fixes /debug, re-requests review
+8. Alpha-security re-reviews, LGTMs
+9. Alpha-dev merges, closes bead, releases claims
+
+**Setup**: `evals/scripts/e11-l3-setup.sh`
+**Run**: `evals/scripts/e11-l3-run.sh` (45 min timeout)
+**Verify**: `evals/scripts/e11-l3-verify.sh`
+
+### Scoring (~150 pts)
+
+#### Spawn Chain (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Alpha router hook fired (respond → dev-loop) | 5 | Dev agent log exists with content |
+| Beta-dev spawned via cross-project communication | 5 | Beta-dev log exists, beta channel activity |
+| Alpha-security spawned via @mention hook | 5 | Reviewer log exists with content |
+| Agents spawned in expected order | 5 | Phase timing from run script |
+| All agents exited cleanly | 5 | final-status.txt shows "completed" for all |
+
+#### Cross-Project Coordination (30 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Alpha-dev discovered beta validate_email bug | 5 | Dev log references validate_email/plus/reject |
+| Alpha-dev queried #projects registry | 3 | Dev log shows `bus history projects` |
+| Alpha-dev sent message to beta channel | 5 | Beta channel has alpha-dev message |
+| Beta-dev investigated and responded | 5 | Beta-dev log shows lib.rs read |
+| Beta-dev fixed validate_email to allow + | 5 | Beta src/lib.rs allows '+' |
+| Beta-dev announced fix on alpha channel | 4 | Alpha channel has beta-dev fix message |
+| Cross-project tracking bead created | 3 | Bead referencing issue exists |
+
+#### Protocol Compliance (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Alpha bead closed | 5 | `br show` status=closed |
+| Progress comments on bead | 3 | Comment count > 1 |
+| Workspace created and merged | 3 | No leaked workspaces |
+| Claims released | 4 | No bead:// or workspace:// claims |
+| Bus labels correct | 5 | JSON label extraction |
+| br sync called | 2 | Dev log shows `br sync` |
+| Channel announcements | 3 | Alpha channel has lifecycle messages |
+
+#### Review Cycle (30 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| crit review created from workspace | 3 | Dev log shows `crit reviews create` |
+| Review requested with @alpha-security | 3 | Channel has @mention |
+| Reviewer read from workspace path | 3 | Reviewer log shows ws/ reads |
+| Reviewer found /debug vulnerability | 5 | Reviewer log references debug/api_secret |
+| Reviewer BLOCKed review | 3 | Reviewer log shows `crit block` |
+| Alpha-dev addressed /debug feedback | 3 | Dev log shows fix/reply |
+| Alpha-dev re-requested review | 2 | Dev log shows re-request |
+| Reviewer re-reviewed from workspace | 3 | Reviewer log shows re-read |
+| Reviewer LGTMd | 3 | Reviewer log shows `crit lgtm` |
+| crit reviews mark-merged | 2 | Dev log shows mark-merged |
+
+#### Code Correctness (20 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Alpha cargo check passes | 5 | `maw exec default -- cargo check` |
+| POST /users endpoint exists | 3 | src/main.rs has POST route |
+| /debug vulnerability fixed | 5 | api_secret not exposed |
+| Beta cargo test passes | 3 | `maw exec default -- cargo test` |
+| Beta validate_email allows + | 4 | src/lib.rs allows '+' |
+
+#### Friction Efficiency (10 pts)
+
+| Check | Full | Partial | Zero |
+|-------|------|---------|------|
+| Tool errors | 0 (5 pts) | 1-5 (3 pts) | >5 (0 pts) |
+| --help lookups | 0 (3 pts) | 1-2 (2 pts) | >2 (0 pts) |
+| Retry attempts | 0 (2 pts) | 1-2 (1 pt) | >2 (0 pts) |
+
+#### Critical Fail Conditions (override score)
+
+1. Alpha merges while review BLOCKED (no LGTM)
+2. No cross-project message from alpha-dev to beta channel
+3. /debug still exposes api_secret after fix
+4. Missing --agent/--actor on mutating commands
+5. Claims unreleased after completion
+
+**Pass**: >= 70%, **Excellent**: >= 85%
+
+### Key Differences from E10
+
+- **No phase scripts**: One message triggers the entire multi-project workflow
+- **Tests all loop scripts**: dev-loop.mjs, reviewer-loop.mjs, respond.mjs
+- **Tests cross-project spawn**: Beta-dev spawns in response to alpha-dev's message
+- **Tests async coordination**: Three agents coordinate via crit + botbus without orchestration
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
 | (none yet) | | | |

@@ -11,7 +11,7 @@ This project has a behavioral evaluation framework for testing whether agents fo
 
 ## Completed Runs
 
-29 eval runs completed:
+31 eval runs completed:
 - 6 Level 2 single-session
 - 10 agent-loop.sh
 - 3 review (R1)
@@ -24,9 +24,11 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - 3 adversarial review (R8)
 - 1 crash recovery (R9)
 - 2 full lifecycle (E10)
+- 2 botty-native (E11-L2)
 
 ### Notable Results
 
+- **E11-L2-2**: Opus 97/105 (92%) — botty-native review cycle, zero friction after prompt improvements
 - **E10-2**: Opus 159/160 (99%) — reproducible clean run, no setup workarounds needed
 - **E10-1**: Opus 158/160 (99%) — 3 agents, 8 phases, 2 projects, near-perfect full lifecycle
 - **R5-1**: Opus 70/70 (100%) — perfect cross-project coordination, followed report-issue.md to file bug in external project
