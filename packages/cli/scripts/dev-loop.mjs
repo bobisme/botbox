@@ -19,6 +19,8 @@ let MAX_MISSION_WORKERS = 4;
 let MAX_MISSION_CHILDREN = 12;
 let CHECKPOINT_INTERVAL_SEC = 30;
 let MERGE_TIMEOUT_SEC = 60;
+let MULTI_LEAD_ENABLED = false;
+let MAX_LEADS = 3;
 
 // --- Load config from .botbox.json ---
 async function loadConfig() {
@@ -50,6 +52,8 @@ async function loadConfig() {
 
 			// Multi-lead config
 			let multiLead = agents.dev?.multiLead || {};
+			MULTI_LEAD_ENABLED = multiLead.enabled ?? false;
+			MAX_LEADS = multiLead.maxLeads ?? 3;
 			MERGE_TIMEOUT_SEC = multiLead.mergeTimeoutSec ?? 60;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
@@ -320,8 +324,38 @@ async function readLastIteration() {
 	}
 }
 
+// --- Discover sibling leads (multi-lead awareness) ---
+async function discoverSiblingLeads() {
+	if (!MULTI_LEAD_ENABLED) return [];
+	try {
+		let { stdout } = await runCommand('bus', ['claims', 'list', '--format', 'json']);
+		let parsed = JSON.parse(stdout || '{}');
+		let claims = parsed.claims || [];
+		// Match agent://baseAgent/N pattern for sibling leads
+		let baseAgent = AGENT.replace(/\/\d+$/, '');
+		let siblings = [];
+		for (let claim of claims) {
+			let patterns = claim.patterns || [];
+			for (let p of patterns) {
+				let match = p.match(new RegExp(`^agent://${baseAgent.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/(\\d+)$`));
+				if (match) {
+					let leadName = `${baseAgent}/${match[1]}`;
+					if (leadName === AGENT) continue;
+					siblings.push({
+						name: leadName,
+						memo: claim.memo || '',
+					});
+				}
+			}
+		}
+		return siblings;
+	} catch {
+		return [];
+	}
+}
+
 // --- Build dev lead prompt ---
-function buildPrompt(lastIteration) {
+function buildPrompt(lastIteration, { siblingLeads = [] } = {}) {
 	const pushMainStep = PUSH_MAIN ? '\n  14. Push to GitHub: maw push (if fails, announce issue).' : '';
 
 	const reviewInstructions = REVIEW ? 'REVIEW is true' : 'REVIEW is false';
@@ -343,8 +377,19 @@ COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. A
   other: maw exec \$WS -- <command>           (cargo test, etc.)
 Inside \`maw exec <ws>\`, CWD is already \`ws/<ws>/\`. Use \`maw exec default -- ls src/\`, NOT \`maw exec default -- ls ws/default/src/\`.
 For file reads/edits outside maw exec, use the full absolute path: \`ws/<ws>/src/...\`
-${previousContext}
-Execute exactly ONE dev cycle. Triage inbox, assess ready beads, either work on one yourself
+${previousContext}${siblingLeads.length > 0 ? `
+## SIBLING LEADS (multi-lead mode active)
+
+Other lead agents are currently active on this project. Coordinate through claims — do NOT duplicate work.
+
+Active leads:
+${siblingLeads.map(s => `- ${s.name}${s.memo ? ` (${s.memo})` : ''}`).join('\n')}
+
+**Bead claim rule**: Before starting work on ANY bead, check if it is already claimed:
+  bus claims list --format json
+  Look for \`bead://${PROJECT}/<id>\` — if claimed by another agent, SKIP that bead and pick the next one.
+  Only work on beads you can successfully claim.
+` : ''}Execute exactly ONE dev cycle. Triage inbox, assess ready beads, either work on one yourself
 or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
 
 At the end of your work, output:
@@ -439,7 +484,8 @@ GROOM each ready bead:
   - risk:critical — irreversible actions, migrations, regulated changes
   Risk can be escalated upward by any agent. Downgrades require lead approval with justification comment.
 - Comment what you changed: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "..."
-- If bead is claimed (check bus claims), skip it
+- CLAIM CHECK: Before working on or dispatching a bead, verify it is not already claimed by another agent:
+  bus claims list --format json — look for bead://${PROJECT}/<id>. If claimed by another agent, skip it.
 
 ## EXECUTION LEVEL DECISION
 
@@ -757,7 +803,8 @@ Key rules:
 - For parallel dispatch, note limitations of this prompt-based approach
 - RISK LABELS: Always assess risk during grooming. When REVIEW is true, ALL risk levels go through review (risk:low gets lightweight review, risk:medium standard, risk:high failure-mode checklist, risk:critical human approval). When REVIEW is false, risk:low can self-review.${MISSIONS_ENABLED ? `
 - MISSIONS: Enabled. Max ${MAX_MISSION_WORKERS} concurrent workers, max ${MAX_MISSION_CHILDREN} children per mission. Checkpoint every ${CHECKPOINT_INTERVAL_SEC}s.${process.env.BOTBOX_MISSION ? ` Focus on mission: ${process.env.BOTBOX_MISSION}` : ''}
-- COORDINATION: Watch for coord:interface, coord:blocker, coord:handoff labels on bus messages from workers. React to coord:blocker by unblocking or reassigning.` : ''}
+- COORDINATION: Watch for coord:interface, coord:blocker, coord:handoff labels on bus messages from workers. React to coord:blocker by unblocking or reassigning.` : ''}${MULTI_LEAD_ENABLED ? `
+- MULTI-LEAD: Other leads may be active. Always check bead claims before picking work. Use bus claims stake to claim beads atomically — if it fails, another lead got there first. Skip to the next bead.` : ''}
 - Output completion signal at end`;
 }
 
@@ -884,6 +931,9 @@ async function main() {
 	console.log(`Pause:     ${LOOP_PAUSE}s`);
 	console.log(`Model:     ${MODEL || 'system default'}`);
 	console.log(`Review:    ${REVIEW}`);
+	if (MULTI_LEAD_ENABLED) {
+		console.log(`Multi-lead: enabled (max ${MAX_LEADS} slots)`);
+	}
 
 	// Confirm identity
 	try {
@@ -978,7 +1028,8 @@ async function main() {
 		// Run Claude
 		try {
 			const lastIteration = await readLastIteration();
-			const prompt = buildPrompt(lastIteration);
+			const siblingLeads = await discoverSiblingLeads();
+			const prompt = buildPrompt(lastIteration, { siblingLeads });
 			const result = await runClaude(prompt);
 
 			// Check for completion signals
