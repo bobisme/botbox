@@ -352,6 +352,12 @@ export async function init(opts) {
           maxLoops: 20,
           pause: 2,
           timeout: 900,
+          missions: {
+            enabled: true,
+            maxWorkers: 4,
+            maxChildren: 12,
+            checkpointIntervalSec: 30,
+          },
         },
         worker: {
           model: "haiku",

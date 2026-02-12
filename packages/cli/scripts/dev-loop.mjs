@@ -14,7 +14,7 @@ let PROJECT = '';
 let AGENT = '';
 let PUSH_MAIN = false;
 let REVIEW = true;
-let MISSIONS_ENABLED = false;
+let MISSIONS_ENABLED = true;
 let MAX_MISSION_WORKERS = 4;
 let MAX_MISSION_CHILDREN = 12;
 let CHECKPOINT_INTERVAL_SEC = 30;
@@ -42,7 +42,7 @@ async function loadConfig() {
 
 			// Mission coordination config
 			let missions = agents.dev?.missions || {};
-			MISSIONS_ENABLED = missions.enabled ?? false;
+			MISSIONS_ENABLED = missions.enabled ?? true;
 			MAX_MISSION_WORKERS = missions.maxWorkers ?? 4;
 			MAX_MISSION_CHILDREN = missions.maxChildren ?? 12;
 			CHECKPOINT_INTERVAL_SEC = missions.checkpointIntervalSec ?? 30;
@@ -452,8 +452,8 @@ ${MISSIONS_ENABLED ? `
 Assess bead count:
 - 0 ready beads (but dispatched workers pending): just monitor, skip to step 7.
 - 1 ready bead: do it yourself sequentially (follow steps 5a below).
-- 2+ independent ready beads: dispatch workers in parallel (follow steps 5b below).${MISSIONS_ENABLED ? `
-- Large task needing decomposition: create a mission (follow step 5c below).` : ''}
+- 2+ independent ready beads: dispatch workers in parallel (follow steps 5b below). Do NOT work on them yourself sequentially — parallel dispatch is REQUIRED.${MISSIONS_ENABLED ? `
+- Large task needing decomposition: create a mission (follow step 5c below). Mission children MUST be dispatched to workers — solo sequential work defeats the purpose.` : ''}
 
 ## 5a. SEQUENTIAL (1 bead — do it yourself)
 
@@ -573,7 +573,9 @@ ${process.env.BOTBOX_MISSION ? `\nBOTBOX_MISSION is set to "${process.env.BOTBOX
 
 ### Dispatch Mission Workers
 
-IMPORTANT: Use \`botty spawn\` for mission workers — NOT the Task tool. See step 5b for why.
+IMPORTANT: You MUST dispatch workers for independent children. Do NOT implement them yourself sequentially.
+The whole point of missions is parallel execution — doing children sequentially defeats the purpose and wastes time.
+Use \`botty spawn\` for mission workers — NOT the Task tool. See step 5b for why.
 
 For independent children (unblocked), dispatch workers (max ${MAX_MISSION_WORKERS} concurrent):
 - Follow the same dispatch pattern as step 5b — INCLUDING claim staking for EACH worker:
