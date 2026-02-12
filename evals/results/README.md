@@ -41,6 +41,8 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 | E11-L4-7 | Mission (bulked specs) | Opus+Sonnet | 1+4 | 39/130 (30% cap) | Uncapped 108/130 (83%). Agent used Task tool instead of botty spawn — bypassed coordination. |
 | E11-L4-8 | Mission (botty required) | Opus+Sonnet | 1+4 | 124/130 (95%) | **First full mission success.** 3 botty workers, dependency-aware dispatch, 46 tests, ~8 min. |
 | E11-L4-9 | Mission (prompt tuning) | Opus+Sonnet | 1+4 | 119/130 (92%) | Fewer tool errors (8 vs 12) from --env-inherit fix; lost 5 pts on claims staking inconsistency. |
+| E11-L4-10 | Mission (solo regression) | Opus | 1+4 | 39/130 (30% cap) | Agent went solo despite 4 children — "coordination overhead" rationalization. Prompt not strong enough. |
+| E11-L4-11 | Mission (dispatch required) | Opus+Sonnet | 1+4 | 122/130 (94%) | **All 26 checks pass.** Strengthened dispatch language worked. Only friction points lost (7 errors, 5 retries). |
 
 ## Key Learnings
 
@@ -96,6 +98,8 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - **Verify script regex: `\|` in `grep -E` is literal pipe, not alternation** — Check 15 (count/status in checkpoint) was failing even when checkpoints existed because `grep -iE "foo\|bar"` matches literal `|`, not alternation. Use `"foo|bar"` with `-E`. This masked a passing check in runs 8-9.
 - **Error counting must distinguish tool friction from intentional CLI testing** — Agents run `cargo run` with bad inputs to verify error handling. Those exit code 1s are NOT tool errors. Filter by checking the preceding command: `cargo run`, `cd && cargo run`, `./target/` are intentional project testing. Only count errors from bus/br/maw/botty/jj/cargo build/test.
 - **Claims staking for workers is inconsistent across runs** — Run 8 staked 3+ claims (pass); Run 9 staked only 2 (fail). The dev staked claims for its own error.rs work but not for the 3 worker beads/workspaces. The prompt tells workers to stake their own claims, but the dev should also pre-stake for dispatched workers.
+- **Agents rationalize solo work even with strong dispatch signals** — Run 10 (39/130): agent decomposed into 4 children then said "I'll do them myself sequentially to ensure quality — spawning workers would add coordination overhead." Must use imperative language: "You MUST dispatch workers. Do NOT implement children yourself sequentially."
+- **Missions enabled by default is safe** — After runs 8-11, the mission framework is validated. Enabled by default in dev-loop.mjs and botbox init config. Agents correctly decompose, dispatch, monitor, and synthesize.
 
 ## Upstream Tool Versions (as of 2026-01-31)
 
