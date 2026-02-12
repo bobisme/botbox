@@ -1,18 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# E11-L5 Verification Script
+# E11-L5v2 Verification Script
 # Automated scoring for the coordination mission eval.
 # Checks all L4 categories (mission recognition, decomposition, worker dispatch,
-# monitoring, synthesis, code correctness, friction) PLUS coordination-specific
-# checks (~30 pts): bus reading, discovery posting, shared module coherence.
+# monitoring, synthesis, code correctness, friction) PLUS REDESIGNED coordination
+# checks (~40 pts): multi-worker Record contributions, bidirectional bus communication,
+# co-evolving shared types, cross-stage field discovery.
+#
+# KEY DIFFERENCE FROM L5v1:
+# Coordination checks verify that MULTIPLE workers independently modified record.rs
+# and pipeline.rs. The old taskr eval gave coordination credit for implicit compilation
+# success — this eval requires evidence of bidirectional coordination because the
+# Record struct must have fields from ALL three stages.
 
 source "${1:?Usage: e11-l5-verify.sh <path-to-.eval-env>}"
 
-echo "=== E11-L5 Verification ==="
+echo "=== E11-L5v2 Verification ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "TASKR_DEV=$TASKR_DEV"
+echo "FLOWLOG_DEV=$FLOWLOG_DEV"
 echo ""
 
 PASS=0
@@ -43,16 +50,18 @@ warn() {
 }
 
 # Load artifacts
-DEV_LOG=$(cat "$ARTIFACTS/agent-${TASKR_DEV}.log" 2>/dev/null || echo "")
-CHANNEL_HISTORY=$(cat "$ARTIFACTS/channel-taskr-history.log" 2>/dev/null || echo "")
+DEV_LOG=$(cat "$ARTIFACTS/agent-${FLOWLOG_DEV}.log" 2>/dev/null || echo "")
+CHANNEL_HISTORY=$(cat "$ARTIFACTS/channel-flowlog-history.log" 2>/dev/null || echo "")
 FINAL_STATUS=$(cat "$ARTIFACTS/final-status.txt" 2>/dev/null || echo "")
-CHANNEL_JSON=$(cat "$ARTIFACTS/channel-taskr-history.json" 2>/dev/null || echo '{"messages":[]}')
+CHANNEL_JSON=$(cat "$ARTIFACTS/channel-flowlog-history.json" 2>/dev/null || echo '{"messages":[]}')
 CHANNEL_LABELS=$(echo "$CHANNEL_JSON" | jq -r '[.messages[].labels // [] | .[]] | .[]' 2>/dev/null || echo "")
 COORD_MESSAGES=$(cat "$ARTIFACTS/coord-messages.log" 2>/dev/null || echo "")
+RECORD_FINAL=$(cat "$ARTIFACTS/record-final.rs" 2>/dev/null || echo "")
+PIPELINE_FINAL=$(cat "$ARTIFACTS/pipeline-final.rs" 2>/dev/null || echo "")
 
 # Load all worker logs into a combined variable for coordination checks
 ALL_WORKER_LOGS=""
-for wlog in "$ARTIFACTS"/agent-${TASKR_DEV}_*.log; do
+for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
   [[ -f "$wlog" ]] || continue
   ALL_WORKER_LOGS+=$(cat "$wlog" 2>/dev/null || echo "")
   ALL_WORKER_LOGS+=$'\n'
@@ -369,7 +378,7 @@ check "cargo check passes" "$($CARGO_OK && echo 0 || echo 1)" 5
 echo ""
 echo "--- Check 21: Subcommands implemented ---"
 IMPL_COUNT=0
-for mod_name in run list validate; do
+for mod_name in ingest transform emit; do
   MOD_FILE="$PROJECT_DIR/ws/default/src/commands/${mod_name}.rs"
   if [[ -f "$MOD_FILE" ]] && ! grep -q 'todo!' "$MOD_FILE" 2>/dev/null; then
     IMPL_COUNT=$((IMPL_COUNT + 1))
@@ -377,74 +386,85 @@ for mod_name in run list validate; do
 done
 check "2+ subcommands implemented (found=$IMPL_COUNT)" "$([ "$IMPL_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
-# Check 22: Shared core module implemented (5 pts)
+# Check 22: Shared types implemented (5 pts)
 echo ""
-echo "--- Check 22: Shared core module implemented ---"
-CORE_MOD="$PROJECT_DIR/ws/default/src/core/mod.rs"
-CORE_CONFIG="$PROJECT_DIR/ws/default/src/core/config.rs"
-CORE_IMPL_COUNT=0
-# Check mod.rs: no todo!() at module level and ShellTask impl exists
-if [[ -f "$CORE_MOD" ]]; then
-  MOD_TODOS=$(grep -c 'todo!' "$CORE_MOD" 2>/dev/null) || MOD_TODOS=0
-  if [[ "$MOD_TODOS" -eq 0 ]]; then
-    CORE_IMPL_COUNT=$((CORE_IMPL_COUNT + 1))
-  fi
-  # Check for parse_task_file function
-  if grep -q 'fn parse_task_file\|pub fn parse' "$CORE_MOD" 2>/dev/null; then
-    CORE_IMPL_COUNT=$((CORE_IMPL_COUNT + 1))
+echo "--- Check 22: Shared types implemented ---"
+RECORD_RS_FILE="$PROJECT_DIR/ws/default/src/record.rs"
+PIPELINE_RS_FILE="$PROJECT_DIR/ws/default/src/pipeline.rs"
+SHARED_IMPL_COUNT=0
+# Check record.rs: no todo!() at module level, has more than starter fields
+if [[ -f "$RECORD_RS_FILE" ]]; then
+  RECORD_TODOS=$(grep -c 'todo!' "$RECORD_RS_FILE" 2>/dev/null) || RECORD_TODOS=0
+  if [[ "$RECORD_TODOS" -eq 0 ]]; then
+    SHARED_IMPL_COUNT=$((SHARED_IMPL_COUNT + 1))
   fi
 fi
-# Check config.rs: no todo!() and load_config exists
-if [[ -f "$CORE_CONFIG" ]]; then
-  CFG_TODOS=$(grep -c 'todo!' "$CORE_CONFIG" 2>/dev/null) || CFG_TODOS=0
-  if [[ "$CFG_TODOS" -eq 0 ]]; then
-    CORE_IMPL_COUNT=$((CORE_IMPL_COUNT + 1))
+# Check pipeline.rs: no todo!() at module level, has PipelineStage impls
+if [[ -f "$PIPELINE_RS_FILE" ]]; then
+  PIPELINE_TODOS=$(grep -c 'todo!' "$PIPELINE_RS_FILE" 2>/dev/null) || PIPELINE_TODOS=0
+  if [[ "$PIPELINE_TODOS" -eq 0 ]]; then
+    SHARED_IMPL_COUNT=$((SHARED_IMPL_COUNT + 1))
   fi
 fi
-check "Shared core module implemented ($CORE_IMPL_COUNT/3 pieces)" "$([ "$CORE_IMPL_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
+check "Shared types implemented ($SHARED_IMPL_COUNT/2: record.rs + pipeline.rs)" "$([ "$SHARED_IMPL_COUNT" -ge 1 ] && echo 0 || echo 1)" 5
 
 # Check 23: Subcommands work on sample data (5 pts)
 echo ""
 echo "--- Check 23: Subcommands work on sample data ---"
 WORKING_COUNT=0
 if BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo build --quiet 2>/dev/null; then
-  # Try list on simple.toml
-  LIST_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- list data/simple.toml 2>/dev/null || echo "")
-  if echo "$LIST_OUT" | grep -qiE "build|test|clean|lint|release"; then
+  # Try ingest on sample.csv
+  INGEST_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- ingest data/sample.csv 2>/dev/null || echo "")
+  if echo "$INGEST_OUT" | grep -qiE "record|ingest|Alice|5.*record"; then
     WORKING_COUNT=$((WORKING_COUNT + 1))
   fi
-  # Try validate on invalid.toml
-  VALIDATE_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- validate data/invalid.toml 2>/dev/null || echo "")
-  if echo "$VALIDATE_OUT" | grep -qiE "error|warning|duplicate|nonexistent|cycle|invalid"; then
+  # Try ingest --json on sample.csv
+  INGEST_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- ingest data/sample.csv --json 2>/dev/null || echo "")
+  if echo "$INGEST_JSON" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null || \
+     echo "$INGEST_JSON" | head -1 | python3 -c "import sys,json;json.loads(sys.stdin.read())" 2>/dev/null; then
     WORKING_COUNT=$((WORKING_COUNT + 1))
   fi
-  # Try run on simple.toml (dry-run)
-  RUN_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- run data/simple.toml --dry-run 2>/dev/null || echo "")
-  if echo "$RUN_OUT" | grep -qiE "build|test|clean|would|dry|skip"; then
-    WORKING_COUNT=$((WORKING_COUNT + 1))
+  # Try transform (requires ingested records as input, so pipe or use temp file)
+  if [[ -n "$INGEST_JSON" ]]; then
+    echo "$INGEST_JSON" > /tmp/flowlog-test-records.json 2>/dev/null || true
+    TRANSFORM_OUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- transform data/rules.json --input /tmp/flowlog-test-records.json 2>/dev/null || echo "")
+    if echo "$TRANSFORM_OUT" | grep -qiE "transform|record|rule|validation|error"; then
+      WORKING_COUNT=$((WORKING_COUNT + 1))
+    fi
   fi
 fi
 check "Subcommands working on sample data ($WORKING_COUNT/3)" "$([ "$WORKING_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
-# Check 23b: Feature flags work (5 pts) — bonus for expanded feature set
+# Check 23b: Feature flags work (5 pts) — bonus
 echo ""
 echo "--- Check 23b: Feature flags work ---"
 FLAGS_WORKING=0
 if BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo build --quiet 2>/dev/null; then
-  # list --format json
-  LJ=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- list data/simple.toml --format json 2>/dev/null || echo "")
-  echo "$LJ" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
-  # list --names-only
-  LN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- list data/simple.toml --names-only 2>/dev/null || echo "")
-  if echo "$LN" | grep -qE "^build$|^test$|^clean$"; then
+  # ingest --json produces valid JSON
+  IJ=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- ingest data/sample.json --json 2>/dev/null || echo "")
+  if echo "$IJ" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null || \
+     echo "$IJ" | head -1 | python3 -c "import sys,json;json.loads(sys.stdin.read())" 2>/dev/null; then
     FLAGS_WORKING=$((FLAGS_WORKING + 1))
   fi
-  # validate --json
-  VJ=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- validate data/invalid.toml --json 2>/dev/null || echo "")
-  echo "$VJ" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
-  # run --json --dry-run
-  RJ=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- run data/simple.toml --json --dry-run 2>/dev/null || echo "")
-  echo "$RJ" | python3 -c "import sys,json;json.load(sys.stdin)" 2>/dev/null && FLAGS_WORKING=$((FLAGS_WORKING + 1))
+  # ingest --format csv (explicit format override)
+  IC=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- ingest data/sample.csv --format csv 2>/dev/null || echo "")
+  if echo "$IC" | grep -qiE "record|ingest|Alice"; then
+    FLAGS_WORKING=$((FLAGS_WORKING + 1))
+  fi
+  # transform --strict on strict rules should reject some records
+  if [[ -f /tmp/flowlog-test-records.json ]]; then
+    TS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- transform data/strict-rules.json --input /tmp/flowlog-test-records.json --strict 2>/dev/null || echo "")
+    if echo "$TS" | grep -qiE "reject|error|fail|strict|validation"; then
+      FLAGS_WORKING=$((FLAGS_WORKING + 1))
+    fi
+  fi
+  # emit --format summary
+  if [[ -f /tmp/flowlog-test-records.json ]]; then
+    ES=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- cargo run --quiet -- emit /tmp/flowlog-test-output.json --input /tmp/flowlog-test-records.json --format summary 2>/dev/null || echo "")
+    if echo "$ES" | grep -qiE "record|count|source|summary"; then
+      FLAGS_WORKING=$((FLAGS_WORKING + 1))
+    fi
+  fi
 fi
 TOTAL=$((TOTAL + 5))
 if [[ "$FLAGS_WORKING" -ge 3 ]]; then
@@ -462,136 +482,170 @@ else
 fi
 
 # ============================================================
-# Coordination (30 pts) — NEW in L5
+# Coordination (40 pts) — REDESIGNED for L5v2
 # ============================================================
 echo ""
-echo "=== Coordination (30 pts) — L5 SPECIFIC ==="
+echo "=== Coordination (40 pts) — L5v2 CO-EVOLUTION ==="
 echo ""
 
-# --- Bus Reading (10 pts) ---
+# --- Record Co-Evolution (15 pts) ---
+# These checks verify that MULTIPLE workers contributed fields to Record.
+# This is the core test: can workers co-evolve a shared type?
 
-# Check 24: Worker logs show bus history calls (5 pts)
-# Workers should read bus history to check for sibling updates on shared types
-echo "--- Check 24: Workers read bus history ---"
-WORKER_BUS_READ=false
-# Check worker logs for bus history calls
-for wlog in "$ARTIFACTS"/agent-${TASKR_DEV}_*.log; do
-  [[ -f "$wlog" ]] || continue
-  if grep -qi "bus history\|bus inbox\|bus search" "$wlog" 2>/dev/null; then
-    WORKER_BUS_READ=true
-    break
+# Check 24: Record has fields beyond starter (5 pts)
+echo "--- Check 24: Record has fields beyond starter ---"
+RECORD_FIELD_COUNT=0
+if [[ -f "$RECORD_RS_FILE" ]]; then
+  # Count pub fields in Record struct (beyond id and data)
+  RECORD_FIELD_COUNT=$(grep -cE '^\s+pub\s+\w+' "$RECORD_RS_FILE" 2>/dev/null) || RECORD_FIELD_COUNT=0
+fi
+echo "  Record has $RECORD_FIELD_COUNT pub fields (starter=2)"
+RECORD_EXTENDED=false
+if [[ "$RECORD_FIELD_COUNT" -ge 4 ]]; then
+  RECORD_EXTENDED=true
+fi
+check "Record has 4+ fields (workers added to starter struct)" "$($RECORD_EXTENDED && echo 0 || echo 1)" 5
+
+# Check 25: Record has fields from 2+ stages (5 pts)
+echo ""
+echo "--- Check 25: Record has fields from 2+ stages ---"
+STAGE_FIELD_MATCHES=0
+if [[ -f "$RECORD_RS_FILE" ]]; then
+  # Check for provenance-related fields (ingest stage)
+  if grep -qiE 'source|provenance|origin|ingested|format.*detected|raw_size|ingest' "$RECORD_RS_FILE" 2>/dev/null; then
+    STAGE_FIELD_MATCHES=$((STAGE_FIELD_MATCHES + 1))
+    echo "  Found provenance/ingest fields"
   fi
-done
-# Also check if dev-loop instructed workers to read bus (in dispatch prompts)
-if echo "$DEV_LOG" | grep -qi "bus history.*coord\|check.*bus.*sibling\|read.*bus.*before\|coord.*message"; then
-  WORKER_BUS_READ=true
-fi
-check "Workers read bus for sibling updates" "$($WORKER_BUS_READ && echo 0 || echo 1)" 5
-
-# Check 25: Worker adapted to sibling change (5 pts)
-# Evidence that a worker saw a sibling's interface change and adjusted
-echo ""
-echo "--- Check 25: Worker adapted to sibling change ---"
-WORKER_ADAPTED=false
-# Look for evidence in worker logs: mentions of sibling changes, adapted types, etc.
-for wlog in "$ARTIFACTS"/agent-${TASKR_DEV}_*.log; do
-  [[ -f "$wlog" ]] || continue
-  if grep -qi "sibling.*change\|core.*update\|trait.*change\|adapt\|interface.*change\|coord.*interface" "$wlog" 2>/dev/null; then
-    WORKER_ADAPTED=true
-    break
+  # Check for transformation-related fields (transform stage)
+  if grep -qiE 'transform|validation|rules_applied|is_valid|integrity|rule_outcome|errors' "$RECORD_RS_FILE" 2>/dev/null; then
+    STAGE_FIELD_MATCHES=$((STAGE_FIELD_MATCHES + 1))
+    echo "  Found transformation/validation fields"
   fi
-done
-# Also count as adapted if workers successfully import shared types without compilation errors
-# (evidence of coordination on types even if not explicitly called out)
-if [[ "$CARGO_OK" == "true" && "$IMPL_COUNT" -ge 2 ]]; then
-  # If 2+ subcommands compile with shared core, there was at least implicit coordination
-  WORKER_ADAPTED=true
-fi
-check "Worker adapted to sibling changes" "$($WORKER_ADAPTED && echo 0 || echo 1)" 5
-
-# --- Discovery Posting (10 pts) ---
-
-# Check 26: coord:interface message posted (5 pts)
-echo ""
-echo "--- Check 26: coord:interface message posted ---"
-HAS_COORD_MSG=false
-# Check channel history for coord:interface label
-if echo "$CHANNEL_LABELS" | grep -qi "coord:interface"; then
-  HAS_COORD_MSG=true
-fi
-# Also check channel text for coordination patterns
-if echo "$CHANNEL_HISTORY" | grep -qi "coord:interface\|interface.*change\|core.*change\|shared.*type.*change\|modified.*core\|updated.*trait\|changed.*Config"; then
-  HAS_COORD_MSG=true
-fi
-# Check coord-messages artifact
-if echo "$COORD_MESSAGES" | grep -qi "coord\|interface\|core.*change"; then
-  HAS_COORD_MSG=true
-fi
-# Check if any worker/dev posted about shared type changes
-if echo "$DEV_LOG" | grep -qi "coord:interface\|bus send.*coord"; then
-  HAS_COORD_MSG=true
-fi
-for wlog in "$ARTIFACTS"/agent-${TASKR_DEV}_*.log; do
-  [[ -f "$wlog" ]] || continue
-  if grep -qi "coord:interface\|bus send.*coord\|-L coord" "$wlog" 2>/dev/null; then
-    HAS_COORD_MSG=true
-    break
-  fi
-done
-check "coord:interface message posted" "$($HAS_COORD_MSG && echo 0 || echo 1)" 5
-
-# Check 27: Message describes actual code change (5 pts)
-echo ""
-echo "--- Check 27: Coordination message describes code change ---"
-COORD_DESCRIBES_CHANGE=false
-# Check if coordination messages mention specific types/functions
-COORD_TEXT=""
-# Gather all potential coordination text from channel and logs
-COORD_TEXT+=$(echo "$CHANNEL_HISTORY" | grep -i "coord\|interface\|core.*change\|trait\|Config\|TaskResult\|ShellTask\|parse_task" 2>/dev/null || echo "")
-COORD_TEXT+=$(echo "$COORD_MESSAGES" 2>/dev/null || echo "")
-for wlog in "$ARTIFACTS"/agent-${TASKR_DEV}_*.log; do
-  [[ -f "$wlog" ]] || continue
-  COORD_TEXT+=$(grep -i "coord.*interface\|bus send.*coord\|posting.*coord\|announce.*change" "$wlog" 2>/dev/null || echo "")
-done
-COORD_TEXT+=$(echo "$DEV_LOG" | grep -i "coord.*interface\|bus send.*coord\|posting.*coord\|announce.*change" 2>/dev/null || echo "")
-
-if echo "$COORD_TEXT" | grep -qi "Task\|Config\|TaskResult\|ShellTask\|parse_task_file\|trait\|struct\|enum\|field\|signature\|method\|function"; then
-  COORD_DESCRIBES_CHANGE=true
-fi
-check "Coordination message describes actual code change" "$($COORD_DESCRIBES_CHANGE && echo 0 || echo 1)" 5
-
-# --- Shared Module Coherence (10 pts) ---
-
-# Check 28: Core module compiles (5 pts)
-echo ""
-echo "--- Check 28: Core module compiles ---"
-# This is already tested by cargo check above, but check specifically that core/ is non-trivial
-CORE_COMPILES=false
-if [[ "$CARGO_OK" == "true" ]]; then
-  # Verify core module has actual content (not just stubs)
-  if [[ -f "$CORE_MOD" ]]; then
-    CORE_LINES=$(wc -l < "$CORE_MOD" 2>/dev/null || echo "0")
-    if [[ "$CORE_LINES" -gt 30 ]]; then
-      CORE_COMPILES=true
-    fi
+  # Check for lineage/emission-related fields (emit stage)
+  if grep -qiE 'lineage|emitted|emission|output_format|destination|emit' "$RECORD_RS_FILE" 2>/dev/null; then
+    STAGE_FIELD_MATCHES=$((STAGE_FIELD_MATCHES + 1))
+    echo "  Found lineage/emission fields"
   fi
 fi
-check "Core module compiles with substantial content ($CORE_LINES lines)" "$($CORE_COMPILES && echo 0 || echo 1)" 5
+echo "  Stages represented in Record: $STAGE_FIELD_MATCHES/3"
+check "Record has fields from 2+ stages ($STAGE_FIELD_MATCHES/3)" "$([ "$STAGE_FIELD_MATCHES" -ge 2 ] && echo 0 || echo 1)" 5
 
-# Check 29: 2+ subcommands use shared types (5 pts)
+# Check 26: Record has fields from ALL 3 stages (5 pts)
 echo ""
-echo "--- Check 29: 2+ subcommands use shared types ---"
-USING_SHARED=0
-for mod_name in run list validate; do
+echo "--- Check 26: Record has fields from all 3 stages ---"
+check "Record has fields from all 3 stages ($STAGE_FIELD_MATCHES/3)" "$([ "$STAGE_FIELD_MATCHES" -ge 3 ] && echo 0 || echo 1)" 5
+
+# --- Pipeline Co-Evolution (10 pts) ---
+
+# Check 27: PipelineError has stage-specific variants (5 pts)
+echo ""
+echo "--- Check 27: PipelineError has stage-specific variants ---"
+ERROR_VARIANT_COUNT=0
+if [[ -f "$PIPELINE_RS_FILE" ]]; then
+  # Count error variants beyond Io and Other
+  ERROR_VARIANT_COUNT=$(grep -cE '^\s+#\[error' "$PIPELINE_RS_FILE" 2>/dev/null) || ERROR_VARIANT_COUNT=0
+fi
+echo "  PipelineError has $ERROR_VARIANT_COUNT #[error] variants (starter=2)"
+PIPELINE_EXTENDED=false
+if [[ "$ERROR_VARIANT_COUNT" -ge 4 ]]; then
+  PIPELINE_EXTENDED=true
+fi
+check "PipelineError has 4+ variants (workers added stage-specific errors)" "$($PIPELINE_EXTENDED && echo 0 || echo 1)" 5
+
+# Check 28: 2+ PipelineStage implementations (5 pts)
+echo ""
+echo "--- Check 28: PipelineStage implementations ---"
+STAGE_IMPL_COUNT=0
+# Check each command file for PipelineStage impl
+for mod_name in ingest transform emit; do
   MOD_FILE="$PROJECT_DIR/ws/default/src/commands/${mod_name}.rs"
   if [[ -f "$MOD_FILE" ]]; then
-    # Check for imports from core module
-    if grep -qE "use crate::core|core::|Task|Config|TaskResult|TaskrError|ShellTask|parse_task" "$MOD_FILE" 2>/dev/null; then
-      USING_SHARED=$((USING_SHARED + 1))
+    if grep -qE 'impl.*PipelineStage|fn process|fn name' "$MOD_FILE" 2>/dev/null; then
+      STAGE_IMPL_COUNT=$((STAGE_IMPL_COUNT + 1))
     fi
   fi
 done
-check "2+ subcommands use shared core types ($USING_SHARED/3)" "$([ "$USING_SHARED" -ge 2 ] && echo 0 || echo 1)" 5
+# Also check pipeline.rs itself for impls
+if [[ -f "$PIPELINE_RS_FILE" ]]; then
+  PIPELINE_IMPLS=$(grep -cE 'impl.*PipelineStage' "$PIPELINE_RS_FILE" 2>/dev/null) || PIPELINE_IMPLS=0
+  STAGE_IMPL_COUNT=$((STAGE_IMPL_COUNT + PIPELINE_IMPLS))
+fi
+check "2+ PipelineStage implementations ($STAGE_IMPL_COUNT found)" "$([ "$STAGE_IMPL_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
+
+# --- Bus Communication (15 pts) ---
+
+# Check 29: coord:interface messages posted by workers (5 pts)
+echo ""
+echo "--- Check 29: coord:interface messages posted ---"
+COORD_MSG_COUNT=0
+# Count coord:interface in channel labels
+COORD_MSG_COUNT=$(echo "$CHANNEL_LABELS" | grep -ci "coord:interface" 2>/dev/null) || COORD_MSG_COUNT=0
+# Also check channel text
+if [[ "$COORD_MSG_COUNT" -eq 0 ]]; then
+  COORD_MSG_COUNT=$(echo "$CHANNEL_HISTORY" | grep -ci "coord:interface\|coord.*interface" 2>/dev/null) || COORD_MSG_COUNT=0
+fi
+# Check coord-messages artifact
+if [[ "$COORD_MSG_COUNT" -eq 0 ]]; then
+  COORD_MSG_COUNT=$(echo "$COORD_MESSAGES" | grep -ci "coord" 2>/dev/null) || COORD_MSG_COUNT=0
+fi
+# Check worker and dev logs for bus send with coord
+for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log "$ARTIFACTS/agent-${FLOWLOG_DEV}.log"; do
+  [[ -f "$wlog" ]] || continue
+  WC=$(grep -ci "coord:interface\|bus send.*coord\|-L coord" "$wlog" 2>/dev/null) || WC=0
+  COORD_MSG_COUNT=$((COORD_MSG_COUNT + WC))
+done
+echo "  coord:interface signals found: $COORD_MSG_COUNT"
+HAS_COORD_MSG=false
+if [[ "$COORD_MSG_COUNT" -ge 1 ]]; then
+  HAS_COORD_MSG=true
+fi
+check "coord:interface messages posted ($COORD_MSG_COUNT found)" "$($HAS_COORD_MSG && echo 0 || echo 1)" 5
+
+# Check 30: MULTIPLE agents posted coord messages (5 pts)
+# This is the bidirectionality test — not just one agent posting
+echo ""
+echo "--- Check 30: Multiple agents posted coordination messages ---"
+COORD_AGENTS=0
+# Check if dev-loop posted coord messages
+if echo "$DEV_LOG" | grep -qi "coord:interface\|bus send.*coord\|-L coord"; then
+  COORD_AGENTS=$((COORD_AGENTS + 1))
+  echo "  Dev-loop posted coord messages"
+fi
+# Check each worker log
+for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
+  [[ -f "$wlog" ]] || continue
+  if grep -qi "coord:interface\|bus send.*coord\|-L coord" "$wlog" 2>/dev/null; then
+    COORD_AGENTS=$((COORD_AGENTS + 1))
+    echo "  Worker $(basename "$wlog") posted coord messages"
+  fi
+done
+echo "  Agents posting coord messages: $COORD_AGENTS"
+MULTI_COORD=false
+if [[ "$COORD_AGENTS" -ge 2 ]]; then
+  MULTI_COORD=true
+fi
+check "2+ agents posted coordination messages ($COORD_AGENTS)" "$($MULTI_COORD && echo 0 || echo 1)" 5
+
+# Check 31: Workers read bus for sibling updates (5 pts)
+echo ""
+echo "--- Check 31: Workers read bus for sibling updates ---"
+WORKER_BUS_READ_COUNT=0
+for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
+  [[ -f "$wlog" ]] || continue
+  if grep -qi "bus history\|bus inbox\|bus search\|bus wait" "$wlog" 2>/dev/null; then
+    WORKER_BUS_READ_COUNT=$((WORKER_BUS_READ_COUNT + 1))
+  fi
+done
+echo "  Workers that read bus: $WORKER_BUS_READ_COUNT"
+WORKERS_READ_BUS=false
+# Also check if dev-loop instructed workers to read bus
+if echo "$DEV_LOG" | grep -qi "bus history.*coord\|check.*bus.*sibling\|read.*bus.*before\|coord.*message"; then
+  WORKERS_READ_BUS=true
+fi
+if [[ "$WORKER_BUS_READ_COUNT" -ge 1 ]]; then
+  WORKERS_READ_BUS=true
+fi
+check "Workers read bus for sibling updates ($WORKER_BUS_READ_COUNT workers)" "$($WORKERS_READ_BUS && echo 0 || echo 1)" 5
 
 # ============================================================
 # Friction Efficiency (10 pts)
@@ -621,14 +675,14 @@ _count_tool_errors() {
 }
 
 # Dev + worker friction
-DEV_ERRORS=$(_count_tool_errors "$ARTIFACTS/agent-${TASKR_DEV}.log")
-DEV_HELP=$(grep -c "\-\-help" "$ARTIFACTS/agent-${TASKR_DEV}.log" 2>/dev/null) || DEV_HELP=0
-DEV_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${TASKR_DEV}.log" 2>/dev/null) || DEV_RETRIES=0
+DEV_ERRORS=$(_count_tool_errors "$ARTIFACTS/agent-${FLOWLOG_DEV}.log")
+DEV_HELP=$(grep -c "\-\-help" "$ARTIFACTS/agent-${FLOWLOG_DEV}.log" 2>/dev/null) || DEV_HELP=0
+DEV_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${FLOWLOG_DEV}.log" 2>/dev/null) || DEV_RETRIES=0
 
 WORKER_ERRORS=0
 WORKER_HELP=0
 WORKER_RETRIES=0
-for wlog in "$ARTIFACTS"/agent-${TASKR_DEV}_*.log; do
+for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
   [[ -f "$wlog" ]] || continue
   WE=$(_count_tool_errors "$wlog")
   WH=$(grep -c "\-\-help" "$wlog" 2>/dev/null) || WH=0
@@ -647,8 +701,8 @@ echo "Workers: $WORKER_ERRORS errors, $WORKER_HELP --help, $WORKER_RETRIES retri
 echo "Total: $TOTAL_ERRORS errors, $TOTAL_HELP --help, $TOTAL_RETRIES retries"
 echo ""
 
-# Check 30: Tool errors (5 pts)
-echo "--- Check 30: Tool errors ---"
+# Check 32: Tool errors (5 pts)
+echo "--- Check 32: Tool errors ---"
 TOTAL=$((TOTAL + 5))
 if [[ "$TOTAL_ERRORS" -eq 0 ]]; then
   echo "PASS (5 pts): Zero tool errors"
@@ -665,8 +719,8 @@ else
 fi
 echo ""
 
-# Check 31: --help + retries (5 pts)
-echo "--- Check 31: --help and retries ---"
+# Check 33: --help + retries (5 pts)
+echo "--- Check 33: --help and retries ---"
 TOTAL=$((TOTAL + 5))
 HELP_RETRY_TOTAL=$((TOTAL_HELP + TOTAL_RETRIES))
 if [[ "$HELP_RETRY_TOTAL" -eq 0 ]]; then
@@ -696,16 +750,6 @@ if ! $WORKERS_SPAWNED; then
 fi
 
 # ============================================================
-# Critical Fail: No coordination → coordination score = 0
-# ============================================================
-# If no coord:interface messages posted, zero out coordination category
-if ! $HAS_COORD_MSG; then
-  echo ""
-  echo "NOTE: No coord:interface messages detected — coordination category scored individually"
-  echo "      (workers may still have coordinated implicitly via shared compilation)"
-fi
-
-# ============================================================
 # Summary
 # ============================================================
 echo ""
@@ -718,16 +762,16 @@ echo ""
 
 # Category breakdown
 echo "=== Category Breakdown ==="
-echo "Mission Recognition:   15 pts"
-echo "Decomposition:         25 pts"
-echo "Worker Dispatch:       25 pts"
-echo "Monitoring:            15 pts"
-echo "Synthesis:             15 pts"
-echo "Code Correctness:      25 pts"
-echo "Coordination (L5):     30 pts"
-echo "Friction Efficiency:   10 pts"
-echo "                      ─────────"
-echo "Total possible:       ~160 pts"
+echo "Mission Recognition:     15 pts"
+echo "Decomposition:           25 pts"
+echo "Worker Dispatch:         25 pts"
+echo "Monitoring:              15 pts"
+echo "Synthesis:               15 pts"
+echo "Code Correctness:        25 pts"
+echo "Coordination (L5v2):     40 pts"
+echo "Friction Efficiency:     10 pts"
+echo "                        ─────────"
+echo "Total possible:         ~170 pts"
 echo ""
 
 if [[ "$FAIL" -eq 0 ]]; then
@@ -747,9 +791,11 @@ echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
 echo "MISSION_BEAD=$MISSION_BEAD"
 echo ""
-echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history taskr -n 50' for channel messages"
-echo "Run 'cat $ARTIFACTS/agent-${TASKR_DEV}.log' for dev output"
-echo "Run 'ls $ARTIFACTS/agent-${TASKR_DEV}_*.log' for worker logs"
+echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history flowlog -n 50' for channel messages"
+echo "Run 'cat $ARTIFACTS/agent-${FLOWLOG_DEV}.log' for dev output"
+echo "Run 'ls $ARTIFACTS/agent-${FLOWLOG_DEV}_*.log' for worker logs"
 echo "Run 'cat $ARTIFACTS/coord-messages.log' for coordination messages"
+echo "Run 'cat $ARTIFACTS/record-final.rs' for final Record struct"
+echo "Run 'cat $ARTIFACTS/pipeline-final.rs' for final PipelineError enum"
 echo ""
 echo "=== Verification Complete ==="

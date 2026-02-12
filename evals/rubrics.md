@@ -1792,43 +1792,49 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 ---
 
-## E11-L5: Coordination Eval — Shared-Module Mission
+## E11-L5: Coordination Eval — Co-Evolving Shared Types
 
 **Type**: Integration (single project, multi-agent, botty-native, mission framework, coordination)
 
-**What it tests**: Whether mission workers coordinate through bus when they share code. E11-L4 tests missions with 3 INDEPENDENT subcommands — workers succeed by working in isolation. E11-L5 tests missions where workers MUST coordinate because they share a common core module with types and traits.
+**What it tests**: Whether mission workers coordinate through bus when shared types must co-evolve across stages. E11-L4 tests missions with 3 INDEPENDENT subcommands — workers succeed in isolation. E11-L5 tests missions where shared types (Record struct, PipelineError enum) START MINIMAL and each worker ADDS fields/variants during implementation. No single worker can define the types upfront — they must emerge from parallel implementation.
 
-**Single project**: `taskr` — task runner CLI where all subcommands share a `core` module:
+**Single project**: `flowlog` — data pipeline CLI where records flow through stages:
 
 ```
 src/
   main.rs           — clap skeleton with 3 subcommands (do NOT modify)
-  core/
-    mod.rs          — Task trait, TaskResult enum, Config struct, ShellTask, parse_task_file()
-    config.rs       — TOML config parser: load_config(), default_config()
-  commands/
-    run.rs          — taskr run <task-file> — parse + execute with dep ordering
-    list.rs         — taskr list [--format json|table] — discover and list tasks
-    validate.rs     — taskr validate <task-file> — check syntax without executing
+  record.rs         — Record struct: starts with ONLY id + data, stages add fields
+  pipeline.rs       — PipelineStage trait + PipelineError enum (minimal: Io, Other)
+  stages/
+    ingest.rs       — flowlog ingest <file> — read CSV/JSON, track provenance
+    transform.rs    — flowlog transform <file> --rules <rules> — validate + transform
+    emit.rs         — flowlog emit <file> --format <fmt> — format + emit with lineage
 ```
 
-**The coordination constraint**: ALL three subcommands depend on `core::Task` trait and `core::Config`. If worker A changes the Task trait (e.g., adds a field), workers B and C must adapt. Workers SHOULD post `coord:interface` bus messages when they modify core types and read bus for sibling updates before implementing.
+**The co-evolution constraint**: Record starts with only `id: String` and `data: HashMap<String, Value>`. Each stage must ADD fields for its domain concerns:
+- **Ingest** adds provenance fields (source path, format, timestamp)
+- **Transform** adds integrity fields (validation status, applied rules, error details)
+- **Emit** adds lineage fields (output format, emission timestamp, pipeline trace)
+
+Specs use DOMAIN language ("track data provenance", "verify data integrity", "record data lineage") — field names emerge from implementation decisions, not from specs. Workers cannot frontload type definitions.
 
 **Config**: Same as L4 — `review.enabled=false`, missions enabled, maxWorkers=3, sonnet workers.
 
 **Expected flow**:
 1. `!mission <spec>` → respond.mjs creates mission bead → execs dev-loop with BOTBOX_MISSION
-2. Dev-loop decomposes: core module (blocking) + 3 subcommand beads (parallel after core)
-3. Dev-loop dispatches workers for independent children
-4. Workers implement subcommands, posting coord:interface messages for core changes
-5. Workers read bus for sibling updates before implementing against core types
+2. Dev-loop decomposes: 3 stage beads (ingest, transform, emit) — NO blocking core bead
+3. Dev-loop dispatches workers for parallel stages
+4. Workers implement stages, discover they need to modify Record/PipelineError
+5. Workers post coord:interface messages about type changes, read bus for sibling updates
 6. Dev-loop monitors via checkpoints, synthesizes results
+
+**Key design difference from L5v1 (taskr)**: The old taskr project had a fully-specified core module that smart orchestrators could implement first as a blocker, turning coordination into a waterfall. flowlog eliminates this by making shared types start nearly empty — fields only emerge during stage implementation.
 
 **Setup**: `evals/scripts/e11-l5-setup.sh`
 **Run**: `evals/scripts/e11-l5-run.sh` (30 min timeout)
 **Verify**: `evals/scripts/e11-l5-verify.sh`
 
-### Scoring (~160 pts)
+### Scoring (~170 pts)
 
 #### Mission Recognition (15 pts)
 
@@ -1879,21 +1885,23 @@ src/
 | Check | Pts | Verification |
 |-------|-----|-------------|
 | cargo check passes | 5 | `maw exec default -- cargo check` |
-| 2+ subcommands implemented | 5 | todo!() removed from command files |
-| Shared core module implemented | 5 | core/mod.rs + config.rs without todo!(), parse_task_file exists |
-| 2+ subcommands work on sample data | 5 | list/validate/run produce correct output on sample TOML |
-| Feature flags work | 5 | --json, --names-only, --check-deps verified (tiered scoring) |
+| 2+ stages implemented | 5 | todo!() removed from stage files |
+| Sample data processed | 5 | ingest on sample.csv produces output |
+| 2+ stages work on sample data | 5 | ingest + transform or emit produce correct output |
+| Feature flags work | 5 | --json, --format csv, --strict, --format summary verified (tiered) |
 
-#### Coordination (30 pts) — NEW in L5
+#### Coordination (40 pts) — REDESIGNED in L5v2
 
 | Category | Check | Pts | Verification |
 |----------|-------|-----|-------------|
-| **Bus Reading** | Workers read bus for sibling updates | 5 | Worker logs show `bus history` or `bus inbox` calls |
-| | Worker adapted to sibling change | 5 | Worker logs reference sibling/interface changes, OR 2+ subcommands compile with shared types |
-| **Discovery Posting** | coord:interface message posted | 5 | Channel history or worker logs show coord:interface label or content |
-| | Message describes actual code change | 5 | Coordination text mentions specific types (Task, Config, ShellTask, etc.) |
-| **Shared Module** | Core module compiles with content | 5 | cargo check passes AND core/mod.rs > 30 lines |
-| | 2+ subcommands use shared types | 5 | Command files import from crate::core |
+| **Record Co-Evolution** | Record has 4+ fields | 5 | record.rs field count (started with 2: id + data) |
+| | Fields from 2+ stages | 5 | Domain keywords: provenance/source/ingested (ingest), transform/validation/is_valid (transform), lineage/emitted/emission (emit) |
+| | Fields from ALL 3 stages | 5 | Domain keywords from ingest AND transform AND emit present |
+| **Pipeline Co-Evolution** | PipelineError has 4+ variants | 5 | pipeline.rs enum variants (started with 2: Io + Other) |
+| | 2+ PipelineStage implementations | 5 | `impl PipelineStage` count in stage files |
+| **Bus Communication** | coord:interface messages posted | 5 | Channel history or worker logs show coord:interface label or content |
+| | Multiple agents posted coord messages | 5 | 2+ distinct agents posted coord messages (bidirectional test) |
+| | Workers read bus for sibling updates | 5 | Worker logs show `bus history` or `bus inbox` calls |
 
 #### Friction Efficiency (10 pts)
 
@@ -1909,11 +1917,12 @@ src/
 
 ### Key Differences from L4
 
-- **Shared code**: Project has a shared core module (Task trait, Config, ShellTask) used by ALL subcommands — not just independent modules
-- **Coordination requirement**: Mission spec explicitly mentions coordination and workers should post coord:interface messages
-- **Verify checks coordination**: 30 extra points for bus communication patterns, not just mission lifecycle
-- **Project type**: taskr (task runner CLI with TOML task files) vs futil (file utilities)
-- **Implicit coordination fallback**: If workers don't post explicit coord:interface messages but the project compiles with 2+ subcommands using shared types, partial credit is awarded (workers coordinated implicitly)
+- **Co-evolving types**: Record struct starts minimal (id + data), each stage adds domain-specific fields — types emerge from implementation, not from specs
+- **Domain language specs**: Specs say "track provenance" not "add source: String" — field names are implementation decisions
+- **No blocking core bead**: Unlike L5v1's taskr (where core module could be serialized), flowlog has no frontloadable type definitions
+- **Structural coordination checks**: Verify script checks ACTUAL Record fields and PipelineError variants, not just bus messages
+- **Bidirectional communication**: Checks that MULTIPLE agents posted coord messages, not just one
+- **No implicit fallback**: L5v1 gave coordination credit for compilation success alone; L5v2 requires structural evidence of co-evolution
 
 **Pass**: >= 70%, **Excellent**: >= 85%
 
@@ -1921,8 +1930,8 @@ src/
 
 | Model | Expected | Reasoning |
 |-------|----------|-----------|
-| Opus (dev) + Sonnet (workers) | 100-140 (63-88%) | Mission lifecycle should work (L4 validated). Coordination is the unknown — will workers actually post bus messages about type changes? |
-| Opus (dev) + Opus (workers) | 120-155 (75-97%) | Opus workers more likely to follow coordination instructions in dispatch prompts |
+| Opus (dev) + Sonnet (workers) | 100-145 (59-85%) | Mission lifecycle should work (L4 validated). Coordination is harder — workers must discover they need to modify Record and communicate about it |
+| Opus (dev) + Opus (workers) | 120-165 (71-97%) | Opus workers more likely to post coord messages and read sibling updates |
 
 ### Runs
 

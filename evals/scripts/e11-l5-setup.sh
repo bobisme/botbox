@@ -1,17 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# E11-L5 Coordination Eval — Setup
-# Creates a Rust CLI project (taskr) with three subcommands that share a core module.
-# The shared core module (Task trait, TaskResult enum, Config struct) forces workers
-# to coordinate when they change shared types.
+# E11-L5v2 Coordination Eval — Setup
+# Creates a Rust CLI project (flowlog) — a data pipeline tool where three subcommands
+# each CONTRIBUTE fields to a shared Record struct and steps to a shared Pipeline trait.
 #
-# The taskr project is a task runner CLI with:
-#   taskr run <task-file>        — parse + execute task definitions (todo!)
-#   taskr list [--format ...]    — list available tasks from config (todo!)
-#   taskr validate <task-file>   — check task file syntax without executing (todo!)
+# WHY THIS FORCES REAL COORDINATION:
+# The old taskr project had a clean core module that could be fully implemented first,
+# turning coordination into a unidirectional waterfall. flowlog is different:
+#   - Record struct starts with ONLY an id + data fields
+#   - Each subcommand needs to ADD its own fields to Record during implementation
+#   - Specs use DOMAIN language ("track provenance", "verify integrity", "record lineage")
+#     so workers must make implementation decisions about field names and types
+#   - No single worker can implement Record upfront because each stage's fields
+#     emerge from that stage's domain requirements
+#   - Workers must announce what they added (coord:interface) and read what siblings added
 #
-# All three subcommands share src/core/ (Task trait, Config, TaskResult).
+# flowlog CLI:
+#   flowlog ingest <source>                       — read data, track provenance (todo!)
+#   flowlog transform <rules-file> --input <file> — apply rules, validate integrity (todo!)
+#   flowlog emit <output> --input <file>          — write output, record lineage (todo!)
+#
+# Shared modules:
+#   src/record.rs   — Record struct (MINIMAL stub — workers add fields)
+#   src/pipeline.rs — PipelineStage trait + PipelineError (MINIMAL stub — workers add variants/impls)
+#
 # Does NOT send the task-request — that goes in the run script.
 
 # --- Preflight ---
@@ -24,11 +37,11 @@ done
 EVAL_BASE="${EVAL_BASE:-${HOME}/.cache/botbox-evals}"
 mkdir -p "$EVAL_BASE"
 EVAL_DIR=$(mktemp -d "$EVAL_BASE/e11-l5-XXXXXXXXXX")
-PROJECT_DIR="$EVAL_DIR/taskr"
-PROJECT_REMOTE="$EVAL_DIR/taskr-remote.git"
+PROJECT_DIR="$EVAL_DIR/flowlog"
+PROJECT_REMOTE="$EVAL_DIR/flowlog-remote.git"
 mkdir -p "$PROJECT_DIR" "$EVAL_DIR/artifacts"
 
-TASKR_DEV="taskr-dev"
+FLOWLOG_DEV="flowlog-dev"
 
 export BOTBUS_DATA_DIR="$EVAL_DIR/.botbus"
 bus init
@@ -39,7 +52,7 @@ bus init
   for cmd in botbox bus br bv maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
-  echo "eval=e11-l5"
+  echo "eval=e11-l5v2"
 } > "$EVAL_DIR/artifacts/tool-versions.env"
 
 # ============================================================
@@ -48,42 +61,44 @@ bus init
 git init --bare "$PROJECT_REMOTE"
 
 # ============================================================
-# Create taskr project
+# Create flowlog project
 # ============================================================
 cd "$PROJECT_DIR"
 jj git init
 jj git remote add origin "$PROJECT_REMOTE"
 
-mkdir -p src/core src/commands data
+mkdir -p src/commands data
 
 # --- Cargo.toml ---
 cat > Cargo.toml << 'CARGO_EOF'
 [package]
-name = "taskr"
+name = "flowlog"
 version = "0.1.0"
 edition = "2021"
 
 [[bin]]
-name = "taskr"
+name = "flowlog"
 path = "src/main.rs"
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-toml = "0.8"
+csv = "1"
+chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
 CARGO_EOF
 
-# --- src/main.rs (clap dispatch — delegates to command modules) ---
+# --- src/main.rs (clap dispatch — DO NOT MODIFY) ---
 cat > src/main.rs << 'RUST_EOF'
 use clap::{Parser, Subcommand};
 
-mod core;
+mod record;
+mod pipeline;
 mod commands;
 
 #[derive(Parser)]
-#[command(name = "taskr", version, about = "Task runner CLI")]
+#[command(name = "flowlog", version, about = "Data pipeline CLI — ingest, transform, emit")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -91,45 +106,44 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Execute tasks from a task file
-    Run {
-        /// Path to the task file (TOML format)
-        task_file: String,
-        /// Only run tasks matching this tag
+    /// Ingest data from a source file, tracking where it came from
+    Ingest {
+        /// Path to source file (CSV or JSON)
+        source: String,
+        /// Override detected format (csv or json)
         #[arg(long)]
-        tag: Option<String>,
-        /// Dry-run mode: parse and validate but don't execute
-        #[arg(long)]
-        dry_run: bool,
-        /// Output results as JSON
+        format: Option<String>,
+        /// Output ingested records as JSON
         #[arg(long)]
         json: bool,
     },
-    /// List available tasks from a config or task file
-    List {
-        /// Path to the task file or config directory
-        #[arg(default_value = ".")]
-        path: String,
-        /// Output format: table or json
-        #[arg(long, default_value = "table")]
+    /// Apply transformation rules and validate data integrity
+    Transform {
+        /// Path to rules file (JSON format)
+        rules_file: String,
+        /// Read records from this file (JSON, one per line)
+        #[arg(long)]
+        input: String,
+        /// Write transformed records to this file
+        #[arg(long)]
+        output: Option<String>,
+        /// Strict mode: reject records with any validation error
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Emit records to an output destination with lineage tracking
+    Emit {
+        /// Output destination path
+        output: String,
+        /// Read records from this file (JSON, one per line)
+        #[arg(long)]
+        input: String,
+        /// Output format: json, csv, or summary
+        #[arg(long, default_value = "json")]
         format: String,
-        /// Filter tasks by tag
+        /// Include full lineage chain in output
         #[arg(long)]
-        tag: Option<String>,
-        /// Show only task names (one per line)
-        #[arg(long)]
-        names_only: bool,
-    },
-    /// Validate task file syntax without executing
-    Validate {
-        /// Path to the task file (TOML format)
-        task_file: String,
-        /// Output validation results as JSON
-        #[arg(long)]
-        json: bool,
-        /// Also check for unreachable tasks (dependency cycles)
-        #[arg(long)]
-        check_deps: bool,
+        lineage: bool,
     },
 }
 
@@ -137,14 +151,14 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Run { task_file, tag, dry_run, json } => {
-            commands::run::execute(&task_file, tag.as_deref(), dry_run, json)
+        Commands::Ingest { source, format, json } => {
+            commands::ingest::execute(&source, format.as_deref(), json)
         }
-        Commands::List { path, format, tag, names_only } => {
-            commands::list::execute(&path, &format, tag.as_deref(), names_only)
+        Commands::Transform { rules_file, input, output, strict } => {
+            commands::transform::execute(&rules_file, &input, output.as_deref(), strict)
         }
-        Commands::Validate { task_file, json, check_deps } => {
-            commands::validate::execute(&task_file, json, check_deps)
+        Commands::Emit { output, input, format, lineage } => {
+            commands::emit::execute(&output, &input, &format, lineage)
         }
     };
 
@@ -157,451 +171,318 @@ RUST_EOF
 
 # --- src/commands/mod.rs ---
 cat > src/commands/mod.rs << 'RUST_EOF'
-pub mod run;
-pub mod list;
-pub mod validate;
+pub mod ingest;
+pub mod transform;
+pub mod emit;
 RUST_EOF
 
-# --- src/core/mod.rs (shared types — Task trait, TaskResult enum, Config struct) ---
-cat > src/core/mod.rs << 'RUST_EOF'
-//! Core types shared by ALL taskr subcommands.
+# --- src/record.rs (MINIMAL shared types — workers MUST add fields) ---
+# THIS IS THE KEY DESIGN DECISION: Record starts nearly empty.
+# Each worker adds fields as they discover domain requirements from the specs.
+# Specs DON'T name fields — they say "track provenance", "verify integrity", "record lineage".
+cat > src/record.rs << 'RUST_EOF'
+//! Shared record type for the flowlog pipeline.
 //!
-//! This module defines the fundamental types that run, list, and validate all depend on.
-//! Changes here affect ALL subcommands — coordinate with sibling workers if you modify
-//! any type signatures.
+//! Record represents a single data item flowing through the pipeline.
+//! Each pipeline stage (ingest, transform, emit) needs Record to carry
+//! information relevant to that stage's concerns.
 //!
-//! ## Types to implement
+//! ## Current state
 //!
-//! ### Task trait
-//! The core abstraction for executable tasks. Every task parsed from a TOML file
-//! must implement this trait.
+//! Record currently has ONLY a unique identifier and a data payload.
+//! Each pipeline stage will need to extend this struct with fields for
+//! its own domain concerns as it is implemented.
 //!
-//! ```rust,ignore
-//! pub trait Task: std::fmt::Debug {
-//!     /// Human-readable name of this task
-//!     fn name(&self) -> &str;
-//!     /// Tags for filtering (e.g., ["build", "test", "deploy"])
-//!     fn tags(&self) -> &[String];
-//!     /// Names of tasks this task depends on (must run first)
-//!     fn dependencies(&self) -> &[String];
-//!     /// Execute the task with the given config, returning a result
-//!     fn execute(&self, config: &Config) -> TaskResult;
-//!     /// Validate the task definition without executing (check required fields, etc.)
-//!     fn validate(&self) -> Vec<ValidationIssue>;
-//! }
-//! ```
+//! ## Guidelines
 //!
-//! ### TaskResult enum
-//! Represents the outcome of executing a task.
-//!
-//! ```rust,ignore
-//! pub enum TaskResult {
-//!     Success { output: String, duration_ms: u64 },
-//!     Failure { error: String, duration_ms: u64 },
-//!     Skipped { reason: String },
-//! }
-//! ```
-//!
-//! ### ValidationIssue struct
-//! Represents a problem found during validation.
-//!
-//! ```rust,ignore
-//! pub struct ValidationIssue {
-//!     pub severity: IssueSeverity,
-//!     pub message: String,
-//!     pub task_name: String,
-//! }
-//!
-//! pub enum IssueSeverity { Error, Warning, Info }
-//! ```
-//!
-//! ### Config struct
-//! Runtime configuration loaded from TOML.
-//!
-//! ```rust,ignore
-//! pub struct Config {
-//!     pub project_name: String,
-//!     pub task_dir: String,
-//!     pub verbose: bool,
-//!     pub env: HashMap<String, String>,
-//! }
-//! ```
-//!
-//! ## Implementation notes
-//! - Config is parsed from TOML by the config submodule
-//! - ShellTask (a concrete Task impl) executes shell commands
-//! - Task files are TOML with [[task]] arrays
-//! - Each task has: name, command, tags (optional), depends_on (optional)
-
-pub mod config;
+//! - All fields must be serializable (derive Serialize, Deserialize)
+//! - Use Option<T> for fields that are only set by certain stages
+//! - Keep field names descriptive of their domain purpose
+//! - When adding fields, coordinate with sibling workers via bus
+//!   to avoid naming conflicts or redundant fields
 
 use std::collections::HashMap;
 
-// TODO: Implement the Task trait as described above.
-// All three subcommands (run, list, validate) depend on this trait.
-// The trait must be object-safe so we can use Box<dyn Task>.
-pub trait Task: std::fmt::Debug {
-    fn name(&self) -> &str;
-    fn tags(&self) -> &[String];
-    fn dependencies(&self) -> &[String];
-    fn execute(&self, config: &Config) -> TaskResult;
-    fn validate(&self) -> Vec<ValidationIssue>;
+/// A single record flowing through the pipeline.
+///
+/// TODO: This struct needs fields added by each pipeline stage:
+/// - The ingestion stage needs to track where data came from
+/// - The transformation stage needs to track what happened to data
+/// - The emission stage needs to track where data went
+///
+/// Workers implementing each stage should add the fields they need
+/// and announce changes via coord:interface bus messages.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Record {
+    /// Unique identifier for this record
+    pub id: String,
+    /// The actual data payload (key-value pairs from the source)
+    pub data: HashMap<String, serde_json::Value>,
 }
 
-// TODO: Implement TaskResult enum as described above.
-// Used by run (to report results) and validate (to simulate dry-run).
-pub enum TaskResult {
-    Success { output: String, duration_ms: u64 },
-    Failure { error: String, duration_ms: u64 },
-    Skipped { reason: String },
-}
-
-// TODO: Implement ValidationIssue and IssueSeverity as described above.
-// Used by validate (primary) and list (to show health status).
-#[derive(Debug)]
-pub struct ValidationIssue {
-    pub severity: IssueSeverity,
-    pub message: String,
-    pub task_name: String,
-}
-
-#[derive(Debug)]
-pub enum IssueSeverity {
-    Error,
-    Warning,
-    Info,
-}
-
-// TODO: Implement Config struct as described above.
-// All subcommands receive a Config reference. Parsed from TOML by config module.
-pub struct Config {
-    pub project_name: String,
-    pub task_dir: String,
-    pub verbose: bool,
-    pub env: HashMap<String, String>,
-}
-
-// TODO: Implement ShellTask — a concrete type implementing the Task trait.
-// ShellTask runs a shell command (via std::process::Command).
-// Fields: name, command, tags, depends_on, working_dir (optional), env (optional).
-//
-// Parse from TOML [[task]] entries:
-//   [[task]]
-//   name = "build"
-//   command = "cargo build"
-//   tags = ["build"]
-//   depends_on = ["clean"]
-//   working_dir = "."
-//   env = { RUST_LOG = "info" }
-//
-// The execute() method should:
-// 1. Set up std::process::Command with the shell command
-// 2. Apply working_dir and env overrides from both ShellTask and Config
-// 3. Capture stdout+stderr, measure duration
-// 4. Return TaskResult::Success or TaskResult::Failure
-
-#[derive(Debug, serde::Deserialize)]
-pub struct ShellTask {
-    pub name: String,
-    pub command: String,
-    #[serde(default)]
-    pub tags: Vec<String>,
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-    pub working_dir: Option<String>,
-    #[serde(default)]
-    pub env: HashMap<String, String>,
-}
-
-todo!("Implement Task trait for ShellTask");
-
-// TODO: Implement parse_task_file(path: &str) -> Result<Vec<ShellTask>, TaskrError>
-// Reads a TOML file, deserializes [[task]] array into Vec<ShellTask>.
-// Returns TaskrError::FileNotFound if path doesn't exist.
-// Returns TaskrError::ParseError if TOML is invalid.
-
-todo!("Implement parse_task_file function");
-
-// TODO: Implement TaskrError enum with thiserror
-// Variants: FileNotFound(String), ParseError(String), ExecutionError(String),
-//           CycleDetected(Vec<String>), TaskNotFound(String)
-
-todo!("Implement TaskrError");
+todo!("Each pipeline stage must add its own fields to Record");
 RUST_EOF
 
-# --- src/core/config.rs (TOML config parser — todo stub) ---
-cat > src/core/config.rs << 'RUST_EOF'
-//! TOML configuration parser for taskr.
+# --- src/pipeline.rs (MINIMAL shared trait — workers MUST add error variants and impls) ---
+cat > src/pipeline.rs << 'RUST_EOF'
+//! Shared pipeline traits and error types for flowlog.
 //!
-//! Reads a taskr.toml config file and produces a Config struct.
-//! Config files have this structure:
+//! The PipelineStage trait defines the interface that each stage implements.
+//! PipelineError is the shared error type used across all stages.
 //!
-//! ```toml
-//! [project]
-//! name = "my-project"
-//! task_dir = "tasks"
-//! verbose = false
+//! ## Current state
 //!
-//! [env]
-//! RUST_LOG = "info"
-//! DATABASE_URL = "sqlite://test.db"
+//! The trait and error type are stubs. Each pipeline stage will need
+//! to add error variants for its failure modes and may need to extend
+//! the trait with stage-specific lifecycle methods.
+//!
+//! ## Guidelines
+//!
+//! - Add error variants as you discover failure modes in your stage
+//! - Keep error messages descriptive for end users
+//! - When adding new error variants, announce via coord:interface bus message
+//! - The trait should remain object-safe if possible
+
+use crate::record::Record;
+
+/// A pipeline stage that processes records.
+///
+/// TODO: Each stage may need additional lifecycle methods beyond process().
+/// For example:
+/// - Initialization (opening files, connecting to sources)
+/// - Finalization (flushing buffers, writing summaries)
+/// - Validation (checking configuration before processing)
+///
+/// Workers should add methods as needed and coordinate on the trait shape.
+pub trait PipelineStage: std::fmt::Debug {
+    /// Human-readable name of this stage
+    fn name(&self) -> &str;
+
+    /// Process a single record through this stage.
+    /// May modify the record in place (adding fields, transforming data).
+    fn process(&self, record: &mut Record) -> Result<(), PipelineError>;
+}
+
+/// Errors that can occur during pipeline execution.
+///
+/// TODO: Each stage needs to add its own error variants here.
+/// The ingestion stage has different failure modes than transformation
+/// or emission. Add variants as you discover them during implementation.
+#[derive(Debug, thiserror::Error)]
+pub enum PipelineError {
+    /// Generic I/O error
+    #[error("I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
+    /// Placeholder — remove this and add real variants
+    #[error("{0}")]
+    Other(String),
+}
+
+todo!("Each stage must add error variants to PipelineError");
+todo!("Implement PipelineStage for each stage (ingest, transform, emit)");
+RUST_EOF
+
+# --- src/commands/ingest.rs (todo stub — DOMAIN language, not code language) ---
+cat > src/commands/ingest.rs << 'RUST_EOF'
+//! flowlog ingest — read data from source files and track provenance.
+//!
+//! The ingest stage is the entry point for data into the pipeline.
+//! It must handle multiple source formats and track where each record came from.
+//!
+//! ## Domain requirements
+//!
+//! Data provenance is critical for auditing. Every ingested record must carry
+//! enough context to answer: "Where did this data come from?" This includes
+//! the source file, the original format, and when it was ingested.
+//!
+//! The ingest stage must also detect the source format automatically (CSV vs JSON)
+//! unless overridden by the user, and handle format-specific parsing:
+//! - CSV: each row becomes a record, headers become field names
+//! - JSON: each object becomes a record (supports both arrays and line-delimited)
+//!
+//! Raw data size tracking helps downstream stages estimate resource needs.
+//!
+//! ## Implementation notes
+//! - Uses the shared Record type from record.rs — ADD fields Record needs
+//!   for provenance tracking (coordinate with siblings via bus)
+//! - Uses PipelineStage trait from pipeline.rs — IMPLEMENT the trait
+//!   and ADD error variants for ingestion failures
+//! - Generate unique IDs for each record (e.g., source-file + line-number hash)
+//! - --json flag: output ingested records as JSON array to stdout
+//! - Without --json: print summary (N records ingested from <source>)
+//! - --format override: skip auto-detection, parse as specified format
+//!
+//! ## Dependencies
+//! - record::Record (MUST ADD provenance fields)
+//! - pipeline::{PipelineStage, PipelineError} (MUST ADD error variants, MUST IMPLEMENT trait)
+
+use crate::record;
+use crate::pipeline;
+
+pub fn execute(
+    _source: &str,
+    _format: Option<&str>,
+    _json: bool,
+) -> Result<(), pipeline::PipelineError> {
+    todo!("Implement ingest: detect format, parse records, track provenance, output results")
+}
+RUST_EOF
+
+# --- src/commands/transform.rs (todo stub — DOMAIN language) ---
+cat > src/commands/transform.rs << 'RUST_EOF'
+//! flowlog transform — apply transformation rules and validate data integrity.
+//!
+//! The transform stage is the processing core of the pipeline.
+//! It applies user-defined rules to records and validates data integrity.
+//!
+//! ## Domain requirements
+//!
+//! Data integrity verification ensures pipeline reliability. Every transformed
+//! record must carry enough context to answer: "What happened to this data?"
+//! This includes a log of transformations applied and any validation failures.
+//!
+//! Rules are defined in a JSON rules file with this structure:
+//! ```json
+//! {
+//!   "rules": [
+//!     { "field": "name", "action": "uppercase" },
+//!     { "field": "age", "action": "validate_range", "min": 0, "max": 150 },
+//!     { "field": "email", "action": "validate_pattern", "pattern": ".*@.*" },
+//!     { "field": "score", "action": "default", "value": 0 }
+//!   ]
+//! }
 //! ```
 //!
-//! ## Functions to implement
+//! Supported actions:
+//! - uppercase / lowercase: transform string values
+//! - validate_range: check numeric values are in range (records validation outcome)
+//! - validate_pattern: check string matches regex pattern (records validation outcome)
+//! - default: set field to value if missing
 //!
-//! ### load_config(path: &str) -> Result<Config, TaskrError>
-//! 1. Read the file at `path` (return TaskrError::FileNotFound if missing)
-//! 2. Parse as TOML (return TaskrError::ParseError if invalid)
-//! 3. Extract [project] fields into Config struct
-//! 4. Extract [env] table into Config.env HashMap
-//! 5. Apply defaults: project_name="unnamed", task_dir=".", verbose=false
+//! --strict mode: if any validation fails, reject the record entirely.
+//! Without --strict: keep the record but mark it as having validation issues.
 //!
-//! ### default_config() -> Config
-//! Returns a Config with all default values. Used when no config file exists.
-//!
-//! Both functions are used by all three subcommands.
-
-use super::{Config, TaskrError};
-
-todo!("Implement load_config and default_config");
-RUST_EOF
-
-# --- src/commands/run.rs (todo stub) ---
-cat > src/commands/run.rs << 'RUST_EOF'
-//! taskr run — execute tasks from a task file.
-//!
-//! Parses the task file, resolves dependency order, and executes tasks sequentially.
-//! Respects --tag filter, --dry-run mode, and --json output.
-//!
-//! ## Requirements
-//!
-//! 1. Parse task file using core::parse_task_file()
-//! 2. Load config from taskr.toml in current dir (or use default_config if missing)
-//! 3. Filter by --tag if provided (only run tasks matching the tag)
-//! 4. Resolve execution order via topological sort on dependencies
-//!    - If a cycle is detected, return TaskrError::CycleDetected
-//!    - If a dependency references a nonexistent task, return TaskrError::TaskNotFound
-//! 5. Execute tasks in order using task.execute(config)
-//!    - If --dry-run: validate only, report what WOULD run, don't execute
-//!    - If a task fails: skip dependents, continue with independent tasks
-//! 6. Output results:
-//!    - Plain: "✓ build (45ms)" or "✗ test: assertion failed (120ms)" or "⊘ deploy: skipped (dependency failed)"
-//!    - JSON: [{"name":"build","status":"success","output":"...","duration_ms":45}, ...]
-//!    - Summary line: "3 passed, 1 failed, 1 skipped"
+//! ## Implementation notes
+//! - Reads records from --input file (JSON, one record per line — as output by ingest --json)
+//! - Uses the shared Record type — ADD fields Record needs for transformation
+//!   tracking and validation state (coordinate with siblings via bus)
+//! - Uses PipelineStage trait — IMPLEMENT the trait and ADD error variants
+//!   for transformation failures (bad rules, validation errors, etc.)
+//! - Writes transformed records to --output file (or stdout if not specified)
+//! - Print summary: N records transformed, M validation errors
 //!
 //! ## Dependencies
-//! - core::parse_task_file, core::Config, core::Task, core::TaskResult
-//! - core::config::load_config
+//! - record::Record (MUST ADD transformation tracking fields)
+//! - pipeline::{PipelineStage, PipelineError} (MUST ADD error variants, MUST IMPLEMENT trait)
 
-use crate::core;
+use crate::record;
+use crate::pipeline;
 
 pub fn execute(
-    _task_file: &str,
-    _tag: Option<&str>,
-    _dry_run: bool,
-    _json: bool,
-) -> Result<(), core::TaskrError> {
-    todo!("Implement run: parse tasks, resolve deps via toposort, execute, report results")
+    _rules_file: &str,
+    _input: &str,
+    _output: Option<&str>,
+    _strict: bool,
+) -> Result<(), pipeline::PipelineError> {
+    todo!("Implement transform: load rules, apply transforms, validate integrity, output results")
 }
 RUST_EOF
 
-# --- src/commands/list.rs (todo stub) ---
-cat > src/commands/list.rs << 'RUST_EOF'
-//! taskr list — list available tasks from a task file or config directory.
+# --- src/commands/emit.rs (todo stub — DOMAIN language) ---
+cat > src/commands/emit.rs << 'RUST_EOF'
+//! flowlog emit — write records to output destination with lineage tracking.
 //!
-//! Discovers task files and lists their tasks with metadata.
+//! The emit stage is the exit point for data from the pipeline.
+//! It writes records in the requested format and tracks the full data lineage.
 //!
-//! ## Requirements
+//! ## Domain requirements
 //!
-//! 1. If path is a file: parse it as a task file
-//! 2. If path is a directory: find all *.toml files, parse each as task file
-//! 3. Filter by --tag if provided
-//! 4. Output formats:
-//!    - table: aligned columns — Name | Tags | Deps | Status
-//!      Status = "ready" (no deps or all deps exist) or "blocked" (missing deps)
-//!    - json: [{"name":"build","tags":["build"],"dependencies":[],"status":"ready"}, ...]
-//!    - --names-only: just task names, one per line (for scripting)
-//! 5. Sort tasks alphabetically by name
+//! Data lineage captures the complete journey of each record through the pipeline.
+//! Every emitted record must carry enough context to answer: "What is the full
+//! history of this data?" This means combining provenance from ingestion,
+//! transformation history, and emission metadata into a complete chain.
+//!
+//! Output formats:
+//! - json: write records as a JSON array (with optional lineage)
+//! - csv: write records as CSV (data fields only, lineage in separate file)
+//! - summary: human-readable summary — record count, source breakdown,
+//!   transformation stats, validation pass rate
+//!
+//! --lineage flag: include full lineage chain in JSON output.
+//! For CSV, write a companion .lineage.json file alongside the CSV.
+//!
+//! ## Implementation notes
+//! - Reads records from --input file (JSON, one record per line)
+//! - Uses the shared Record type — ADD fields Record needs for emission
+//!   metadata and lineage assembly (coordinate with siblings via bus)
+//! - Uses PipelineStage trait — IMPLEMENT the trait and ADD error variants
+//!   for emission failures (write errors, format errors, etc.)
+//! - Each format handler should be its own function
+//! - Summary format should aggregate across all records
 //!
 //! ## Dependencies
-//! - core::parse_task_file, core::ShellTask, core::Task
-//! - core::config::load_config (for finding task_dir from config)
+//! - record::Record (MUST ADD emission and lineage fields)
+//! - pipeline::{PipelineStage, PipelineError} (MUST ADD error variants, MUST IMPLEMENT trait)
 
-use crate::core;
+use crate::record;
+use crate::pipeline;
 
 pub fn execute(
-    _path: &str,
+    _output: &str,
+    _input: &str,
     _format: &str,
-    _tag: Option<&str>,
-    _names_only: bool,
-) -> Result<(), core::TaskrError> {
-    todo!("Implement list: discover task files, parse, filter, format output")
+    _lineage: bool,
+) -> Result<(), pipeline::PipelineError> {
+    todo!("Implement emit: read records, format output, track lineage, write to destination")
 }
 RUST_EOF
 
-# --- src/commands/validate.rs (todo stub) ---
-cat > src/commands/validate.rs << 'RUST_EOF'
-//! taskr validate — validate task file syntax without executing.
-//!
-//! Checks task definitions for correctness and reports issues.
-//!
-//! ## Requirements
-//!
-//! 1. Parse task file using core::parse_task_file()
-//! 2. For each task, call task.validate() to get ValidationIssues
-//! 3. Check cross-task issues:
-//!    - Duplicate task names → Error
-//!    - References to nonexistent dependencies → Error
-//!    - Dependency cycles (--check-deps) → Error
-//!    - Tasks with no command → Warning
-//!    - Unused tasks (nothing depends on them, not top-level) → Info
-//! 4. Output:
-//!    - Plain: severity icon + message per issue, summary line
-//!      "✗ ERROR: task 'deploy' depends on nonexistent task 'package'"
-//!      "⚠ WARNING: task 'clean' has empty command"
-//!      "ℹ INFO: task 'lint' is not depended on by any other task"
-//!      "Validation: 1 error, 1 warning, 1 info"
-//!    - JSON: {"valid": false, "issues": [{"severity":"error","message":"...","task":"deploy"}], "task_count": 5}
-//! 5. Exit with error if any Error-severity issues found
-//!
-//! ## Dependencies
-//! - core::parse_task_file, core::Task, core::ValidationIssue, core::IssueSeverity
+# --- Sample data files ---
+cat > data/sample.csv << 'DATA_EOF'
+name,age,email,score
+Alice,30,alice@example.com,95
+Bob,25,bob@example.com,87
+Charlie,35,charlie@test.org,92
+Diana,28,diana@example.com,78
+Eve,42,eve@nowhere.net,88
+DATA_EOF
 
-use crate::core;
+cat > data/sample.json << 'DATA_EOF'
+[
+  {"name": "Alice", "age": 30, "email": "alice@example.com", "score": 95},
+  {"name": "Bob", "age": 25, "email": "bob@example.com", "score": 87},
+  {"name": "Charlie", "age": 35, "email": "charlie@test.org", "score": 92},
+  {"name": "Diana", "age": 28, "email": "diana@example.com", "score": 78},
+  {"name": "Eve", "age": 42, "email": "eve@nowhere.net", "score": 88}
+]
+DATA_EOF
 
-pub fn execute(
-    _task_file: &str,
-    _json: bool,
-    _check_deps: bool,
-) -> Result<(), core::TaskrError> {
-    todo!("Implement validate: parse, check each task, cross-task checks, report issues")
+cat > data/rules.json << 'DATA_EOF'
+{
+  "rules": [
+    { "field": "name", "action": "uppercase" },
+    { "field": "age", "action": "validate_range", "min": 0, "max": 150 },
+    { "field": "email", "action": "validate_pattern", "pattern": ".*@.*\\..*" },
+    { "field": "score", "action": "default", "value": 0 }
+  ]
 }
-RUST_EOF
-
-# --- Sample task files (TOML format) ---
-cat > data/simple.toml << 'DATA_EOF'
-[[task]]
-name = "clean"
-command = "rm -rf target"
-tags = ["build"]
-
-[[task]]
-name = "build"
-command = "cargo build"
-tags = ["build"]
-depends_on = ["clean"]
-
-[[task]]
-name = "test"
-command = "cargo test"
-tags = ["test"]
-depends_on = ["build"]
-
-[[task]]
-name = "lint"
-command = "cargo clippy"
-tags = ["quality"]
-depends_on = ["build"]
-
-[[task]]
-name = "release"
-command = "cargo build --release"
-tags = ["build", "release"]
-depends_on = ["test", "lint"]
 DATA_EOF
 
-cat > data/complex.toml << 'DATA_EOF'
-[[task]]
-name = "setup-db"
-command = "echo 'Creating database...'"
-tags = ["infra"]
-env = { DATABASE_URL = "sqlite://test.db" }
-
-[[task]]
-name = "migrate"
-command = "echo 'Running migrations...'"
-tags = ["infra"]
-depends_on = ["setup-db"]
-
-[[task]]
-name = "seed"
-command = "echo 'Seeding test data...'"
-tags = ["infra", "test"]
-depends_on = ["migrate"]
-
-[[task]]
-name = "build-api"
-command = "echo 'Building API server...'"
-tags = ["build"]
-
-[[task]]
-name = "build-worker"
-command = "echo 'Building background worker...'"
-tags = ["build"]
-
-[[task]]
-name = "test-api"
-command = "echo 'Testing API...'"
-tags = ["test"]
-depends_on = ["build-api", "seed"]
-
-[[task]]
-name = "test-worker"
-command = "echo 'Testing worker...'"
-tags = ["test"]
-depends_on = ["build-worker", "seed"]
-
-[[task]]
-name = "integration"
-command = "echo 'Running integration tests...'"
-tags = ["test", "integration"]
-depends_on = ["test-api", "test-worker"]
-
-[[task]]
-name = "deploy"
-command = "echo 'Deploying...'"
-tags = ["deploy"]
-depends_on = ["integration"]
+cat > data/strict-rules.json << 'DATA_EOF'
+{
+  "rules": [
+    { "field": "age", "action": "validate_range", "min": 0, "max": 30 },
+    { "field": "email", "action": "validate_pattern", "pattern": ".*@example\\.com$" }
+  ]
+}
 DATA_EOF
 
-cat > data/invalid.toml << 'DATA_EOF'
-# Invalid task file for testing validate command
-[[task]]
-name = "build"
-command = "cargo build"
-
-[[task]]
-name = "build"
-command = "cargo build --release"
-
-[[task]]
-name = "test"
-command = "cargo test"
-depends_on = ["nonexistent"]
-
-[[task]]
-name = "a"
-command = "echo a"
-depends_on = ["b"]
-
-[[task]]
-name = "b"
-command = "echo b"
-depends_on = ["a"]
-
-[[task]]
-name = "empty"
-DATA_EOF
-
-cat > data/taskr.toml << 'DATA_EOF'
-[project]
-name = "sample-project"
-task_dir = "data"
-verbose = false
-
-[env]
-RUST_LOG = "info"
-APP_ENV = "test"
+cat > data/bad-records.json << 'DATA_EOF'
+{"id":"r1","data":{"name":"Alice","age":30}}
+{"id":"r2","data":{"name":"Bob"}}
+not-valid-json
+{"id":"r3","data":{"name":"Charlie","age":"not-a-number"}}
 DATA_EOF
 
 # --- .gitignore ---
@@ -609,14 +490,12 @@ cat > .gitignore << 'GITIGNORE_EOF'
 /target/
 GITIGNORE_EOF
 
-# --- Compile to verify skeleton ---
-# The skeleton has todo!() at module level which won't compile,
-# so we just verify the project structure exists.
-# cargo check would fail due to todo!() at module level — that's intentional.
+# --- Verify project structure ---
+# The skeleton has todo!() at module level which won't compile — intentional.
 echo "Project structure created (todo!() stubs — won't compile until implemented)"
 
 # --- Initial commit ---
-jj describe -m "taskr: CLI skeleton with shared core module and three todo subcommands"
+jj describe -m "flowlog: data pipeline CLI skeleton with co-evolving shared types"
 jj bookmark create main -r @
 jj git push --bookmark main
 jj new
@@ -625,7 +504,7 @@ jj new
 # Initialize with botbox (maw v2 bare repo layout)
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name taskr --type cli --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+  botbox init --name flowlog --type cli --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
 
 # ============================================================
 # Patch .botbox.json: enable missions, disable review, set models
@@ -689,11 +568,11 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-
 # ============================================================
 # Projects registry
 # ============================================================
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus send --agent "$TASKR_DEV" projects \
-  "project: taskr  repo: $PROJECT_DIR  lead: $TASKR_DEV  tools: cli, task-runner"
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus send --agent "$FLOWLOG_DEV" projects \
+  "project: flowlog  repo: $PROJECT_DIR  lead: $FLOWLOG_DEV  tools: cli, data-pipeline"
 
 # Mark registry read
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus inbox --agent "$TASKR_DEV" --channels projects --mark-read >/dev/null 2>&1 || true
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus inbox --agent "$FLOWLOG_DEV" --channels projects --mark-read >/dev/null 2>&1 || true
 
 # ============================================================
 # Save env
@@ -702,30 +581,32 @@ cat > "$EVAL_DIR/.eval-env" << EOF
 export EVAL_DIR="$EVAL_DIR"
 export BOTBUS_DATA_DIR="$EVAL_DIR/.botbus"
 export PROJECT_DIR="$PROJECT_DIR"
-export TASKR_DEV="$TASKR_DEV"
+export FLOWLOG_DEV="$FLOWLOG_DEV"
 EOF
 
 echo ""
-echo "=== E11-L5 Setup Complete ==="
+echo "=== E11-L5v2 Setup Complete ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "TASKR_DEV=$TASKR_DEV"
+echo "FLOWLOG_DEV=$FLOWLOG_DEV"
 echo ""
 echo "Mission config:"
 echo "  missions.enabled=true, maxWorkers=3, maxChildren=8"
 echo "  review.enabled=false"
 echo "  worker.model=sonnet"
 echo ""
-echo "Project: taskr — CLI with shared core module and three todo!() subcommands:"
-echo "  src/core/mod.rs       — Task trait, TaskResult, Config, ShellTask (SHARED)"
-echo "  src/core/config.rs    — TOML config parser (SHARED)"
-echo "  src/commands/run.rs   — taskr run <task-file>"
-echo "  src/commands/list.rs  — taskr list [--format json|table]"
-echo "  src/commands/validate.rs — taskr validate <task-file>"
+echo "Project: flowlog — data pipeline CLI with co-evolving shared types:"
+echo "  src/record.rs             — Record struct (MINIMAL: id + data only, workers ADD fields)"
+echo "  src/pipeline.rs           — PipelineStage trait + PipelineError (MINIMAL, workers ADD)"
+echo "  src/commands/ingest.rs    — flowlog ingest <source>"
+echo "  src/commands/transform.rs — flowlog transform <rules-file> --input <file>"
+echo "  src/commands/emit.rs      — flowlog emit <output> --input <file>"
 echo ""
-echo "COORDINATION REQUIREMENT:"
-echo "  All subcommands depend on core types. If one worker changes the"
-echo "  Task trait or Config struct, siblings must adapt."
+echo "CO-EVOLUTION REQUIREMENT:"
+echo "  Record starts with ONLY id + data fields. Each worker must ADD fields"
+echo "  for their stage's concerns (provenance, transformation history, lineage)."
+echo "  The full Record shape is not knowable until ALL stages are implemented."
+echo "  Workers MUST announce additions via coord:interface and read siblings'."
 echo ""
 echo "No bead seeded — !mission handler in respond.mjs creates it."
 echo ""

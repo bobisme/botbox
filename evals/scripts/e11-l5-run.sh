@@ -1,30 +1,34 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# E11-L5 Coordination Eval — Orchestrator
-# Sends !mission message to taskr channel, polls mission lifecycle
+# E11-L5v2 Coordination Eval — Orchestrator
+# Sends !mission message to flowlog channel, polls mission lifecycle
 # (decomposition → worker dispatch → checkpoint → synthesis), captures artifacts.
 # Additionally captures coordination-specific artifacts (coord:interface messages,
 # bus history calls in worker logs).
 #
-# Key difference from L4: the mission spec explicitly mentions shared core module
-# and coordination requirement. Workers MUST coordinate on shared types.
+# KEY DIFFERENCE FROM L5v1 (taskr):
+# The mission spec uses DOMAIN language, not code language. It says "track data
+# provenance" not "add source: String to Record". Workers must make implementation
+# decisions themselves, add fields to the shared Record struct, and coordinate
+# via bus about what they added. No single worker can define Record upfront.
 #
 # Expected flow:
 # 1. Router hook fires → respond.mjs → routes !mission
 # 2. respond.mjs creates mission bead → execs into dev-loop with BOTBOX_MISSION
 # 3. Dev-loop decomposes mission into child beads
-# 4. Dev-loop dispatches workers (taskr-dev/<random>) for independent children
-# 5. Workers implement subcommands, coordinating on shared core module
-# 6. Dev-loop monitors via checkpoints
-# 7. Dev-loop synthesizes and closes mission
+# 4. Dev-loop dispatches workers (flowlog-dev/<random>) for children
+# 5. Workers implement stages, each ADDING fields to shared Record struct
+# 6. Workers post coord:interface when they modify record.rs or pipeline.rs
+# 7. Workers read bus for sibling changes to shared types
+# 8. Dev-loop monitors via checkpoints, synthesizes results
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OVERALL_TIMEOUT=${E11_TIMEOUT:-1800}  # 30 minutes default
 POLL_INTERVAL=30                       # seconds between status checks
 STUCK_THRESHOLD=300                    # 5 minutes without progress = stuck
 
-echo "=== E11-L5 Coordination Eval ==="
+echo "=== E11-L5v2 Coordination Eval ==="
 echo "Starting at $(date)"
 echo "Overall timeout: ${OVERALL_TIMEOUT}s"
 echo ""
@@ -56,99 +60,110 @@ echo "--- Verifying hooks ---"
 HOOKS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus hooks list 2>&1)
 echo "$HOOKS"
 
-TASKR_ROUTER_OK=false
-if echo "$HOOKS" | grep -qi "taskr.*claim\|claim.*taskr"; then
-  TASKR_ROUTER_OK=true
-  echo "  Taskr router hook: OK"
+FLOWLOG_ROUTER_OK=false
+if echo "$HOOKS" | grep -qi "flowlog.*claim\|claim.*flowlog"; then
+  FLOWLOG_ROUTER_OK=true
+  echo "  flowlog router hook: OK"
 fi
 
-if ! $TASKR_ROUTER_OK; then echo "WARNING: No taskr router hook found"; fi
+if ! $FLOWLOG_ROUTER_OK; then echo "WARNING: No flowlog router hook found"; fi
 echo "--- hooks: OK ---"
 echo ""
 
 # --- Build mission spec ---
-# Key difference from L4: explicitly mentions shared core module and coordination requirement.
-MISSION_SPEC='!mission Implement all taskr subcommands and shared core module
-Outcome: A working taskr CLI where all three subcommands (run, list, validate) produce correct output with all flags working, the shared core module fully implemented, and tasks parseable from TOML files.
+# CRITICAL: Uses domain language, NOT code language.
+# Says "track provenance" not "add source: String". Workers decide field names.
+MISSION_SPEC='!mission Implement all flowlog pipeline stages with co-evolving shared types
+Outcome: A working flowlog CLI where all three pipeline stages (ingest, transform, emit) produce correct output with all flags working, processing the sample data files end-to-end through the full pipeline.
 
-## Architecture — SHARED CORE MODULE (CRITICAL)
+## Architecture — CO-EVOLVING SHARED TYPES (CRITICAL)
 
-The project has a shared core module that ALL subcommands depend on:
+The project has two shared modules that ALL pipeline stages depend on and MUST EXTEND:
 
-- src/core/mod.rs — Task trait, TaskResult enum, ValidationIssue, Config struct, ShellTask, parse_task_file(), TaskrError (SHARED by ALL subcommands)
-- src/core/config.rs — TOML config parser: load_config(), default_config() (SHARED by ALL subcommands)
-- src/commands/run.rs — taskr run: parse tasks, toposort deps, execute, report
-- src/commands/list.rs — taskr list: discover tasks, filter, format output
-- src/commands/validate.rs — taskr validate: parse, check, report issues
+- src/record.rs — Record struct: currently has ONLY id + data fields. Each stage MUST add fields for its domain concerns. Do NOT modify src/main.rs.
+- src/pipeline.rs — PipelineStage trait + PipelineError enum: currently minimal stubs. Each stage MUST add error variants and implement the trait.
+- src/commands/ingest.rs — flowlog ingest: read source data, track data provenance
+- src/commands/transform.rs — flowlog transform: apply rules, verify data integrity
+- src/commands/emit.rs — flowlog emit: write output, record data lineage
 - src/main.rs — clap dispatch (already wired, do NOT modify)
 
-**COORDINATION REQUIREMENT**: All three subcommands import from core. If a worker changes the Task trait signature, adds fields to Config, or modifies TaskResult, the other workers MUST adapt. Workers MUST:
-1. Post bus messages with -L coord:interface when they modify shared types in core/
-2. Check bus history for sibling coord:interface messages BEFORE implementing against core types
-3. Coordinate on the shared module to avoid compilation failures
+**CO-EVOLUTION REQUIREMENT**: Record starts nearly empty. Each worker MUST add fields to Record for their stage'"'"'s domain concerns. The full Record shape cannot be known until all stages have added their fields. Workers MUST:
+1. Add fields to Record in record.rs for their stage'"'"'s needs — the specs describe WHAT to track (provenance, integrity, lineage) not HOW (no field names given)
+2. Add error variants to PipelineError in pipeline.rs for their stage'"'"'s failure modes
+3. Implement PipelineStage trait for their stage
+4. Post bus messages with -L coord:interface announcing what fields/variants they added to shared types
+5. Read bus history for sibling coord:interface messages to discover what fields siblings added
+6. If a sibling already added fields you need to read (e.g., emit reads provenance fields that ingest added), coordinate on field names via bus
 
-## Component specs
+## Stage specs (DOMAIN language — workers decide field names and types)
 
-### 1. src/core/mod.rs + src/core/config.rs — Shared types and config (implement FIRST)
+### 1. src/commands/ingest.rs — Data ingestion with provenance tracking
 
-The type skeletons exist but have todo!() stubs. Implement:
-- Task trait (already declared, just needs ShellTask impl)
-- ShellTask: implement Task trait — execute() runs shell commands via std::process::Command
-- parse_task_file(path) → Result<Vec<ShellTask>, TaskrError>: read TOML, deserialize [[task]] array
-- TaskrError enum with thiserror: FileNotFound, ParseError, ExecutionError, CycleDetected, TaskNotFound
-- config.rs: load_config(path) and default_config() functions
+Read data from source files (CSV or JSON) and track where each record came from. Every ingested record must carry enough context to answer: "Where did this data come from?"
 
-The existing type declarations (Task trait, TaskResult, ValidationIssue, IssueSeverity, Config, ShellTask struct) are already in mod.rs — implement the missing pieces (trait impl, functions, error type).
+Domain requirements:
+- Detect source format automatically from file extension (CSV vs JSON), with --format override
+- CSV: each row becomes a record, headers become data field names
+- JSON: each object becomes a record (supports both JSON arrays and line-delimited JSON)
+- Track data provenance: the source file path, the detected/specified format, the time of ingestion, and the raw byte size of the source
+- Generate unique IDs for each record
+- --json flag: output ingested records as a JSON array to stdout (one record per line for piping)
+- Without --json: print summary ("N records ingested from <source>")
 
-All subcommands depend on these types. **Post a coord:interface bus message after implementing core changes.**
+Uses and EXTENDS: record.rs (add provenance fields), pipeline.rs (add error variants, implement trait)
 
-### 2. src/commands/run.rs — taskr run [OPTIONS] <task-file>
-Task execution with dependency resolution. Requirements:
-  - Parse task file via core::parse_task_file()
-  - Load config from taskr.toml (or default)
-  - --tag filter: only run tasks matching tag
-  - Topological sort on dependencies (detect cycles → TaskrError::CycleDetected)
-  - Execute tasks in order, skip dependents if a task fails
-  - --dry-run: validate and report without executing
-  - --json output: [{"name","status","output","duration_ms"}, ...]
-  - Plain output: checkmark/cross + name + duration, summary line
-  - Uses core::Task::execute(), core::Config, core::TaskResult
+### 2. src/commands/transform.rs — Data transformation with integrity verification
 
-### 3. src/commands/list.rs — taskr list [OPTIONS] [path]
-Task discovery and listing. Requirements:
-  - File path: parse as task file; directory path: find *.toml files
-  - --format table: aligned columns (Name | Tags | Deps | Status)
-  - --format json: [{"name","tags","dependencies","status"}, ...]
-  - --names-only: one name per line
-  - --tag filter: only show matching tasks
-  - Status: "ready" (deps exist) or "blocked" (missing deps)
-  - Sort alphabetically by name
-  - Uses core::parse_task_file(), core::Task
+Apply transformation rules to records and verify data integrity. Every transformed record must carry enough context to answer: "What happened to this data?"
 
-### 4. src/commands/validate.rs — taskr validate [OPTIONS] <task-file>
-Validation without execution. Requirements:
-  - Per-task: call task.validate() for ValidationIssues
-  - Cross-task: duplicate names (Error), missing deps (Error), cycles with --check-deps (Error), empty commands (Warning), unused tasks (Info)
-  - Plain output: severity icon + message, summary line
-  - --json: {"valid":false,"issues":[...],"task_count":5}
-  - Exit error if any Error-severity issues
-  - Uses core::parse_task_file(), core::Task, core::ValidationIssue
+Domain requirements:
+- Read records from --input file (JSON, one record per line — as output by ingest --json)
+- Load rules from a JSON rules file (see data/rules.json for format)
+- Supported rule actions: uppercase, lowercase, validate_range, validate_pattern, default
+- Track transformation history: which rules were applied to each record and their outcomes
+- Track validation state: whether each record passed all validation rules, and what failed
+- --strict mode: reject records entirely if any validation fails
+- Without --strict: keep records but mark them as having validation issues
+- Write transformed records to --output file (or stdout if not specified)
+- Print summary: "N records transformed, M validation errors"
 
-## Dependencies between components
-- core/ (mod.rs + config.rs) BLOCKS run.rs, list.rs, and validate.rs
-- run.rs, list.rs, and validate.rs are INDEPENDENT of each other (can be done in parallel)
-- BUT they all share core types — changes to core by one worker affect siblings
+Uses and EXTENDS: record.rs (add transformation/validation fields), pipeline.rs (add error variants, implement trait)
+
+### 3. src/commands/emit.rs — Data emission with lineage tracking
+
+Write records to output destination with full data lineage. Every emitted record must carry enough context to answer: "What is the complete history of this data?"
+
+Domain requirements:
+- Read records from --input file (JSON, one record per line)
+- Output formats: json (records as JSON array), csv (data fields as CSV), summary (human-readable aggregate stats)
+- Track data lineage: assemble the complete provenance-to-emission chain for each record
+- --lineage flag: include full lineage chain in JSON output; for CSV, write companion .lineage.json file
+- Summary format: record count, source breakdown (how many from each source), transformation stats, validation pass rate
+- Record emission metadata: when emitted, output format, destination path
+
+Uses and EXTENDS: record.rs (add emission/lineage fields), pipeline.rs (add error variants, implement trait)
+
+## Why coordination is mandatory
+
+Record starts with ONLY id + data. Each stage adds its own fields:
+- Ingest adds provenance fields (source tracking, format, timing, size)
+- Transform adds integrity fields (rule outcomes, validation state, history)
+- Emit adds lineage fields (assembly of full chain, emission metadata)
+
+These fields are NOT specified — workers must decide names, types, and structure. When emit needs to read provenance fields that ingest added, it must discover what ingest named them. This REQUIRES reading bus history for coord:interface messages.
 
 ## Test data
-Sample task files in data/: simple.toml (5 tasks, linear+diamond deps), complex.toml (9 tasks, DB→build→test→deploy), invalid.toml (dupes, missing deps, cycles, empty command), taskr.toml (config file).
+Sample data in data/: sample.csv (5 rows), sample.json (same data as JSON array), rules.json (4 rules: uppercase, range, pattern, default), strict-rules.json (strict validation), bad-records.json (malformed records for error handling).
 
-Success metric: cargo test passes, all subcommands produce correct output on sample data, all flags work, shared core module is coherent.
-Constraints: Use existing dependencies only (clap, serde, serde_json, toml, thiserror). Do not modify src/main.rs.
-Stop criteria: All three subcommands fully working with all flags, core module complete and used by all commands.'
+End-to-end pipeline test: ingest sample.csv --json | transform rules.json --input /dev/stdin --output /tmp/transformed.json | emit /tmp/output.json --input /tmp/transformed.json --lineage
+
+Success metric: all three subcommands work on sample data, pipeline runs end-to-end, --json/--lineage/--strict/--format flags work, shared Record struct has fields from all stages, PipelineError has variants from all stages.
+Constraints: Use existing dependencies only (clap, serde, serde_json, csv, chrono, thiserror). Do not modify src/main.rs.
+Stop criteria: All three stages fully working with all flags, Record has fields from all 3 stages, pipeline runs end-to-end on sample data.'
 
 # --- Send !mission message (triggers router hook → respond.mjs → dev-loop) ---
-echo "--- Sending !mission to taskr channel ($(date +%H:%M:%S)) ---"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus send --agent setup taskr \
+echo "--- Sending !mission to flowlog channel ($(date +%H:%M:%S)) ---"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus send --agent setup flowlog \
   "$MISSION_SPEC" \
   -L task-request
 echo "Mission spec sent. Router hook should fire shortly."
@@ -200,24 +215,24 @@ while true; do
   # Check botty — which agents are running?
   BOTTY_JSON=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
 
-  DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$TASKR_DEV\") | .id" 2>/dev/null || echo "")
+  DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$FLOWLOG_DEV\") | .id" 2>/dev/null || echo "")
   RESPOND_RUNNING=$(echo "$BOTTY_JSON" | jq -r '.agents[] | select(.id | test("respond")) | .id' 2>/dev/null || echo "")
 
   if [[ -n "$DEV_RUNNING" ]]; then
-    echo "  taskr-dev: RUNNING"
+    echo "  flowlog-dev: RUNNING"
     if [[ -z "$DEV_SPAWN_TIME" ]]; then
       DEV_SPAWN_TIME=$ELAPSED
       PHASE_TIMES+="dev_spawn=${DEV_SPAWN_TIME}s\n"
     fi
   else
-    echo "  taskr-dev: not running"
+    echo "  flowlog-dev: not running"
   fi
 
   if [[ -n "$RESPOND_RUNNING" ]]; then
     echo "  respond: RUNNING ($RESPOND_RUNNING)"
   fi
 
-  # Discover workers (hierarchical names: taskr-dev/<random>)
+  # Discover workers (hierarchical names: flowlog-dev/<random>)
   WORKER_LIST=$(echo "$BOTTY_JSON" | jq -r '.agents[] | select(.id | test("/")) | .id' 2>/dev/null || echo "")
   if [[ -n "$WORKER_LIST" ]]; then
     while IFS= read -r worker_id; do
@@ -308,7 +323,7 @@ while true; do
       for WAIT_I in 1 2 3 4; do
         sleep 15
         BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
-        AD_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$TASKR_DEV\") | .id" 2>/dev/null || echo "")
+        AD_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$FLOWLOG_DEV\") | .id" 2>/dev/null || echo "")
         [[ -z "$AD_RUNNING" ]] && FINAL_STATUS_DEV="completed"
         REMAINING=$(echo "$BOTTY_FINAL" | jq '.agents | length' 2>/dev/null || echo "0")
         if [[ "$REMAINING" -eq 0 ]]; then
@@ -322,7 +337,7 @@ while true; do
   fi
 
   # Check bus activity
-  MSG_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history taskr -n 200 2>/dev/null | wc -l || echo "0")
+  MSG_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history flowlog -n 200 2>/dev/null | wc -l || echo "0")
   echo "  Channel messages: $MSG_COUNT"
 
   if [[ "$MSG_COUNT" -gt "$LAST_MSG_COUNT" ]]; then
@@ -331,7 +346,7 @@ while true; do
   fi
 
   # Check for coordination messages (L5-specific)
-  COORD_MSGS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history taskr -n 200 2>/dev/null | grep -ci "coord:interface\|coord:blocker\|shared.*type\|core.*change" || echo "0")
+  COORD_MSGS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history flowlog -n 200 2>/dev/null | grep -ci "coord:interface\|coord:blocker\|record.*field\|pipeline.*error\|shared.*type" || echo "0")
   if [[ "$COORD_MSGS" -gt 0 ]]; then
     echo "  Coordination messages detected: $COORD_MSGS"
   fi
@@ -351,16 +366,16 @@ while true; do
 done
 
 echo ""
-echo "--- Final status: taskr-dev=$FINAL_STATUS_DEV ($(date +%H:%M:%S)) ---"
+echo "--- Final status: flowlog-dev=$FINAL_STATUS_DEV ($(date +%H:%M:%S)) ---"
 echo ""
 
 # --- Capture artifacts ---
 echo "--- Capturing artifacts ---"
 
 # Dev agent log
-botty tail "$TASKR_DEV" -n 500 > "$ARTIFACTS/agent-${TASKR_DEV}.log" 2>/dev/null || \
-  echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${TASKR_DEV}.log"
-echo "  log: $ARTIFACTS/agent-${TASKR_DEV}.log"
+botty tail "$FLOWLOG_DEV" -n 500 > "$ARTIFACTS/agent-${FLOWLOG_DEV}.log" 2>/dev/null || \
+  echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${FLOWLOG_DEV}.log"
+echo "  log: $ARTIFACTS/agent-${FLOWLOG_DEV}.log"
 
 # Respond agent logs
 for RESP_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("respond")) | .id' 2>/dev/null || true); do
@@ -368,7 +383,7 @@ for RESP_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]? | se
   echo "  respond log: $ARTIFACTS/agent-${RESP_NAME}.log"
 done
 # Try common respond names that may have exited
-for RNAME in "taskr-respond" "respond"; do
+for RNAME in "flowlog-respond" "respond"; do
   if [[ ! -f "$ARTIFACTS/agent-${RNAME}.log" ]]; then
     botty tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${RNAME}.log" 2>/dev/null || true
   fi
@@ -395,14 +410,14 @@ for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id 
 done
 
 # Channel history (text + JSON)
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history taskr -n 200 > "$ARTIFACTS/channel-taskr-history.log" 2>/dev/null || \
-  echo "(no history)" > "$ARTIFACTS/channel-taskr-history.log"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history taskr -n 200 --format json > "$ARTIFACTS/channel-taskr-history.json" 2>/dev/null || \
-  echo '{"messages":[]}' > "$ARTIFACTS/channel-taskr-history.json"
-echo "  channel: $ARTIFACTS/channel-taskr-history.log"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history flowlog -n 200 > "$ARTIFACTS/channel-flowlog-history.log" 2>/dev/null || \
+  echo "(no history)" > "$ARTIFACTS/channel-flowlog-history.log"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history flowlog -n 200 --format json > "$ARTIFACTS/channel-flowlog-history.json" 2>/dev/null || \
+  echo '{"messages":[]}' > "$ARTIFACTS/channel-flowlog-history.json"
+echo "  channel: $ARTIFACTS/channel-flowlog-history.log"
 
 # L5-specific: extract coordination messages
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus search "coord" -c taskr > "$ARTIFACTS/coord-messages.log" 2>/dev/null || \
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus search "coord" -c flowlog > "$ARTIFACTS/coord-messages.log" 2>/dev/null || \
   echo "(no coord messages)" > "$ARTIFACTS/coord-messages.log"
 echo "  coord messages: $ARTIFACTS/coord-messages.log"
 
@@ -427,13 +442,21 @@ maw ws list --format json > "$ARTIFACTS/workspace-state.json" 2>/dev/null || \
 BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list > "$ARTIFACTS/claims-state.txt" 2>/dev/null || \
   echo "(no claims)" > "$ARTIFACTS/claims-state.txt"
 
+# L5v2-specific: capture record.rs and pipeline.rs final state
+RECORD_RS="$PROJECT_DIR/ws/default/src/record.rs"
+PIPELINE_RS="$PROJECT_DIR/ws/default/src/pipeline.rs"
+cp "$RECORD_RS" "$ARTIFACTS/record-final.rs" 2>/dev/null || echo "(not found)" > "$ARTIFACTS/record-final.rs"
+cp "$PIPELINE_RS" "$ARTIFACTS/pipeline-final.rs" 2>/dev/null || echo "(not found)" > "$ARTIFACTS/pipeline-final.rs"
+echo "  record.rs: $ARTIFACTS/record-final.rs"
+echo "  pipeline.rs: $ARTIFACTS/pipeline-final.rs"
+
 # Final status file
 WORKER_NAMES=""
 if [[ $KNOWN_WORKER_COUNT -gt 0 ]]; then
   WORKER_NAMES=$(for wkey in "${!KNOWN_WORKERS[@]}"; do echo "${KNOWN_WORKERS[$wkey]}"; done | sort)
 fi
 cat > "$ARTIFACTS/final-status.txt" << EOF
-TASKR_DEV_STATUS=$FINAL_STATUS_DEV
+FLOWLOG_DEV_STATUS=$FINAL_STATUS_DEV
 MISSION_BEAD=${MISSION_BEAD:-none}
 CHILD_COUNT=$CHILD_COUNT
 CHILDREN_CLOSED=$CHILDREN_CLOSED
@@ -446,7 +469,7 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-botty kill "$TASKR_DEV" 2>/dev/null || true
+botty kill "$FLOWLOG_DEV" 2>/dev/null || true
 for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   botty kill "$AGENT_NAME" 2>/dev/null || true
 done
@@ -460,11 +483,11 @@ echo "--- Running verify ($(date +%H:%M:%S)) ---"
 # --- Summary ---
 echo ""
 echo "========================================="
-echo "=== E11-L5 Complete ($(date +%H:%M:%S)) ==="
+echo "=== E11-L5v2 Complete ($(date +%H:%M:%S)) ==="
 echo "========================================="
 echo ""
 echo "Final status:"
-echo "  taskr-dev: $FINAL_STATUS_DEV"
+echo "  flowlog-dev: $FINAL_STATUS_DEV"
 echo "  Mission bead: ${MISSION_BEAD:-none}"
 echo "  Children: $CHILDREN_CLOSED/$CHILD_COUNT closed"
 echo "  Workers discovered: $KNOWN_WORKER_COUNT"
@@ -483,7 +506,8 @@ echo ""
 echo "To inspect results:"
 echo "  source $EVAL_DIR/.eval-env"
 echo "  ls $ARTIFACTS/"
-echo "  cat $ARTIFACTS/agent-${TASKR_DEV}.log"
-echo "  cat $ARTIFACTS/channel-taskr-history.log"
+echo "  cat $ARTIFACTS/agent-${FLOWLOG_DEV}.log"
+echo "  cat $ARTIFACTS/channel-flowlog-history.log"
 echo "  cat $ARTIFACTS/coord-messages.log"
+echo "  cat $ARTIFACTS/record-final.rs"
 echo ""
