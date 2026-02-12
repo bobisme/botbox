@@ -24,10 +24,17 @@ let DISPATCHED_MISSION_OUTCOME = process.env.BOTBOX_MISSION_OUTCOME || '';
 let DISPATCHED_FILE_HINTS = process.env.BOTBOX_FILE_HINTS || '';
 
 // --- Load config from .botbox.json ---
+function findConfigPath() {
+	if (existsSync('.botbox.json')) return '.botbox.json';
+	if (existsSync('ws/default/.botbox.json')) return 'ws/default/.botbox.json';
+	return null;
+}
+
 async function loadConfig() {
-	if (existsSync('.botbox.json')) {
+	let configPath = findConfigPath();
+	if (configPath) {
 		try {
-			const config = JSON.parse(await readFile('.botbox.json', 'utf-8'));
+			const config = JSON.parse(await readFile(configPath, 'utf-8'));
 			const project = config.project || {};
 			const agents = config.agents || {};
 			const worker = agents.worker || {};

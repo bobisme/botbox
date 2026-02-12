@@ -23,10 +23,17 @@ let MULTI_LEAD_ENABLED = false;
 let MAX_LEADS = 3;
 
 // --- Load config from .botbox.json ---
+function findConfigPath() {
+	if (existsSync('.botbox.json')) return '.botbox.json';
+	if (existsSync('ws/default/.botbox.json')) return 'ws/default/.botbox.json';
+	return null;
+}
+
 async function loadConfig() {
-	if (existsSync('.botbox.json')) {
+	let configPath = findConfigPath();
+	if (configPath) {
 		try {
-			const config = JSON.parse(await readFile('.botbox.json', 'utf-8'));
+			const config = JSON.parse(await readFile(configPath, 'utf-8'));
 			const project = config.project || {};
 			const agents = config.agents || {};
 			const dev = agents.dev || {};

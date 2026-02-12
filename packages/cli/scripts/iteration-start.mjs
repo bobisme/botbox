@@ -62,10 +62,17 @@ Arguments:
 let PROJECT = positionals[0] || ""
 let AGENT = positionals[1] || ""
 
+function findConfigPath() {
+  if (existsSync(".botbox.json")) return ".botbox.json"
+  if (existsSync("ws/default/.botbox.json")) return "ws/default/.botbox.json"
+  return null
+}
+
 if (!PROJECT || !AGENT) {
-  if (existsSync(".botbox.json")) {
+  let configPath = findConfigPath()
+  if (configPath) {
     try {
-      let config = JSON.parse(readFileSync(".botbox.json", "utf-8"))
+      let config = JSON.parse(readFileSync(configPath, "utf-8"))
       let project = config.project || {}
       PROJECT = PROJECT || project.channel || project.name || ""
       AGENT = AGENT || project.defaultAgent || project.default_agent || ""
