@@ -18,6 +18,7 @@ let MISSIONS_ENABLED = true;
 let MAX_MISSION_WORKERS = 4;
 let MAX_MISSION_CHILDREN = 12;
 let CHECKPOINT_INTERVAL_SEC = 30;
+let MERGE_TIMEOUT_SEC = 60;
 
 // --- Load config from .botbox.json ---
 async function loadConfig() {
@@ -46,6 +47,10 @@ async function loadConfig() {
 			MAX_MISSION_WORKERS = missions.maxWorkers ?? 4;
 			MAX_MISSION_CHILDREN = missions.maxChildren ?? 12;
 			CHECKPOINT_INTERVAL_SEC = missions.checkpointIntervalSec ?? 30;
+
+			// Multi-lead config
+			let multiLead = agents.dev?.multiLead || {};
+			MERGE_TIMEOUT_SEC = multiLead.mergeTimeoutSec ?? 60;
 		} catch (err) {
 			console.error('Warning: Failed to load .botbox.json:', err.message);
 		}
@@ -668,13 +673,45 @@ For each dispatched bead where the worker is NOT in botty list but the bead is s
 
 For each completed bead with a workspace, check the bead's risk label first:
 
+### Merge Protocol (used by all paths that call "maw ws merge")
+
+Every merge into default MUST follow this protocol to prevent concurrent merge conflicts:
+
+  a. PREFLIGHT REBASE (outside mutex — reduces lock hold time):
+     maw exec \$WS -- jj rebase -d main
+
+  b. ACQUIRE MERGE MUTEX:
+     bus claims stake --agent ${AGENT} "workspace://${PROJECT}/default" --ttl 120 -m "merging \$WS for <id>"
+     If the claim fails (held by another agent): retry with backoff+jitter.
+     Retry delays: 2s, 4s, 8s, 15s — each with +-30% random jitter.
+     Between retries, check: bus history ${PROJECT} -L coord:merge -n 1 --since "2 minutes ago"
+     If a new coord:merge appeared since your last attempt, retry immediately (the lock may be free).
+     If still held after ${MERGE_TIMEOUT_SEC}s total: post to bus and skip this merge for now.
+
+  c. AUTHORITATIVE REBASE (under mutex — catches merges that landed during wait):
+     maw exec \$WS -- jj rebase -d main
+     If conflicts: resolve them before proceeding.
+
+  d. MERGE:
+     maw ws merge \$WS --destroy
+
+  e. ANNOUNCE:
+     bus send --agent ${AGENT} ${PROJECT} "Merged \$WS (<id>): <summary>" -L coord:merge
+
+  f. SYNC:
+     maw exec default -- br sync --flush-only${pushMainStep}
+
+  g. RELEASE MUTEX (always, even on failure — use try/finally):
+     bus claims release --agent ${AGENT} "workspace://${PROJECT}/default"
+
+### Merge paths by review status:
+
 Already reviewed and approved (LGTM — reached from unfinished work check step 1):
   maw exec default -- crit reviews mark-merged <review-id> --agent ${AGENT}
-  maw ws merge \$WS --destroy
+  Run MERGE PROTOCOL above for \$WS
   maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Completed by ${AGENT}"
   maw exec default -- br close --actor ${AGENT} <id> --reason="Completed"
   bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
-  maw exec default -- br sync --flush-only${pushMainStep}
 
 Not yet reviewed — RISK:LOW or RISK:MEDIUM (REVIEW is true):
   CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
@@ -690,10 +727,9 @@ Not yet reviewed — RISK:CRITICAL — Security review + human approval:
   Same as risk:high, plus post human approval request to bus.
 
 If REVIEW is false (regardless of risk):
-  maw ws merge \$WS --destroy
+  Run MERGE PROTOCOL above for \$WS
   maw exec default -- br close --actor ${AGENT} <id>
   bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
-  maw exec default -- br sync --flush-only${pushMainStep}
 
 After finishing all ready work:
   bus claims release --agent ${AGENT} --all
@@ -808,6 +844,10 @@ async function cleanup() {
 	}
 	try {
 		await runCommand('bus', ['statuses', 'clear', '--agent', AGENT]);
+	} catch {}
+	// Release merge mutex if held (prevents deadlock on crash)
+	try {
+		await runCommand('bus', ['claims', 'release', '--agent', AGENT, `workspace://${PROJECT}/default`]);
 	} catch {}
 	try {
 		await runCommand('bus', ['claims', 'release', '--agent', AGENT, `agent://${AGENT}`]);
