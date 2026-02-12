@@ -1143,7 +1143,7 @@ async function drainActionableMessages(channel) {
   try {
     inboxResult = await runCommand("bus", [
       "inbox", "--agent", AGENT, "--channels", channel,
-      "--format", "json", "--mark-read",
+      "--format", "json",
     ])
   } catch {
     return 0
