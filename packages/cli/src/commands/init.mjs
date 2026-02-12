@@ -582,7 +582,7 @@ async function registerSpawnHook(projectDir, name, reviewers) {
     })
     let hooks = JSON.parse(existing)
     let arr = Array.isArray(hooks) ? hooks : hooks.hooks ?? []
-    // Check for existing router hook (claim-based, runs respond.mjs)
+    // Check for existing router hook (claim-based, runs router.mjs or respond.mjs)
     // Match either old CWD (ws/default/) or new CWD (bare root)
     let hasRouterHook = arr.some(
       (/** @type {any} */ h) =>
@@ -590,16 +590,16 @@ async function registerSpawnHook(projectDir, name, reviewers) {
         h.active &&
         h.condition?.type === "claim_available" &&
         Array.isArray(h.command) &&
-        h.command.some((/** @type {string} */ c) => c.includes("respond.mjs")),
+        h.command.some((/** @type {string} */ c) => c.includes("router.mjs") || c.includes("respond.mjs")),
     )
     if (hasRouterHook) {
       console.log("Router hook already exists, skipping")
     } else {
       execSync(
-        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${agent}" --claim-owner ${agent} --cwd "${hookCwd}" --ttl 600 -- botty spawn --env-inherit ${envInherit} --name ${agent} --cwd "${spawnCwd}" -- bun "${scriptPrefix}respond.mjs" ${name} ${agent}`,
+        `bus hooks add --agent ${agent} --channel ${name} --claim "agent://${name}-router" --claim-owner ${agent} --cwd "${hookCwd}" --ttl 60 -- botty spawn --env-inherit ${envInherit} --name ${agent}/router --cwd "${spawnCwd}" -- bun "${scriptPrefix}router.mjs" ${name} ${agent}`,
         { cwd: projectDir, stdio: "inherit", env: process.env },
       )
-      console.log("Registered router hook (respond.mjs) for all channel messages")
+      console.log("Registered router hook (router.mjs) for all channel messages")
     }
   } catch {
     console.warn("Warning: Failed to register router hook")

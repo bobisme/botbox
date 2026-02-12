@@ -38,7 +38,11 @@ const SCRIPT_REGISTRY = {
       ),
   },
   "respond.mjs": {
-    description: "Conversational responder for @mentions and questions",
+    description: "Conversational responder for @mentions and questions (legacy)",
+    eligible: (config) => config.tools.includes("botbus"),
+  },
+  "router.mjs": {
+    description: "Universal message router with multi-lead support",
     eligible: (config) => config.tools.includes("botbus"),
   },
   "reviewer-loop.mjs": {

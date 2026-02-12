@@ -1466,6 +1466,180 @@ export const migrations = [
       }
     },
   },
+  {
+    id: "1.0.16",
+    title: "Rename respond.mjs to router.mjs and update hook claim",
+    description:
+      "Updates the channel router hook to use router.mjs instead of respond.mjs, " +
+      "and changes the claim URI to agent://project-router with shorter TTL for multi-lead support.",
+    up(ctx) {
+      // Check if botbus is available
+      try {
+        execSync("bus hooks list", { stdio: "pipe", env: process.env })
+      } catch {
+        ctx.log("Botbus not available, skipping router rename migration")
+        return
+      }
+
+      let hooksJson
+      try {
+        hooksJson = execSync("bus hooks list --format json", {
+          encoding: "utf-8",
+          stdio: ["pipe", "pipe", "pipe"],
+          env: process.env,
+        })
+      } catch {
+        ctx.warn("Could not list hooks, skipping router rename migration")
+        return
+      }
+
+      let hooks
+      try {
+        let parsed = JSON.parse(hooksJson)
+        hooks = Array.isArray(parsed) ? parsed : (parsed.hooks || [])
+      } catch {
+        ctx.warn("Could not parse hooks, skipping router rename migration")
+        return
+      }
+
+      let project = (ctx.config && ctx.config.project) || {}
+      let name = project.name
+      if (!name) {
+        ctx.warn("No project.name in config, skipping router rename migration")
+        return
+      }
+
+      let agent = project.defaultAgent || `${name}-dev`
+
+      // Detect maw v2 bare repo layout
+      let bareRoot = null
+      let defaultWsDir = null
+      if (existsSync(join(ctx.projectDir, "ws"))) {
+        bareRoot = ctx.projectDir
+        defaultWsDir = join(ctx.projectDir, "ws", "default")
+      } else if (
+        basename(dirname(ctx.projectDir)) === "ws" &&
+        existsSync(join(dirname(dirname(ctx.projectDir)), ".jj"))
+      ) {
+        bareRoot = dirname(dirname(ctx.projectDir))
+        defaultWsDir = ctx.projectDir
+      }
+
+      let hookCwd = bareRoot || ctx.projectDir
+      let spawnCwd = bareRoot || ctx.projectDir
+      let absScriptDir = defaultWsDir
+        ? join(defaultWsDir, ".agents", "botbox", "scripts") + "/"
+        : ".agents/botbox/scripts/"
+
+      // Build env-inherit list
+      let pushMain = (ctx.config && ctx.config.pushMain) || false
+      let envVars = ["BOTBUS_CHANNEL", "BOTBUS_MESSAGE_ID", "BOTBUS_AGENT", "BOTBUS_HOOK_ID"]
+      if (pushMain) envVars.push("SSH_AUTH_SOCK")
+      let envInherit = envVars.join(",")
+
+      // Find the respond.mjs hook (claim-based)
+      let respondHook = hooks.find(
+        (/** @type {any} */ h) =>
+          (h.cwd === ctx.projectDir || h.cwd === hookCwd || (defaultWsDir && h.cwd === defaultWsDir)) &&
+          h.active &&
+          h.condition?.type === "claim_available" &&
+          Array.isArray(h.command) &&
+          h.command.some((/** @type {string} */ c) => c.includes("respond.mjs")),
+      )
+
+      // Check if router.mjs hook already exists (idempotency)
+      let hasRouterHook = hooks.some(
+        (/** @type {any} */ h) =>
+          (h.cwd === ctx.projectDir || h.cwd === hookCwd || (defaultWsDir && h.cwd === defaultWsDir)) &&
+          h.active &&
+          h.condition?.type === "claim_available" &&
+          Array.isArray(h.command) &&
+          h.command.some((/** @type {string} */ c) => c.includes("router.mjs")),
+      )
+
+      if (hasRouterHook) {
+        // Already migrated — just clean up old respond.mjs hook if present
+        if (respondHook) {
+          try {
+            execFileSync("bus", ["hooks", "remove", respondHook.id], {
+              stdio: "pipe",
+              env: process.env,
+            })
+            ctx.log(`Removed old respond.mjs hook ${respondHook.id}`)
+          } catch {
+            ctx.warn(`Could not remove old respond.mjs hook ${respondHook.id}`)
+          }
+        } else {
+          ctx.log("Router hook (router.mjs) already exists")
+        }
+        return
+      }
+
+      if (!respondHook) {
+        ctx.log("No respond.mjs hook found for this project, nothing to migrate")
+        return
+      }
+
+      // Remove old respond.mjs hook
+      let removed = false
+      try {
+        execFileSync("bus", ["hooks", "remove", respondHook.id], {
+          stdio: "pipe",
+          env: process.env,
+        })
+        removed = true
+      } catch {
+        ctx.warn(`Could not remove hook ${respondHook.id}, skipping`)
+      }
+
+      if (removed) {
+        // Re-add with router.mjs, new claim URI, and shorter TTL
+        let addArgs = ["hooks", "add"]
+        addArgs.push("--agent", agent)
+        addArgs.push("--channel", name)
+        addArgs.push("--claim", `agent://${name}-router`)
+        addArgs.push("--claim-owner", agent)
+        addArgs.push("--ttl", "60")
+        addArgs.push("--cwd", hookCwd)
+        addArgs.push("--",
+          "botty", "spawn",
+          "--env-inherit", envInherit,
+          "--name", `${agent}/router`,
+          "--cwd", spawnCwd,
+          "--", "bun", `${absScriptDir}router.mjs`, name, agent,
+        )
+
+        try {
+          execFileSync("bus", addArgs, {
+            stdio: "pipe",
+            env: process.env,
+          })
+          ctx.log(`Migrated router hook: respond.mjs → router.mjs, claim agent://${name}-router, TTL 60`)
+        } catch (error) {
+          let message = error instanceof Error ? error.message : String(error)
+          // Restore old hook if re-add fails
+          try {
+            let restoreCmd = ["hooks", "add"]
+            restoreCmd.push("--agent", agent)
+            if (respondHook.channel) restoreCmd.push("--channel", respondHook.channel)
+            restoreCmd.push("--cwd", respondHook.cwd)
+            let condition = respondHook.condition || {}
+            if (condition.type === "claim_available" && condition.pattern) {
+              restoreCmd.push("--claim", condition.pattern)
+              restoreCmd.push("--claim-owner", respondHook.claim_owner || condition.pattern.replace(/^agent:\/\//, ""))
+              restoreCmd.push("--ttl", "600")
+            }
+            restoreCmd.push("--priority", String(respondHook.priority ?? 0))
+            restoreCmd.push("--", ...respondHook.command)
+            execFileSync("bus", restoreCmd, { stdio: "pipe", env: process.env })
+            ctx.warn(`Re-add failed for router hook, restored original: ${message}`)
+          } catch {
+            ctx.warn(`Could not re-add router hook AND restore failed: ${message}`)
+          }
+        }
+      }
+    },
+  },
 ]
 
 /**
