@@ -1789,3 +1789,143 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 | 2-5 (script bugs) | opus | — | Various bash footguns: `((0++))`, `grep -c` double output, `/` in array keys |
 | 6 (modular project) | opus | 37/125 (30% cap) | Uncapped 93/125 — perfect protocol but tasks too small (~30 LOC each) |
 | 7+ (bulked specs) | opus | — | Substantial subcommands: multi-file, context, 6 format pairs, field ops |
+
+---
+
+## E11-L5: Coordination Eval — Shared-Module Mission
+
+**Type**: Integration (single project, multi-agent, botty-native, mission framework, coordination)
+
+**What it tests**: Whether mission workers coordinate through bus when they share code. E11-L4 tests missions with 3 INDEPENDENT subcommands — workers succeed by working in isolation. E11-L5 tests missions where workers MUST coordinate because they share a common core module with types and traits.
+
+**Single project**: `taskr` — task runner CLI where all subcommands share a `core` module:
+
+```
+src/
+  main.rs           — clap skeleton with 3 subcommands (do NOT modify)
+  core/
+    mod.rs          — Task trait, TaskResult enum, Config struct, ShellTask, parse_task_file()
+    config.rs       — TOML config parser: load_config(), default_config()
+  commands/
+    run.rs          — taskr run <task-file> — parse + execute with dep ordering
+    list.rs         — taskr list [--format json|table] — discover and list tasks
+    validate.rs     — taskr validate <task-file> — check syntax without executing
+```
+
+**The coordination constraint**: ALL three subcommands depend on `core::Task` trait and `core::Config`. If worker A changes the Task trait (e.g., adds a field), workers B and C must adapt. Workers SHOULD post `coord:interface` bus messages when they modify core types and read bus for sibling updates before implementing.
+
+**Config**: Same as L4 — `review.enabled=false`, missions enabled, maxWorkers=3, sonnet workers.
+
+**Expected flow**:
+1. `!mission <spec>` → respond.mjs creates mission bead → execs dev-loop with BOTBOX_MISSION
+2. Dev-loop decomposes: core module (blocking) + 3 subcommand beads (parallel after core)
+3. Dev-loop dispatches workers for independent children
+4. Workers implement subcommands, posting coord:interface messages for core changes
+5. Workers read bus for sibling updates before implementing against core types
+6. Dev-loop monitors via checkpoints, synthesizes results
+
+**Setup**: `evals/scripts/e11-l5-setup.sh`
+**Run**: `evals/scripts/e11-l5-run.sh` (30 min timeout)
+**Verify**: `evals/scripts/e11-l5-verify.sh`
+
+### Scoring (~160 pts)
+
+#### Mission Recognition (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Bead with `mission` label | 5 | `br show` labels include "mission" |
+| Structured description (Outcome/Success/Constraints) | 5 | Mission bead description has structured fields |
+| Dev-loop identified mission context | 5 | Dev log references BOTBOX_MISSION or mission bead |
+
+#### Decomposition (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| 3+ child beads created | 5 | `br list -l mission:<id>` count >= 3 |
+| Children have `mission:<id>` labels | 5 | Label check on each child |
+| Parent dependencies wired | 5 | `br dep add` in dev log or deps on child beads |
+| Inter-child dependency exists | 5 | At least one `br dep add` between children |
+| Clear child titles | 5 | All titles >= 5 chars |
+
+#### Worker Dispatch (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Workers spawned | 5 | `botty list` discovers workers |
+| 2+ workers | 5 | Worker count >= 2 |
+| Workspace per worker | 5 | `maw ws create` in dev log |
+| Mission env vars set | 5 | BOTBOX_MISSION, BOTBOX_SIBLINGS in dev log |
+| Claims staked | 5 | `bus claims stake` in dev log |
+
+#### Monitoring (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| Checkpoint message posted | 5 | Channel history has checkpoint/progress message |
+| Count/status info in checkpoint | 5 | Message contains N/M counts |
+| Worker completion detected | 5 | Dev log or channel shows completion detection |
+
+#### Synthesis (15 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| All children closed | 5 | All child beads status=closed |
+| Mission bead closed | 5 | Mission bead status=closed |
+| Synthesis comment | 5 | Mission bead comment references completion/decisions |
+
+#### Code Correctness (25 pts)
+
+| Check | Pts | Verification |
+|-------|-----|-------------|
+| cargo check passes | 5 | `maw exec default -- cargo check` |
+| 2+ subcommands implemented | 5 | todo!() removed from command files |
+| Shared core module implemented | 5 | core/mod.rs + config.rs without todo!(), parse_task_file exists |
+| 2+ subcommands work on sample data | 5 | list/validate/run produce correct output on sample TOML |
+| Feature flags work | 5 | --json, --names-only, --check-deps verified (tiered scoring) |
+
+#### Coordination (30 pts) — NEW in L5
+
+| Category | Check | Pts | Verification |
+|----------|-------|-----|-------------|
+| **Bus Reading** | Workers read bus for sibling updates | 5 | Worker logs show `bus history` or `bus inbox` calls |
+| | Worker adapted to sibling change | 5 | Worker logs reference sibling/interface changes, OR 2+ subcommands compile with shared types |
+| **Discovery Posting** | coord:interface message posted | 5 | Channel history or worker logs show coord:interface label or content |
+| | Message describes actual code change | 5 | Coordination text mentions specific types (Task, Config, ShellTask, etc.) |
+| **Shared Module** | Core module compiles with content | 5 | cargo check passes AND core/mod.rs > 30 lines |
+| | 2+ subcommands use shared types | 5 | Command files import from crate::core |
+
+#### Friction Efficiency (10 pts)
+
+| Check | Full | Partial | Zero |
+|-------|------|---------|------|
+| Tool errors | 0 (5 pts) | 1-5 (3 pts) | >15 (0 pts) |
+| --help + retries | 0 (5 pts) | 1-3 (3 pts) | >8 (0 pts) |
+
+#### Critical Fail Conditions
+
+1. **Mission never created** → score = 0
+2. **No workers spawned** → score capped at 30%
+
+### Key Differences from L4
+
+- **Shared code**: Project has a shared core module (Task trait, Config, ShellTask) used by ALL subcommands — not just independent modules
+- **Coordination requirement**: Mission spec explicitly mentions coordination and workers should post coord:interface messages
+- **Verify checks coordination**: 30 extra points for bus communication patterns, not just mission lifecycle
+- **Project type**: taskr (task runner CLI with TOML task files) vs futil (file utilities)
+- **Implicit coordination fallback**: If workers don't post explicit coord:interface messages but the project compiles with 2+ subcommands using shared types, partial credit is awarded (workers coordinated implicitly)
+
+**Pass**: >= 70%, **Excellent**: >= 85%
+
+### Expected Results
+
+| Model | Expected | Reasoning |
+|-------|----------|-----------|
+| Opus (dev) + Sonnet (workers) | 100-140 (63-88%) | Mission lifecycle should work (L4 validated). Coordination is the unknown — will workers actually post bus messages about type changes? |
+| Opus (dev) + Opus (workers) | 120-155 (75-97%) | Opus workers more likely to follow coordination instructions in dispatch prompts |
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| (none yet) | | | |
