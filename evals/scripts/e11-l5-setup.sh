@@ -220,7 +220,7 @@ pub struct Record {
     pub data: HashMap<String, serde_json::Value>,
 }
 
-todo!("Each pipeline stage must add its own fields to Record");
+compile_error!("Each pipeline stage must add its own fields to Record — remove this line after adding fields");
 RUST_EOF
 
 # --- src/pipeline.rs (MINIMAL shared trait — workers MUST add error variants and impls) ---
@@ -279,8 +279,8 @@ pub enum PipelineError {
     Other(String),
 }
 
-todo!("Each stage must add error variants to PipelineError");
-todo!("Implement PipelineStage for each stage (ingest, transform, emit)");
+compile_error!("Each stage must add error variants to PipelineError — remove this line after adding variants");
+compile_error!("Implement PipelineStage for each stage (ingest, transform, emit) — remove this line after implementing");
 RUST_EOF
 
 # --- src/commands/ingest.rs (todo stub — DOMAIN language, not code language) ---

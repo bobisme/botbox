@@ -451,17 +451,22 @@ echo "  record.rs: $ARTIFACTS/record-final.rs"
 echo "  pipeline.rs: $ARTIFACTS/pipeline-final.rs"
 
 # Final status file
-WORKER_NAMES=""
+WORKER_NAMES_LIST=""
 if [[ $KNOWN_WORKER_COUNT -gt 0 ]]; then
-  WORKER_NAMES=$(for wkey in "${!KNOWN_WORKERS[@]}"; do echo "${KNOWN_WORKERS[$wkey]}"; done | sort)
+  WORKER_NAMES_LIST=$(for wkey in "${!KNOWN_WORKERS[@]}"; do echo "${KNOWN_WORKERS[$wkey]}"; done | sort)
 fi
-cat > "$ARTIFACTS/final-status.txt" << EOF
-FLOWLOG_DEV_STATUS=$FINAL_STATUS_DEV
-MISSION_BEAD=${MISSION_BEAD:-none}
-CHILD_COUNT=$CHILD_COUNT
-CHILDREN_CLOSED=$CHILDREN_CLOSED
-WORKER_NAMES=$WORKER_NAMES
-EOF
+{
+  echo "FLOWLOG_DEV_STATUS=$FINAL_STATUS_DEV"
+  echo "MISSION_BEAD=${MISSION_BEAD:-none}"
+  echo "CHILD_COUNT=$CHILD_COUNT"
+  echo "CHILDREN_CLOSED=$CHILDREN_CLOSED"
+  echo "WORKER_COUNT=$KNOWN_WORKER_COUNT"
+  echo "WORKER_NAMES_START"
+  if [[ -n "$WORKER_NAMES_LIST" ]]; then
+    echo "$WORKER_NAMES_LIST"
+  fi
+  echo "WORKER_NAMES_END"
+} > "$ARTIFACTS/final-status.txt"
 
 echo -e "$PHASE_TIMES" > "$ARTIFACTS/phase-times.log" 2>/dev/null || true
 

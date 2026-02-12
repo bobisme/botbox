@@ -205,11 +205,8 @@ echo "=== Worker Dispatch (25 pts) ==="
 echo ""
 
 # Extract worker info from final status
-WORKER_NAMES=$(echo "$FINAL_STATUS" | sed -n '/^WORKER_NAMES/,$ p' | tail -n +2 | grep -v '^$' || echo "")
-WORKER_COUNT=0
-if [[ -n "$WORKER_NAMES" ]]; then
-  WORKER_COUNT=$(echo "$WORKER_NAMES" | wc -l)
-fi
+WORKER_COUNT=$(echo "$FINAL_STATUS" | grep -oP 'WORKER_COUNT=\K\d+' || echo "0")
+WORKER_NAMES=$(echo "$FINAL_STATUS" | sed -n '/^WORKER_NAMES_START$/,/^WORKER_NAMES_END$/p' | grep -v '^WORKER_NAMES_' | grep -v '^$' || echo "")
 
 # Check 9: Workers spawned (5 pts)
 echo "--- Check 9: Workers spawned ---"
@@ -511,18 +508,20 @@ echo ""
 echo "--- Check 25: Record has fields from 2+ stages ---"
 STAGE_FIELD_MATCHES=0
 if [[ -f "$RECORD_RS_FILE" ]]; then
+  # Extract only struct field lines (pub ...) to avoid matching doc comments
+  RECORD_FIELDS=$(grep -E '^\s+pub\s+\w+' "$RECORD_RS_FILE" 2>/dev/null || echo "")
   # Check for provenance-related fields (ingest stage)
-  if grep -qiE 'source|provenance|origin|ingested|format.*detected|raw_size|ingest' "$RECORD_RS_FILE" 2>/dev/null; then
+  if echo "$RECORD_FIELDS" | grep -qiE 'source|provenance|origin|ingested|format|raw_size|ingest'; then
     STAGE_FIELD_MATCHES=$((STAGE_FIELD_MATCHES + 1))
     echo "  Found provenance/ingest fields"
   fi
   # Check for transformation-related fields (transform stage)
-  if grep -qiE 'transform|validation|rules_applied|is_valid|integrity|rule_outcome|errors' "$RECORD_RS_FILE" 2>/dev/null; then
+  if echo "$RECORD_FIELDS" | grep -qiE 'transform|validation|rules_applied|is_valid|integrity|rule_outcome'; then
     STAGE_FIELD_MATCHES=$((STAGE_FIELD_MATCHES + 1))
     echo "  Found transformation/validation fields"
   fi
   # Check for lineage/emission-related fields (emit stage)
-  if grep -qiE 'lineage|emitted|emission|output_format|destination|emit' "$RECORD_RS_FILE" 2>/dev/null; then
+  if echo "$RECORD_FIELDS" | grep -qiE 'lineage|emitted|emission|output_format|destination|emit'; then
     STAGE_FIELD_MATCHES=$((STAGE_FIELD_MATCHES + 1))
     echo "  Found lineage/emission fields"
   fi
@@ -603,22 +602,32 @@ check "coord:interface messages posted ($COORD_MSG_COUNT found)" "$($HAS_COORD_M
 
 # Check 30: MULTIPLE agents posted coord messages (5 pts)
 # This is the bidirectionality test — not just one agent posting
+# IMPORTANT: only count agents that actually SENT coord messages (bus send with -L coord),
+# not agents whose logs merely contain "coord:interface" as text (e.g., from monitoring)
 echo ""
 echo "--- Check 30: Multiple agents posted coordination messages ---"
 COORD_AGENTS=0
-# Check if dev-loop posted coord messages
-if echo "$DEV_LOG" | grep -qi "coord:interface\|bus send.*coord\|-L coord"; then
+# Check if dev-loop actually sent coord messages (look for bus send command, not just text)
+if echo "$DEV_LOG" | grep -qi 'bus send.*-L coord\|bus send.*coord:interface'; then
   COORD_AGENTS=$((COORD_AGENTS + 1))
-  echo "  Dev-loop posted coord messages"
+  echo "  Dev-loop sent coord messages"
 fi
-# Check each worker log
+# Check each worker log for bus send with coord label
 for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
   [[ -f "$wlog" ]] || continue
-  if grep -qi "coord:interface\|bus send.*coord\|-L coord" "$wlog" 2>/dev/null; then
+  if grep -qi 'bus send.*-L coord\|bus send.*coord:interface' "$wlog" 2>/dev/null; then
     COORD_AGENTS=$((COORD_AGENTS + 1))
-    echo "  Worker $(basename "$wlog") posted coord messages"
+    echo "  Worker $(basename "$wlog") sent coord messages"
   fi
 done
+# Fallback: check channel JSON for coord messages from different agents
+if [[ "$COORD_AGENTS" -lt 2 ]]; then
+  COORD_SENDERS=$(echo "$CHANNEL_JSON" | jq -r '[.messages[] | select(.labels // [] | any(. == "coord:interface" or startswith("coord:"))) | .agent // .from // "unknown"] | unique | length' 2>/dev/null || echo "0")
+  if [[ "$COORD_SENDERS" -ge 2 ]]; then
+    COORD_AGENTS=$COORD_SENDERS
+    echo "  Channel JSON shows $COORD_SENDERS distinct coord senders"
+  fi
+fi
 echo "  Agents posting coord messages: $COORD_AGENTS"
 MULTI_COORD=false
 if [[ "$COORD_AGENTS" -ge 2 ]]; then
@@ -627,25 +636,36 @@ fi
 check "2+ agents posted coordination messages ($COORD_AGENTS)" "$($MULTI_COORD && echo 0 || echo 1)" 5
 
 # Check 31: Workers read bus for sibling updates (5 pts)
+# Must show evidence of coordination-specific reads, not just routine inbox checks.
+# Look for: bus history with coord/sibling/record/pipeline keywords, or bus search for coord.
 echo ""
 echo "--- Check 31: Workers read bus for sibling updates ---"
-WORKER_BUS_READ_COUNT=0
+WORKER_COORD_READ_COUNT=0
 for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
   [[ -f "$wlog" ]] || continue
-  if grep -qi "bus history\|bus inbox\|bus search\|bus wait" "$wlog" 2>/dev/null; then
-    WORKER_BUS_READ_COUNT=$((WORKER_BUS_READ_COUNT + 1))
+  # Coordination-specific: bus history/search mentioning coord, sibling, record, pipeline, shared
+  if grep -qi 'bus history.*coord\|bus history.*sibling\|bus search.*coord\|bus search.*record\|bus search.*pipeline\|bus search.*shared\|coord:interface' "$wlog" 2>/dev/null; then
+    WORKER_COORD_READ_COUNT=$((WORKER_COORD_READ_COUNT + 1))
   fi
 done
-echo "  Workers that read bus: $WORKER_BUS_READ_COUNT"
+echo "  Workers with coordination bus reads: $WORKER_COORD_READ_COUNT"
 WORKERS_READ_BUS=false
-# Also check if dev-loop instructed workers to read bus
-if echo "$DEV_LOG" | grep -qi "bus history.*coord\|check.*bus.*sibling\|read.*bus.*before\|coord.*message"; then
+# Also count if workers read bus history at all (weaker signal but still meaningful)
+WORKER_ANY_HISTORY_COUNT=0
+for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
+  [[ -f "$wlog" ]] || continue
+  if grep -qi 'bus history' "$wlog" 2>/dev/null; then
+    WORKER_ANY_HISTORY_COUNT=$((WORKER_ANY_HISTORY_COUNT + 1))
+  fi
+done
+if [[ "$WORKER_COORD_READ_COUNT" -ge 1 ]]; then
   WORKERS_READ_BUS=true
-fi
-if [[ "$WORKER_BUS_READ_COUNT" -ge 1 ]]; then
+elif [[ "$WORKER_ANY_HISTORY_COUNT" -ge 2 ]]; then
+  # If 2+ workers read bus history at all, give credit (they're at least trying)
   WORKERS_READ_BUS=true
+  echo "  Fallback: $WORKER_ANY_HISTORY_COUNT workers read bus history (not coord-specific)"
 fi
-check "Workers read bus for sibling updates ($WORKER_BUS_READ_COUNT workers)" "$($WORKERS_READ_BUS && echo 0 || echo 1)" 5
+check "Workers read bus for sibling updates ($WORKER_COORD_READ_COUNT coord-specific, $WORKER_ANY_HISTORY_COUNT any history)" "$($WORKERS_READ_BUS && echo 0 || echo 1)" 5
 
 # ============================================================
 # Friction Efficiency (10 pts)
