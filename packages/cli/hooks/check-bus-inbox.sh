@@ -89,7 +89,7 @@ if [ "$COUNT" -gt 0 ]; then
   fi
 
   # Use jq to produce valid JSON with proper escaping
-  jq -n --arg ctx "STOP: You have $COUNT unread botbus message(s) in #$CHANNEL. Check if any need a response:\n$MESSAGES\n\nTo read and respond: \`$MARK_READ_CMD\`" \
+  jq -n --arg ctx "STOP: You have $COUNT unread bus message(s) in #$CHANNEL. Check if any need a response:\n$MESSAGES\n\nTo read and respond: \`$MARK_READ_CMD\`" \
     '{ hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: $ctx } }'
 fi
 
