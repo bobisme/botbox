@@ -1938,3 +1938,123 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
 | (none yet) | | | |
+
+---
+
+## Multi-Lead Eval
+
+### Purpose
+
+Tests concurrent lead orchestrators: two independent missions dispatched simultaneously, each handled by a separate lead slot (`futil-dev/0`, `futil-dev/1`). Validates that router.mjs correctly spawns multiple leads, each lead completes its mission independently, merge serialization prevents divergent commits, and bead claims prevent duplicate work.
+
+### Prerequisites
+
+- All tools: botbox, bus, br, bv, maw, crit, botty, jj, cargo, jq
+- Router.mjs with multi-lead support (`acquireLeadSlot`, `spawnLead`)
+- Dev-loop.mjs with multi-lead awareness (`discoverSiblingLeads`, claim checking)
+- Merge mutex in dev-loop FINISH step (`workspace://project/default` claim)
+
+### Setup
+
+Same futil Rust CLI project as E11-L4 (3 `todo!()` subcommands: stats, search, convert), but with multi-lead config:
+
+```json
+{
+  "agents.dev.multiLead.enabled": true,
+  "agents.dev.multiLead.maxLeads": 3,
+  "agents.dev.multiLead.mergeTimeoutSec": 60,
+  "agents.dev.missions.enabled": true
+}
+```
+
+### Trigger
+
+Two `!mission` messages sent ~5s apart:
+- **Mission A**: Implement `error.rs` shared utilities + `stats` subcommand
+- **Mission B**: Implement `search` + `convert` subcommands
+
+### Scoring (~115 pts)
+
+#### Lead Spawning (20 pts)
+
+| Check | Criteria | Points | How Verified |
+|-------|----------|--------|-------------|
+| Two lead slots acquired | 2+ `futil-dev/N` agents observed in botty list | 10 | `botty list` captures in artifacts |
+| Numbered naming | Lead names match `futil-dev/\d+` pattern | 5 | Agent name pattern in logs |
+| Router spawned leads | Router used `botty spawn` for leads | 5 | Router log contains `botty spawn` + lead names |
+
+#### Mission Decomposition (20 pts)
+
+| Check | Criteria | Points | How Verified |
+|-------|----------|--------|-------------|
+| Mission A created | Bead with `mission` label for error.rs + stats | 5 | `br list --all -l mission` |
+| Mission B created | Bead with `mission` label for search + convert | 5 | `br list --all -l mission` |
+| Mission A has children | 1+ child beads with `mission:<A-id>` label | 5 | `br list --all -l "mission:<id>"` |
+| Mission B has children | 1+ child beads with `mission:<B-id>` label | 5 | `br list --all -l "mission:<id>"` |
+
+#### Merge Serialization (20 pts)
+
+| Check | Criteria | Points | How Verified |
+|-------|----------|--------|-------------|
+| No divergent commits | `jj log` shows no `(divergent)` markers | 10 | `jj log` in artifacts |
+| Merge mutex used | `workspace://futil/default` claim in channel history or logs | 5 | Channel history or dev logs grep |
+| Multiple merges succeeded | 2+ workspace merges completed (both leads merged work) | 5 | `maw ws merge` in dev logs or channel history |
+
+#### Bead Claim Dedup (10 pts)
+
+| Check | Criteria | Points | How Verified |
+|-------|----------|--------|-------------|
+| No duplicate ownership | Each bead owned by at most one agent | 5 | `br list --all --format json` — no bead with 2 owners |
+| Work divided between leads | Each lead worked on different beads | 5 | Distinct bead sets per lead in logs |
+
+#### Mission Completion (20 pts)
+
+| Check | Criteria | Points | How Verified |
+|-------|----------|--------|-------------|
+| Mission A closed | Mission A bead status == closed | 5 | `br show <A-id>` |
+| Mission B closed | Mission B bead status == closed | 5 | `br show <B-id>` |
+| Mission A children closed | All A's children closed | 5 | `br list --all -l "mission:<A-id>"` — all closed |
+| Mission B children closed | All B's children closed | 5 | `br list --all -l "mission:<B-id>"` — all closed |
+
+#### Code Correctness (15 pts)
+
+| Check | Criteria | Points | How Verified |
+|-------|----------|--------|-------------|
+| Compiles | `cargo check` passes | 5 | cargo check exit code |
+| 2+ subcommands implemented | 2+ `todo!()` stubs replaced | 5 | grep for remaining `todo!()` in src/ |
+| 1+ subcommand works | At least one subcommand produces correct output on sample data | 5 | Run futil with sample data files |
+
+#### Friction Efficiency (10 pts)
+
+| Check | Full | Partial | Zero |
+|-------|------|---------|------|
+| Tool errors | 0 (5 pts) | 1-5 (3 pts) | >15 (0 pts) |
+| --help + retries | 0 (5 pts) | 1-3 (3 pts) | >8 (0 pts) |
+
+#### Critical Fail Conditions
+
+1. **< 2 lead slots spawned** → score capped at 40% (multi-lead is the point of this eval)
+2. **No missions created** → score = 0
+
+### Key Differences from E11-L4
+
+- **Two concurrent missions** instead of one — tests lead isolation and coordination
+- **Router multi-lead spawning** — validates `acquireLeadSlot()` + `spawnLead()` in router.mjs
+- **Merge serialization** — heaviest-weighted check (10 pts for no divergent commits) since this is the main risk of concurrent leads
+- **Bead claim dedup** — validates that leads don't step on each other's work
+- **No single-lead fallback scoring** — if only one lead spawns, score is capped hard
+
+**Pass**: >= 70%, **Excellent**: >= 85%
+
+### Expected Results
+
+| Model | Expected | Reasoning |
+|-------|----------|-----------|
+| Opus (dev) + Sonnet (workers) | 65-95 (57-83%) | Lead spawning depends on router correctly implementing acquireLeadSlot. Merge serialization is novel and may need iteration |
+| Opus (dev) + Opus (workers) | 80-110 (70-96%) | Better coordination awareness, more likely to respect claim checking |
+
+### Runs
+
+| Run | Model | Score | Key Finding |
+|-----|-------|-------|-------------|
+| (none yet) | | | |
