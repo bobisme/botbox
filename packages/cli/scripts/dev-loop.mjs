@@ -2,6 +2,7 @@
 import { spawn } from 'child_process';
 import { readFile, stat, appendFile, truncate } from 'fs/promises';
 import { existsSync } from 'fs';
+import { join } from 'path';
 import { parseArgs } from 'util';
 
 // --- Defaults ---
@@ -27,6 +28,14 @@ function findConfigPath() {
 	if (existsSync('.botbox.json')) return '.botbox.json';
 	if (existsSync('ws/default/.botbox.json')) return 'ws/default/.botbox.json';
 	return null;
+}
+
+function findScriptPath(script) {
+	let direct = join('.agents', 'botbox', 'scripts', script);
+	if (existsSync(direct)) return direct;
+	let wsDefault = join('ws', 'default', '.agents', 'botbox', 'scripts', script);
+	if (existsSync(wsDefault)) return wsDefault;
+	return direct;
 }
 
 async function loadConfig() {
@@ -600,7 +609,7 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
     --env "BOTBOX_PROJECT=${PROJECT}" \\
     --timeout ${CLAUDE_TIMEOUT} \\
     --cwd $(pwd) \\
-    -- bun .agents/botbox/scripts/agent-loop.mjs --model <selected-model> ${PROJECT} ${AGENT}/<worker-suffix>
+    -- bun ${findScriptPath('agent-loop.mjs')} --model <selected-model> ${PROJECT} ${AGENT}/<worker-suffix>
 
 The hierarchical name (${AGENT}/<suffix>) lets you find all your workers via \`botty list\`.
 The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell agent-loop.mjs to skip triage and go straight to the assigned work.

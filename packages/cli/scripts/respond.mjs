@@ -28,6 +28,7 @@
 import { spawn } from "child_process"
 import { readFile } from "fs/promises"
 import { existsSync } from "fs"
+import { join } from "path"
 import { parseArgs } from "util"
 
 // --- Defaults ---
@@ -78,6 +79,14 @@ function findConfigPath() {
   if (existsSync(".botbox.json")) return ".botbox.json"
   if (existsSync("ws/default/.botbox.json")) return "ws/default/.botbox.json"
   return null
+}
+
+function findScriptPath(script) {
+  let direct = join(".agents", "botbox", "scripts", script)
+  if (existsSync(direct)) return direct
+  let wsDefault = join("ws", "default", ".agents", "botbox", "scripts", script)
+  if (existsSync(wsDefault)) return wsDefault
+  return direct
 }
 
 async function loadConfig() {
@@ -676,7 +685,7 @@ async function handleDev(route, channel, message) {
   // Exec into dev-loop directly — we're already inside a botty PTY session,
   // so the dev-loop inherits it. Using botty spawn would kill our own session
   // (same --name) and orphan the child process.
-  let scriptPath = ".agents/botbox/scripts/dev-loop.mjs"
+  let scriptPath = findScriptPath("dev-loop.mjs")
   let args = ["bun", scriptPath, PROJECT, AGENT]
   console.log(`Exec into dev-loop: ${args.join(" ")}`)
 
@@ -781,7 +790,7 @@ async function handleMission(route, channel, message) {
   }
 
   // Spawn dev-loop with BOTBOX_MISSION env var
-  let scriptPath = ".agents/botbox/scripts/dev-loop.mjs"
+  let scriptPath = findScriptPath("dev-loop.mjs")
   let args = ["bun", scriptPath, PROJECT, AGENT]
   console.log(`Exec into dev-loop with mission ${beadId}: ${args.join(" ")}`)
 
