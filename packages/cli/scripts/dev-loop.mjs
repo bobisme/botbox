@@ -576,7 +576,10 @@ ${process.env.BOTBOX_MISSION ? `\nBOTBOX_MISSION is set to "${process.env.BOTBOX
 IMPORTANT: Use \`botty spawn\` for mission workers — NOT the Task tool. See step 5b for why.
 
 For independent children (unblocked), dispatch workers (max ${MAX_MISSION_WORKERS} concurrent):
-- Follow the same dispatch pattern as step 5b, but add mission labels and sibling context env vars:
+- Follow the same dispatch pattern as step 5b — INCLUDING claim staking for EACH worker:
+  bus claims stake --agent ${AGENT} "bead://${PROJECT}/<child-id>" -m "dispatched to <worker-name>"
+  bus claims stake --agent ${AGENT} "workspace://${PROJECT}/\$WS" -m "<child-id>"
+- Add mission labels and sibling context env vars:
     --label "mission:<mission-id>" \\
     --env "BOTBOX_MISSION=<mission-id>" \\
     --env "BOTBOX_MISSION_OUTCOME=<outcome from mission bead description>" \\
