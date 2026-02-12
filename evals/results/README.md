@@ -39,7 +39,8 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 | E11-L4-1 | Mission (simple project) | Opus | 1+4 | 68/125 (54%) | Agent worked solo — single-file project made decomposition irrational. |
 | E11-L4-6 | Mission (modular project) | Opus | 1+4 | 37/125 (30% cap) | Uncapped 93/125 (74%). Perfect protocol, but tasks ~30 LOC each — agent rationally chose solo. |
 | E11-L4-7 | Mission (bulked specs) | Opus+Sonnet | 1+4 | 39/130 (30% cap) | Uncapped 108/130 (83%). Agent used Task tool instead of botty spawn — bypassed coordination. |
-| E11-L4-8 | Mission (botty required) | Opus+Sonnet | 1+4 | 119/130 (92%) | **First full mission success.** 3 botty workers, dependency-aware dispatch, 46 tests, ~8 min. |
+| E11-L4-8 | Mission (botty required) | Opus+Sonnet | 1+4 | 124/130 (95%) | **First full mission success.** 3 botty workers, dependency-aware dispatch, 46 tests, ~8 min. |
+| E11-L4-9 | Mission (prompt tuning) | Opus+Sonnet | 1+4 | 119/130 (92%) | Fewer tool errors (8 vs 12) from --env-inherit fix; lost 5 pts on claims staking inconsistency. |
 
 ## Key Learnings
 
@@ -92,6 +93,9 @@ Behavioral evaluation of agents following the botbox protocol. See `evals/rubric
 - **`br list -l` only shows open beads by default** — Run/verify scripts must use `--all` when looking up mission beads and children that may be closed. The agent closes mission beads before the run script captures artifacts.
 - **Bash associative array expansion with `set -u`** — `${!ARRAY[@]+${!ARRAY[@]}}` is unreliable. Use `if [[ ${#ARRAY[@]} -gt 0 ]]; then for k in "${!ARRAY[@]}"; do` instead.
 - **Dependency-aware dispatch works** — E11-L4-8 correctly did error.rs first (blocker), merged it, then dispatched 3 parallel workers for the unblocked children. The dependency graph was correctly interpreted.
+- **Verify script regex: `\|` in `grep -E` is literal pipe, not alternation** — Check 15 (count/status in checkpoint) was failing even when checkpoints existed because `grep -iE "foo\|bar"` matches literal `|`, not alternation. Use `"foo|bar"` with `-E`. This masked a passing check in runs 8-9.
+- **Error counting must distinguish tool friction from intentional CLI testing** — Agents run `cargo run` with bad inputs to verify error handling. Those exit code 1s are NOT tool errors. Filter by checking the preceding command: `cargo run`, `cd && cargo run`, `./target/` are intentional project testing. Only count errors from bus/br/maw/botty/jj/cargo build/test.
+- **Claims staking for workers is inconsistent across runs** — Run 8 staked 3+ claims (pass); Run 9 staked only 2 (fail). The dev staked claims for its own error.rs work but not for the 3 worker beads/workspaces. The prompt tells workers to stake their own claims, but the dev should also pre-stake for dispatched workers.
 
 ## Upstream Tool Versions (as of 2026-01-31)
 

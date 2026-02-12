@@ -289,10 +289,10 @@ check "Checkpoint message posted" "$($HAS_CHECKPOINT && echo 0 || echo 1)" 5
 echo ""
 echo "--- Check 15: Count/status info ---"
 HAS_COUNT_INFO=false
-if echo "$CHANNEL_HISTORY" | grep -qiE "[0-9]+.*done\|[0-9]+.*closed\|[0-9]+.*active\|[0-9]+/[0-9]+"; then
+if echo "$CHANNEL_HISTORY" | grep -qiE "[0-9]+.*done|[0-9]+.*closed|[0-9]+.*active|[0-9]+/[0-9]+"; then
   HAS_COUNT_INFO=true
 fi
-if echo "$DEV_LOG" | grep -qiE "children.*closed\|children.*status\|[0-9]+.*done.*[0-9]+.*total"; then
+if echo "$DEV_LOG" | grep -qiE "children.*closed|children.*status|[0-9]+.*done.*[0-9]+.*total"; then
   HAS_COUNT_INFO=true
 fi
 check "Count/status info in checkpoint" "$($HAS_COUNT_INFO && echo 0 || echo 1)" 5
@@ -465,8 +465,35 @@ echo ""
 echo "Analyzing agent logs for friction signals..."
 echo ""
 
+# Count tool errors (friction) vs intentional test errors.
+# Agents intentionally run the project CLI with bad inputs to verify error handling.
+# Those exit code 1s are NOT friction. Real friction = tool_use_error + exit codes from
+# tool commands (bus/br/maw/botty/jj/cargo build/test/check), NOT from running the project binary.
+_count_tool_errors() {
+  local log="$1"
+  local count=0
+  # tool_use_error (e.g., file not read yet, sibling errored)
+  local tue; tue=$(grep -c "tool_use_error" "$log" 2>/dev/null) || tue=0
+  count=$((count + tue))
+  # Exit codes: check the preceding command line to classify.
+  # Skip if the command runs the project binary (cargo run, cd path && cargo run, ./target/).
+  # Commands are on lines like: > Bash {"command":"...",...}
+  # Log lines can be truncated, so "cd /long/path && cargo run" may show as just "cd /long/path..."
+  local ec; ec=$(awk '
+    /Exit code [12][^0-9]/ || /Exit code [12]$/ {
+      # Skip intentional project CLI testing (cargo run, cd && cargo run, ./target/)
+      if (prev ~ /cargo run/ || prev ~ /\.\/target\// || (prev ~ /^> Bash/ && prev ~ /"command":"cd /)) next
+      count++
+    }
+    { prev = $0 }
+    END { print count+0 }
+  ' "$log" 2>/dev/null) || ec=0
+  count=$((count + ec))
+  echo "$count"
+}
+
 # Dev + worker friction
-DEV_ERRORS=$(grep -c "Exit code [12]" "$ARTIFACTS/agent-${FUTIL_DEV}.log" 2>/dev/null) || DEV_ERRORS=0
+DEV_ERRORS=$(_count_tool_errors "$ARTIFACTS/agent-${FUTIL_DEV}.log")
 DEV_HELP=$(grep -c "\-\-help" "$ARTIFACTS/agent-${FUTIL_DEV}.log" 2>/dev/null) || DEV_HELP=0
 DEV_RETRIES=$(grep -c "retry\|again\|Retrying" "$ARTIFACTS/agent-${FUTIL_DEV}.log" 2>/dev/null) || DEV_RETRIES=0
 
@@ -475,7 +502,7 @@ WORKER_HELP=0
 WORKER_RETRIES=0
 for wlog in "$ARTIFACTS"/agent-${FUTIL_DEV}_*.log; do
   [[ -f "$wlog" ]] || continue
-  WE=$(grep -c "Exit code [12]" "$wlog" 2>/dev/null) || WE=0
+  WE=$(_count_tool_errors "$wlog")
   WH=$(grep -c "\-\-help" "$wlog" 2>/dev/null) || WH=0
   WR=$(grep -c "retry\|again\|Retrying" "$wlog" 2>/dev/null) || WR=0
   WORKER_ERRORS=$((WORKER_ERRORS + WE))
