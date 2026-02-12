@@ -1130,6 +1130,70 @@ process.on("SIGTERM", async () => {
 // Main
 // ---------------------------------------------------------------------------
 
+/**
+ * Drain unprocessed actionable messages from inbox.
+ * Scans for !mission, !dev, !leads messages that haven't been claimed yet,
+ * and processes each one. This catches messages that were sent while the
+ * router claim was held by a previous invocation.
+ * @param {string} channel
+ * @returns {Promise<number>} Number of messages processed
+ */
+async function drainActionableMessages(channel) {
+  let inboxResult
+  try {
+    inboxResult = await runCommand("bus", [
+      "inbox", "--agent", AGENT, "--channels", channel,
+      "--format", "json", "--mark-read",
+    ])
+  } catch {
+    return 0
+  }
+
+  let inbox = JSON.parse(inboxResult.stdout || "{}")
+  let messages = []
+  for (let ch of inbox.channels || []) {
+    if (ch.channel === channel) {
+      messages = ch.messages || []
+      break
+    }
+  }
+
+  let processed = 0
+  for (let msg of messages) {
+    let route = routeMessage(msg.body)
+    // Only process actionable commands that spawn agents
+    if (route.type !== "mission" && route.type !== "dev" && route.type !== "leads") continue
+
+    // Idempotency — skip if already processed
+    let msgId = msg.id || msg.message_id
+    if (!msgId) continue
+    try {
+      await runCommand("bus", [
+        "claims", "stake", "--agent", AGENT,
+        `message://${PROJECT}/${msgId}`, "--ttl", "600",
+      ])
+    } catch {
+      // Already claimed/processed, skip
+      continue
+    }
+
+    console.log(`Drain: processing queued ${route.type} from ${msg.agent}: ${msg.body.slice(0, 60)}...`)
+    switch (route.type) {
+      case "mission":
+        await handleMission(route, channel, msg)
+        break
+      case "dev":
+        await handleDev(route, channel, msg)
+        break
+      case "leads":
+        await handleLeads(route, channel, msg)
+        break
+    }
+    processed++
+  }
+  return processed
+}
+
 async function main() {
   await loadConfig()
   parseCliArgs()
@@ -1249,29 +1313,54 @@ async function main() {
   let route = routeMessage(triggerMessage.body)
   console.log(`Route:   ${route.type}${route.model ? ` (model: ${route.model})` : ""}`)
 
-  // Dispatch to handler
-  switch (route.type) {
-    case "dev":
-      await handleDev(route, channel, triggerMessage)
-      break
-    case "mission":
-      await handleMission(route, channel, triggerMessage)
-      break
-    case "bead":
-      await handleBead(route, channel, triggerMessage)
-      break
-    case "question":
-      await handleQuestion(route, channel, triggerMessage)
-      break
-    case "triage":
-      await handleTriage(route, channel, triggerMessage)
-      break
-    case "oneshot":
-      await handleOneshot(route, channel, triggerMessage)
-      break
-    case "leads":
-      await handleLeads(route, channel, triggerMessage)
-      break
+  // Actionable routes spawn agents and should always run
+  let actionableTypes = new Set(["dev", "mission", "leads"])
+  let isActionable = actionableTypes.has(route.type)
+
+  // Sub-agent messages (agent name contains /) are status updates, not conversations
+  let isSubAgentMessage = triggerMessage.agent && triggerMessage.agent.includes("/")
+
+  if (isActionable) {
+    // Dispatch the trigger message
+    switch (route.type) {
+      case "dev":
+        await handleDev(route, channel, triggerMessage)
+        break
+      case "mission":
+        await handleMission(route, channel, triggerMessage)
+        break
+      case "leads":
+        await handleLeads(route, channel, triggerMessage)
+        break
+    }
+    // After processing, drain any other queued actionable messages
+    await drainActionableMessages(channel)
+  } else if (isSubAgentMessage) {
+    // Trigger is a sub-agent status update — don't enter triage/conversation.
+    // Instead, check for missed actionable messages and process those.
+    let drained = await drainActionableMessages(channel)
+    if (drained > 0) {
+      console.log(`Processed ${drained} queued actionable message(s)`)
+    } else {
+      console.log(`Sub-agent status update from ${triggerMessage.agent}, nothing to route`)
+    }
+  } else {
+    // Non-actionable human message — drain any missed actions first, then triage
+    await drainActionableMessages(channel)
+    switch (route.type) {
+      case "bead":
+        await handleBead(route, channel, triggerMessage)
+        break
+      case "question":
+        await handleQuestion(route, channel, triggerMessage)
+        break
+      case "triage":
+        await handleTriage(route, channel, triggerMessage)
+        break
+      case "oneshot":
+        await handleOneshot(route, channel, triggerMessage)
+        break
+    }
   }
 
   await cleanup()

@@ -323,7 +323,8 @@ while true; do
   done
 
   # Check merge count (coord:merge messages)
-  NEW_MERGE_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history futil -n 200 2>/dev/null | grep -ci "coord:merge\|Merged" || echo "0")
+  NEW_MERGE_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history futil -n 200 2>/dev/null | grep -ci "coord:merge\|Merged" || true)
+  NEW_MERGE_COUNT=${NEW_MERGE_COUNT:-0}
   if [[ "$NEW_MERGE_COUNT" -gt "$MERGE_COUNT" ]]; then
     LAST_ACTIVITY_TIME=$(date +%s)
     MERGE_COUNT=$NEW_MERGE_COUNT
