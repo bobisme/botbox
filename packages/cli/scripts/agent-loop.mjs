@@ -316,9 +316,22 @@ At the end of your work, output exactly one of these completion signals:
      maw exec default -- br list -l "mission:<mission-id>"
    Use this context to understand how your work fits into the larger effort.
 
-   COORDINATION LABELS: When working on a mission, use these labels on bus messages:
-   - coord:interface — Share API/interface contracts with siblings: bus send --agent ${AGENT} ${PROJECT} "Interface: <details>" -L coord:interface -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
-   - coord:blocker — Flag a blocking dependency on a sibling: bus send --agent ${AGENT} ${PROJECT} "Blocked by <sibling-bead>: <reason>" -L coord:blocker -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
+   SIBLING COORDINATION (missions only):
+   When working on a mission bead, you share the codebase with sibling workers. Coordinate through bus:
+
+   READ siblings: Before editing a file listed in BOTBOX_FILE_HINTS as owned by a sibling, and periodically
+   during work (~every 5 minutes), check for sibling messages:
+     bus history ${PROJECT} -n 10 -L "mission:${DISPATCHED_MISSION || '<mission-id>'}" --since "5 minutes ago"
+   Look for coord:interface messages — these tell you about API/schema/config changes siblings made.
+   If a sibling changed something you depend on, adapt your implementation to match.
+
+   POST discoveries: When you change an API, schema, config format, shared type, or exported interface
+   that siblings might depend on, announce it immediately:
+     bus send --agent ${AGENT} ${PROJECT} "<file>: <what changed and why>" -L coord:interface -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
+
+   COORDINATION LABELS on bus messages:
+   - coord:interface — API/schema/config changes that affect siblings
+   - coord:blocker — You need something from a sibling: bus send --agent ${AGENT} ${PROJECT} "Blocked by <sibling-bead>: <reason>" -L coord:blocker -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
    - task-done — Signal completion: bus send --agent ${AGENT} ${PROJECT} "Completed <id>" -L task-done -L "mission:${DISPATCHED_MISSION || '<mission-id>'}"
 
 3. START: maw exec default -- br update --actor ${AGENT} <id> --status=in_progress --owner=${AGENT}.
@@ -335,6 +348,9 @@ At the end of your work, output exactly one of these completion signals:
    Announce: bus send --agent ${AGENT} ${PROJECT} "Working on <id>: <title>" -L task-claim.
 
 4. WORK: maw exec default -- br show <id>, then implement the task in the workspace.
+   If this bead is part of a mission, check bus for sibling updates BEFORE starting implementation:
+     bus history ${PROJECT} -n 10 -L "mission:${DISPATCHED_MISSION || '<mission-id>'}" -L coord:interface
+   Adapt your approach if siblings have already defined interfaces you need to consume or conform to.
    Add at least one progress comment: maw exec default -- br comments add --actor ${AGENT} --author ${AGENT} <id> "Progress: ...".
 
 5. STUCK CHECK: If same approach tried twice, info missing, or tool fails repeatedly — you are
