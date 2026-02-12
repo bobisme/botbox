@@ -2057,4 +2057,5 @@ Two `!mission` messages sent ~5s apart:
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| (none yet) | | | |
+| 1 | Opus (dev) + Sonnet (workers) | FAIL | Only 1 lead spawned. Router processed status updates instead of queued Mission B. Led to router inbox drain fix (drainActionableMessages) |
+| 2 | Opus (dev) + Sonnet (workers) | 104/115 (90%) EXCELLENT | Both leads spawned (futil-dev/0 at 30s, futil-dev/1 at 90s). All missions complete with 2/2 children each. 3/3 subcommands implemented. -5 merge serialization (verify bash bug), -6 friction (17 tool errors) |

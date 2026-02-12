@@ -186,7 +186,8 @@ if [[ -n "$JJ_LOG" ]]; then
   DIVERGENT_COUNT=$(echo "$JJ_LOG" | grep -ci "divergent" 2>/dev/null) || DIVERGENT_COUNT=0
 fi
 # Also check live
-LIVE_DIVERGENT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- jj log --no-graph 2>/dev/null | grep -ci "divergent" || echo "0")
+LIVE_DIVERGENT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- jj log --no-graph 2>/dev/null | grep -ci "divergent" || true)
+LIVE_DIVERGENT=${LIVE_DIVERGENT:-0}
 DIVERGENT_COUNT=$((DIVERGENT_COUNT + LIVE_DIVERGENT))
 check "No divergent commits (found=$DIVERGENT_COUNT)" "$([ "$DIVERGENT_COUNT" -eq 0 ] && echo 0 || echo 1)" 10
 
@@ -213,7 +214,8 @@ check "Merge mutex used ($COORD_MERGE_COUNT coord:merge messages)" "$($MUTEX_USE
 echo ""
 echo "--- Check 10: Multiple merges completed ---"
 # Check jj log for multiple non-empty commits on main
-COMMIT_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- jj log -r 'main@origin..main' --no-graph -T 'description.first_line() ++ "\n"' 2>/dev/null | grep -c "." || echo "0")
+COMMIT_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- jj log -r 'main@origin..main' --no-graph -T 'description.first_line() ++ "\n"' 2>/dev/null | grep -c "." || true)
+COMMIT_COUNT=${COMMIT_COUNT:-0}
 check "Multiple merges to main ($COMMIT_COUNT commits since origin)" "$([ "$COMMIT_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
 # ============================================================
@@ -247,7 +249,8 @@ if [[ "$MISSION_A_BEAD" != "none" && "$MISSION_B_BEAD" != "none" ]]; then
   # Get child IDs for each mission
   A_CHILDREN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_A_BEAD" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null | sort)
   B_CHILDREN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_B_BEAD" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null | sort)
-  COMMON=$(comm -12 <(echo "$A_CHILDREN") <(echo "$B_CHILDREN") | grep -c "." || echo "0")
+  COMMON=$(comm -12 <(echo "$A_CHILDREN") <(echo "$B_CHILDREN") | grep -c "." || true)
+  COMMON=${COMMON:-0}
   if [[ "$COMMON" -gt 0 ]]; then
     OVERLAP=true
     warn "Missions share $COMMON child beads"
