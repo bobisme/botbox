@@ -607,9 +607,12 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
     --env "BOTBOX_WORKSPACE=\$WS" \\
     --env "BOTBUS_CHANNEL=${PROJECT}" \\
     --env "BOTBOX_PROJECT=${PROJECT}" \\
-    --timeout ${CLAUDE_TIMEOUT} \\
+    --timeout <model-timeout> \\
     --cwd $(pwd) \\
     -- bun ${findScriptPath('agent-loop.mjs')} --model <selected-model> ${PROJECT} ${AGENT}/<worker-suffix>
+
+Set --timeout based on the selected model (complex work needs more time):
+  opus: 900, sonnet: 600, haiku: 300
 
 The hierarchical name (${AGENT}/<suffix>) lets you find all your workers via \`botty list\`.
 The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell agent-loop.mjs to skip triage and go straight to the assigned work.
@@ -813,6 +816,11 @@ After finishing all ready work:
 
 Before outputting COMPLETE, check if a release is needed:
 
+0. ACQUIRE RELEASE MUTEX (prevents multiple leads releasing simultaneously):
+   bus claims stake --agent ${AGENT} "release://${PROJECT}" --ttl 120 -m "checking release"
+   If the claim fails (another lead is already releasing): skip the release check entirely.
+   The other lead will handle it. Proceed directly to the output signal.
+
 1. Check for unreleased commits: maw exec default -- jj log -r 'tags()..main' --no-graph -T 'description.first_line() ++ "\\n"'
 2. If any commits start with "feat:" or "fix:" (user-visible changes), a release is needed:
    - Bump version in Cargo.toml/package.json (semantic versioning)
@@ -820,6 +828,7 @@ Before outputting COMPLETE, check if a release is needed:
    - Release: maw release vX.Y.Z (this tags, pushes, and updates bookmarks)
    - Announce: bus send --agent ${AGENT} ${PROJECT} "<project> vX.Y.Z released - <summary>" -L release
 3. If only "chore:", "docs:", "refactor:" commits, no release needed.
+4. RELEASE MUTEX: bus claims release --agent ${AGENT} "release://${PROJECT}"
 
 Output: <promise>END_OF_STORY</promise> if more beads remain, else <promise>COMPLETE</promise>
 
