@@ -1106,6 +1106,34 @@ async function main() {
     `Trigger: ${triggerMessage.agent}: ${triggerMessage.body.slice(0, 80)}...`,
   )
 
+  // Skip self-messages (prevent routing loops)
+  if (triggerMessage.agent === AGENT) {
+    console.log(`Skipping self-message from ${AGENT}`)
+    await cleanup()
+    process.exit(0)
+  }
+
+  // Skip internal coordination messages — these don't need routing
+  let skipLabels = new Set([
+    "task-done",
+    "task-claim",
+    "spawn-ack",
+    "agent-idle",
+    "agent-error",
+    "coord:merge",
+    "coord:interface",
+    "coord:blocker",
+    "review-response",
+    "release",
+  ])
+  let messageLabels = triggerMessage.labels || []
+  let matchedSkip = messageLabels.find((l) => skipLabels.has(l))
+  if (matchedSkip) {
+    console.log(`Skipping internal message (label: ${matchedSkip})`)
+    await cleanup()
+    process.exit(0)
+  }
+
   // Route the message
   let route = routeMessage(triggerMessage.body)
   console.log(`Route:   ${route.type}${route.model ? ` (model: ${route.model})` : ""}`)
