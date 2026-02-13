@@ -704,6 +704,10 @@ When all children are closed:
 ` : ''}
 ## 6. MONITOR (if workers are dispatched)
 
+IMPORTANT: Do NOT use shell \`sleep\` for monitoring. Shell sleep counts against your Claude timeout
+budget and can kill your session. Use quick sequential checks and then output END_OF_STORY to return
+control to the outer loop, which handles iteration timing.
+
 Check for completion messages:
 - bus inbox --agent ${AGENT} --channels ${PROJECT} -n 20
 - Look for task-done messages from workers
@@ -756,6 +760,15 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
 
   d. MERGE:
      maw ws merge \$WS --destroy
+
+  d2. POST-MERGE CHECK:
+      After merging, verify compilation in the default workspace:
+        maw exec default -- <project-build-command>  (e.g., cargo check, bun test, npm run build)
+      If it fails, the merge introduced a semantic conflict. Fix it immediately:
+        - Read the error output carefully
+        - Make targeted fixes in the default workspace (use maw exec default -- to edit)
+        - Re-run the check until it passes
+        - Announce: bus send --agent ${AGENT} ${PROJECT} "Post-merge fix: <what broke and how you fixed it>" -L coord:merge
 
   e. ANNOUNCE:
      bus send --agent ${AGENT} ${PROJECT} "Merged \$WS (<id>): <summary>" -L coord:merge
@@ -994,6 +1007,8 @@ async function main() {
 	// Truncate journal at start of loop session
 	await truncateJournal();
 
+	let idleCount = 0;
+
 	// Main loop
 	for (let i = 1; i <= MAX_LOOPS; i++) {
 		console.log(`\n--- Dev loop ${i}/${MAX_LOOPS} ---`);
@@ -1006,20 +1021,25 @@ async function main() {
 		}
 
 		if (!(await hasWork())) {
-			await runCommand('bus', ['statuses', 'set', '--agent', AGENT, 'Idle']);
-			console.log('No work available. Exiting cleanly.');
-			await runCommand('bus', [
-				'send',
-				'--agent',
-				AGENT,
-				PROJECT,
-				`No work remaining. Dev agent ${AGENT} signing off.`,
-				'-L',
-				'agent-idle',
-			]);
-			alreadySignedOff = true;
-			break;
+			idleCount++;
+			let maxIdle = 5;
+			let idleDelays = [10, 20, 40, 60, 60];
+			if (idleCount >= maxIdle) {
+				await runCommand('bus', ['statuses', 'set', '--agent', AGENT, 'Idle']);
+				console.log(`No work after ${maxIdle} idle checks. Exiting cleanly.`);
+				await runCommand('bus', ['send', '--agent', AGENT, PROJECT, `No work remaining after ${maxIdle} checks. Dev agent ${AGENT} signing off.`, '-L', 'agent-idle']);
+				alreadySignedOff = true;
+				break;
+			}
+			let delay = idleDelays[Math.min(idleCount - 1, idleDelays.length - 1)];
+			console.log(`No work available (idle ${idleCount}/${maxIdle}). Waiting ${delay}s before retrying...`);
+			try {
+				await runCommand('bus', ['statuses', 'set', '--agent', AGENT, `Idle (${idleCount}/${maxIdle})`, '--ttl', `${delay + 30}s`]);
+			} catch {}
+			await new Promise((resolve) => setTimeout(resolve, delay * 1000));
+			continue;
 		}
+		idleCount = 0;
 
 		// Guard: if a review is pending, don't run Claude — just wait
 		let pendingBeadId = await hasPendingReview();
