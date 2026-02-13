@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
-import { readFile, stat, appendFile, truncate } from 'fs/promises';
+import { readFile, stat, appendFile, truncate, mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { homedir, platform } from 'os';
 import { parseArgs } from 'util';
 
 // --- Defaults ---
@@ -284,11 +285,114 @@ async function hasWork() {
 	}
 }
 
+// --- Helper: gather status snapshot for prompt injection ---
+async function gatherStatus() {
+	let sections = [];
+
+	// Unfinished beads (crash recovery)
+	let unfinished = await getUnfinishedBeads();
+	if (unfinished.length > 0) {
+		let lines = unfinished.map(b => `  ${b.id} P${b.priority}: ${b.title}`);
+		sections.push(`UNFINISHED BEADS (${unfinished.length}):\n${lines.join('\n')}`);
+	}
+
+	// Claims
+	try {
+		let { stdout } = await runCommand('bus', ['claims', 'list', '--agent', AGENT, '--mine', '--format', 'json']);
+		let parsed = JSON.parse(stdout || '{}');
+		let claims = parsed.claims || [];
+		let workClaims = claims.filter(
+			(/** @type {any} */ c) => Array.isArray(c.patterns) && c.patterns.some(
+				(/** @type {string} */ p) => p.startsWith('bead://') || p.startsWith('workspace://')
+			)
+		);
+		if (workClaims.length > 0) {
+			let lines = workClaims.map((/** @type {any} */ c) => {
+				let patterns = (c.patterns || []).filter((/** @type {string} */ p) => !p.startsWith('agent://'));
+				let ttl = c.expires_in_secs ? ` (${Math.floor(c.expires_in_secs / 60)}m left)` : '';
+				return `  ${patterns.join(', ')}${ttl}${c.memo ? ` — ${c.memo}` : ''}`;
+			});
+			sections.push(`ACTIVE CLAIMS (${workClaims.length}):\n${lines.join('\n')}`);
+		}
+	} catch {}
+
+	// Inbox
+	try {
+		let { stdout } = await runCommand('bus', ['inbox', '--agent', AGENT, '--channels', PROJECT, '--format', 'json']);
+		let inbox = JSON.parse(stdout || '{}');
+		if (inbox.total_unread > 0) {
+			let lines = [];
+			for (let channel of (inbox.channels || [])) {
+				for (let msg of (channel.messages || []).slice(0, 5)) {
+					let label = msg.label ? `[${msg.label}]` : '';
+					let body = (msg.body || '').length > 80 ? (msg.body || '').substring(0, 80) + '...' : (msg.body || '');
+					lines.push(`  ${msg.agent} ${label}: ${body}`);
+				}
+			}
+			sections.push(`INBOX (${inbox.total_unread} unread):\n${lines.join('\n')}`);
+		}
+	} catch {}
+
+	// Ready beads
+	try {
+		let { stdout } = await runInDefault('br', ['ready', '--json']);
+		let ready = JSON.parse(stdout || '[]');
+		if (!Array.isArray(ready)) ready = ready.issues || ready.beads || [];
+		if (ready.length > 0) {
+			let lines = ready.slice(0, 10).map((/** @type {any} */ b) => {
+				let owner = b.owner ? ` (${b.owner})` : '';
+				let labels = b.labels?.length ? ` [${b.labels.join(',')}]` : '';
+				return `  ${b.id} P${b.priority}${owner}: ${b.title}${labels}`;
+			});
+			if (ready.length > 10) lines.push(`  ... and ${ready.length - 10} more`);
+			sections.push(`READY BEADS (${ready.length}):\n${lines.join('\n')}`);
+		}
+	} catch {}
+
+	// Active workers (botty)
+	try {
+		let { stdout } = await runCommand('botty', ['list', '--format', 'json']);
+		let parsed = JSON.parse(stdout || '{}');
+		let agents = parsed.agents || [];
+		let workers = agents.filter((/** @type {any} */ a) => a.id?.startsWith(AGENT + '/'));
+		if (workers.length > 0) {
+			let lines = workers.map((/** @type {any} */ w) => `  ${w.id} (${w.status || 'running'})`);
+			sections.push(`ACTIVE WORKERS (${workers.length}):\n${lines.join('\n')}`);
+		}
+	} catch {}
+
+	return sections.length > 0 ? sections.join('\n\n') : null;
+}
+
 // --- Journal file for iteration history ---
-const JOURNAL_PATH = '.agents/botbox/dev-loop.txt';
+// --- Cache directory for script state (XDG-compliant) ---
+function getCacheDir() {
+	let base;
+	if (process.env.XDG_CACHE_HOME) {
+		base = process.env.XDG_CACHE_HOME;
+	} else if (platform() === 'darwin') {
+		base = join(homedir(), 'Library', 'Caches');
+	} else {
+		base = join(homedir(), '.cache');
+	}
+	// Slugify the project directory: resolve CWD, replace path separators with dashes, strip leading dash
+	let slug = resolve('.').replace(/[/\\]/g, '-').replace(/^-/, '');
+	return join(base, 'botbox', 'projects', slug);
+}
+
+let CACHE_DIR = getCacheDir();
+let JOURNAL_PATH = join(CACHE_DIR, 'dev-loop.txt');
+
+// --- Ensure cache directory exists ---
+async function ensureCacheDir() {
+	try {
+		await mkdir(CACHE_DIR, { recursive: true });
+	} catch {}
+}
 
 // --- Truncate journal at start of loop session ---
 async function truncateJournal() {
+	await ensureCacheDir();
 	if (!existsSync(JOURNAL_PATH)) return;
 	try {
 		await truncate(JOURNAL_PATH, 0);
@@ -371,7 +475,7 @@ async function discoverSiblingLeads() {
 }
 
 // --- Build dev lead prompt ---
-function buildPrompt(lastIteration, { siblingLeads = [] } = {}) {
+function buildPrompt(lastIteration, { siblingLeads = [], statusSnapshot = null } = {}) {
 	const pushMainStep = PUSH_MAIN ? '\n  14. Push to GitHub: maw push (if fails, announce issue).' : '';
 
 	const reviewInstructions = REVIEW ? 'REVIEW is true' : 'REVIEW is false';
@@ -393,7 +497,11 @@ COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. A
   other: maw exec \$WS -- <command>           (cargo test, etc.)
 Inside \`maw exec <ws>\`, CWD is already \`ws/<ws>/\`. Use \`maw exec default -- ls src/\`, NOT \`maw exec default -- ls ws/default/src/\`.
 For file reads/edits outside maw exec, use the full absolute path: \`ws/<ws>/src/...\`
-${previousContext}${siblingLeads.length > 0 ? `
+${previousContext}${statusSnapshot ? `
+## CURRENT STATUS (pre-gathered — no need to re-fetch)
+
+${statusSnapshot}
+` : ''}${siblingLeads.length > 0 ? `
 ## SIBLING LEADS (multi-lead mode active)
 
 Other lead agents are currently active on this project. Coordinate through claims — do NOT duplicate work.
@@ -416,7 +524,7 @@ At the end of your work, output:
 
 ## 1. UNFINISHED WORK CHECK (do this FIRST — crash recovery)
 
-Run: maw exec default -- br list --status in_progress --assignee ${AGENT} --json
+Check CURRENT STATUS above for UNFINISHED BEADS. If none listed, skip to step 2.
 
 If any in_progress beads are owned by you, you have unfinished work from a previous session that was interrupted.
 
@@ -452,7 +560,7 @@ After handling all unfinished beads, proceed to step 2 (RESUME CHECK).
 
 ## 2. RESUME CHECK (check for active claims)
 
-Run: bus claims list --agent ${AGENT} --mine
+Check CURRENT STATUS above for ACTIVE CLAIMS. If none listed, skip to step 3.
 
 If you hold any claims not covered by unfinished beads in step 1:
 - bead:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.
@@ -463,7 +571,8 @@ If no additional claims: proceed to step 3 (INBOX).
 
 ## 3. INBOX
 
-Run: bus inbox --agent ${AGENT} --channels ${PROJECT} --mark-read
+Check CURRENT STATUS above for INBOX messages. If none, skip to step 4.
+To process and mark read: bus inbox --agent ${AGENT} --channels ${PROJECT} --mark-read
 
 Process each message:
 - Task requests (-L task-request): create beads with maw exec default -- br create
@@ -474,7 +583,7 @@ Process each message:
 
 ## 4. TRIAGE
 
-Run: maw exec default -- br ready --json
+Check CURRENT STATUS above for READY BEADS. If needed, fetch full details: maw exec default -- br ready --json
 
 Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promise> and stop.
 ${MISSIONS_ENABLED ? `
@@ -759,7 +868,13 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
 
   c. AUTHORITATIVE REBASE (under mutex — catches merges that landed during wait):
      maw exec \$WS -- jj rebase -d main
-     If conflicts: resolve them before proceeding.
+     If conflicts: resolve them before proceeding. Use this workflow:
+       1. Identify the bead: maw exec default -- br show <id> — read what the worker was trying to do
+       2. See what changed in main since the worker started: maw exec default -- jj log -n 10
+       3. Read the conflicted files in the workspace (ws/\$WS/<path>) — understand both sides
+       4. Resolve by keeping BOTH sides' intent: the worker's new code AND main's recent additions.
+          For registry files (match arms, mod declarations, use statements), this usually means keeping all entries.
+       5. After resolving: maw exec \$WS -- jj describe -m "<id>: <summary> (conflict resolved)"
 
   d. MERGE:
      maw ws merge \$WS --destroy
@@ -767,8 +882,13 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
   d2. POST-MERGE CHECK:
       After merging, verify compilation in the default workspace:
         maw exec default -- <project-build-command>  (e.g., cargo check, bun test, npm run build)
-      If it fails, the merge introduced a semantic conflict. Fix it immediately:
-        - Read the error output carefully
+      If it fails, the merge introduced a semantic conflict — two workers' code compiles alone but
+      not together (e.g., disagreeing type signatures, duplicate symbol names, missing imports).
+      Fix it immediately:
+        - Read the error output carefully — compiler errors point to the exact incompatibility
+        - Check the bead for context: maw exec default -- br show <id> — what was the worker's intent?
+        - Common patterns: mismatched function signatures (reconcile the API), duplicate definitions
+          (keep one, update callers), missing imports (add them)
         - Make targeted fixes in the default workspace (use maw exec default -- to edit)
         - Re-run the check until it passes
         - Announce: bus send --agent ${AGENT} ${PROJECT} "Post-merge fix: <what broke and how you fixed it>" -L coord:merge
@@ -1074,7 +1194,8 @@ async function main() {
 		try {
 			const lastIteration = await readLastIteration();
 			const siblingLeads = await discoverSiblingLeads();
-			const prompt = buildPrompt(lastIteration, { siblingLeads });
+			const statusSnapshot = await gatherStatus();
+			const prompt = buildPrompt(lastIteration, { siblingLeads, statusSnapshot });
 			const result = await runClaude(prompt);
 
 			// Check for completion signals

@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { spawn } from 'child_process';
-import { readFile, appendFile, truncate, stat } from 'fs/promises';
+import { readFile, appendFile, truncate, stat, mkdir } from 'fs/promises';
 import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
+import { homedir, platform } from 'os';
 import { parseArgs } from 'util';
 
 // --- Inline prompt utilities (scripts must be self-contained) ---
@@ -51,16 +52,38 @@ function loadPrompt(promptName, variables, promptsDir) {
 	return template;
 }
 
+// --- Cache directory for script state (XDG-compliant) ---
+function getCacheDir() {
+	let base;
+	if (process.env.XDG_CACHE_HOME) {
+		base = process.env.XDG_CACHE_HOME;
+	} else if (platform() === 'darwin') {
+		base = join(homedir(), 'Library', 'Caches');
+	} else {
+		base = join(homedir(), '.cache');
+	}
+	let slug = resolve('.').replace(/[/\\]/g, '-').replace(/^-/, '');
+	return join(base, 'botbox', 'projects', slug);
+}
+
+let CACHE_DIR = getCacheDir();
+
 // --- Journal functions ---
 let JOURNAL_PATH = '';
 
 function getJournalPath(agentName) {
-	// Extract role from agent name (e.g., "myproject-security" -> "security")
-	const role = deriveRoleFromAgentName(agentName);
-	return `.agents/botbox/review-loop-${role || 'reviewer'}.txt`;
+	let role = deriveRoleFromAgentName(agentName);
+	return join(CACHE_DIR, `review-loop-${role || 'reviewer'}.txt`);
+}
+
+async function ensureCacheDir() {
+	try {
+		await mkdir(CACHE_DIR, { recursive: true });
+	} catch {}
 }
 
 async function truncateJournal() {
+	await ensureCacheDir();
 	if (!JOURNAL_PATH || !existsSync(JOURNAL_PATH)) return;
 	try {
 		await truncate(JOURNAL_PATH, 0);
