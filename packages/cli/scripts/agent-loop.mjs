@@ -408,7 +408,14 @@ ${REVIEW ? `   First, check the bead's risk label: maw exec default -- br show <
    Describe the change: maw exec \$WS -- jj describe -m "<id>: <summary>".
    Proceed directly to step 7 (FINISH).`}
 
-7. FINISH (only reached after LGTM from step 0, or after step 6 when REVIEW is false):
+${DISPATCHED_BEAD ? `7. FINISH (dispatched worker — lead handles merge):
+   Describe commit: maw exec \$WS -- jj describe -m "<id>: <summary>"
+   Close bead: maw exec default -- br close --actor ${AGENT} <id> --reason="Completed"
+   Announce: bus send --agent ${AGENT} ${PROJECT} "Completed <id>: <title>" -L task-done
+   Release bead claim: bus claims release --agent ${AGENT} "bead://${PROJECT}/<id>"
+   Do NOT merge the workspace — the lead dev will handle merging via the merge protocol.
+   Do NOT run the release check — the lead handles releases.
+   Output: <promise>COMPLETE</promise>` : `7. FINISH (only reached after LGTM from step 0, or after step 6 when REVIEW is false):
    If a review was conducted:
      maw exec default -- crit reviews mark-merged <review-id> --agent ${AGENT}.
    RISK:CRITICAL CHECK — Before merging a risk:critical bead:
@@ -421,7 +428,7 @@ ${REVIEW ? `   First, check the bead's risk label: maw exec default -- br show <
    maw ws merge \$WS --destroy (produces linear squashed history and auto-moves main; if conflict, preserve and announce).
    bus claims release --agent ${AGENT} --all.
    maw exec default -- br sync --flush-only.${pushMainStep}
-   Then proceed to step 8 (RELEASE CHECK).
+   Then proceed to step 8 (RELEASE CHECK).`}
 
 8. RELEASE CHECK (before signaling COMPLETE):
    Check for unreleased commits: maw exec default -- jj log -r 'tags()..main' --no-graph -T 'description.first_line() ++ "\\n"'
@@ -491,6 +498,19 @@ let alreadySignedOff = false;
 async function cleanup() {
 	console.log('Cleaning up...');
 	if (!alreadySignedOff) {
+		// Reset orphaned in-progress beads back to open for reassignment
+		try {
+			let result = await runInDefault('br', ['list', '--status', 'in_progress', '--assignee', AGENT, '--json']);
+			let beads = JSON.parse(result.stdout || '[]');
+			if (!Array.isArray(beads)) beads = [];
+			for (let bead of beads) {
+				try {
+					await runInDefault('br', ['update', '--actor', AGENT, bead.id, '--status=open']);
+					await runInDefault('br', ['comments', 'add', '--actor', AGENT, '--author', AGENT, bead.id, `Worker ${AGENT} exited without completing. Resetting to open for reassignment.`]);
+					console.log(`Reset orphaned bead ${bead.id} to open`);
+				} catch {}
+			}
+		} catch {}
 		try {
 			await runCommand('bus', [
 				'send',
