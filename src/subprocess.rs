@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use std::time::Duration;
 
@@ -285,5 +286,27 @@ mod tests {
         };
         let parsed: serde_json::Value = output.parse_json().unwrap();
         assert_eq!(parsed["key"], "value");
+    }
+}
+
+/// Simple helper to run a command with args, optionally in a specific directory.
+/// Returns stdout on success, or an error.
+pub fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<String> {
+    let mut cmd = Command::new(program);
+    cmd.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+
+    if let Some(dir) = cwd {
+        cmd.current_dir(dir);
+    }
+
+    let output = cmd.output().with_context(|| format!("running {program}"))?;
+
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    } else {
+        anyhow::bail!(
+            "{program} failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )
     }
 }

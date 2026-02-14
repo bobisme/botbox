@@ -1,6 +1,7 @@
 mod commands;
 mod config;
 mod error;
+mod hooks;
 mod subprocess;
 mod template;
 

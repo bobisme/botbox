@@ -22,6 +22,9 @@ pub enum ExitError {
     #[error("{message}")]
     WithCode { code: u8, message: String },
 
+    #[error("audit failed")]
+    AuditFailed,
+
     #[error("{0}")]
     Other(String),
 }
@@ -38,6 +41,7 @@ impl ExitError {
             ExitError::ToolFailed { .. } => ExitCode::from(4),
             ExitError::Timeout { .. } => ExitCode::from(5),
             ExitError::WithCode { code, .. } => ExitCode::from(*code),
+            ExitError::AuditFailed => ExitCode::from(6),
             ExitError::Other(_) => ExitCode::from(1),
         }
     }
