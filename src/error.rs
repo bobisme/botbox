@@ -19,17 +19,25 @@ pub enum ExitError {
     #[error("{tool} timed out after {timeout_secs}s")]
     Timeout { tool: String, timeout_secs: u64 },
 
+    #[error("{message}")]
+    WithCode { code: u8, message: String },
+
     #[error("{0}")]
     Other(String),
 }
 
 impl ExitError {
+    pub fn new(code: u8, message: String) -> Self {
+        ExitError::WithCode { code, message }
+    }
+
     pub fn exit_code(&self) -> ExitCode {
         match self {
             ExitError::Config(_) => ExitCode::from(2),
             ExitError::ToolNotFound { .. } => ExitCode::from(3),
             ExitError::ToolFailed { .. } => ExitCode::from(4),
             ExitError::Timeout { .. } => ExitCode::from(5),
+            ExitError::WithCode { code, .. } => ExitCode::from(*code),
             ExitError::Other(_) => ExitCode::from(1),
         }
     }
