@@ -2,6 +2,7 @@ mod commands;
 mod config;
 mod error;
 mod subprocess;
+mod template;
 
 use std::process::ExitCode;
 

@@ -51,6 +51,29 @@ pub struct ToolsConfig {
     pub botty: bool,
 }
 
+impl ToolsConfig {
+    /// Returns a list of enabled tool names
+    pub fn enabled_tools(&self) -> Vec<String> {
+        let mut tools = Vec::new();
+        if self.beads {
+            tools.push("beads".to_string());
+        }
+        if self.maw {
+            tools.push("maw".to_string());
+        }
+        if self.crit {
+            tools.push("crit".to_string());
+        }
+        if self.botbus {
+            tools.push("botbus".to_string());
+        }
+        if self.botty {
+            tools.push("botty".to_string());
+        }
+        tools
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewConfig {
     #[serde(default)]
