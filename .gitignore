@@ -2,6 +2,9 @@ opencode.json
 node_modules/
 bun.lockb
 
+# Rust build artifacts
+target/
+
 # bv (beads viewer) local config and caches
 .bv/
 
