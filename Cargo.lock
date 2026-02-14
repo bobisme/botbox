@@ -112,6 +112,7 @@ dependencies = [
  "clap",
  "minijinja",
  "predicates",
+ "regex",
  "serde",
  "serde_json",
  "sha2",

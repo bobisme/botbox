@@ -4,6 +4,26 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
+    /// Run Claude Code with stream-JSON output parsing
+    Agent {
+        /// Agent type (currently only 'claude' is supported)
+        agent_type: String,
+        /// Prompt to send to Claude
+        #[arg(short, long)]
+        prompt: String,
+        /// Model to use (sonnet, opus, haiku)
+        #[arg(short, long)]
+        model: Option<String>,
+        /// Timeout in seconds
+        #[arg(short, long, default_value = "600")]
+        timeout: u64,
+        /// Output format (pretty or text)
+        #[arg(long)]
+        format: Option<String>,
+        /// Skip Claude Code permission checks (DANGEROUS: allows unrestricted file/command access)
+        #[arg(long)]
+        skip_permissions: bool,
+    },
     /// Run the dev-loop (lead agent)
     DevLoop {
         /// Project root directory
@@ -72,6 +92,9 @@ pub enum RunCommand {
 impl RunCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
+            RunCommand::Agent { agent_type, prompt, model, timeout, format, skip_permissions } => {
+                crate::commands::run_agent::run_agent(agent_type, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions)
+            }
             RunCommand::DevLoop { .. } => {
                 eprintln!("dev-loop: not yet implemented");
                 Ok(())
