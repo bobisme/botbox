@@ -9,7 +9,25 @@ use crate::subprocess::run_command;
 pub fn run_init_agent(project_root: &Path) -> Result<()> {
     let config_path = project_root.join(".botbox.json");
 
-    if config_path.exists() {
+    // Prefer BOTBUS_AGENT env var (set by --env-inherit when spawned by hooks),
+    // then fall back to config defaultAgent, then bus whoami
+    let agent = std::env::var("BOTBUS_AGENT")
+        .ok()
+        .filter(|a| validate_agent_name(a));
+
+    if let Some(agent) = agent {
+        let channel = if config_path.exists() {
+            Config::load(&config_path)?.channel()
+        } else {
+            project_root
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string()
+        };
+        println!("Agent ID for use with botbus/crit/br: {agent}");
+        println!("Project channel: {channel}");
+    } else if config_path.exists() {
         let config = Config::load(&config_path)?;
         let agent = config.default_agent();
         let channel = config.channel();
