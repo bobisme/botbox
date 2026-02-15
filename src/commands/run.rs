@@ -109,9 +109,12 @@ impl RunCommand {
                     model.clone(),
                 )
             }
-            RunCommand::ReviewerLoop { .. } => {
-                eprintln!("reviewer-loop: not yet implemented");
-                Ok(())
+            RunCommand::ReviewerLoop { project_root, agent, model } => {
+                crate::commands::run_reviewer_loop::run_reviewer_loop(
+                    project_root.clone(),
+                    agent.clone(),
+                    model.clone(),
+                )
             }
             RunCommand::Responder { .. } => {
                 eprintln!("responder: not yet implemented");

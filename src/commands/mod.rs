@@ -5,6 +5,7 @@ pub mod init;
 pub mod iteration_start;
 pub mod run;
 pub mod run_agent;
+pub mod run_reviewer_loop;
 pub mod status;
 pub mod sync;
 pub mod triage;

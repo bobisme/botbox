@@ -13,8 +13,10 @@ path = "src/lib.rs"
 
 [dependencies]
 anyhow = "1"
+chrono = "0.4"
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
+dirs = "5"
 libc = "0.2"
 minijinja = "2"
 regex = "1"
