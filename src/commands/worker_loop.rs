@@ -261,10 +261,9 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
    maw exec default -- br comments add --actor {agent} --author {agent} <id> "Completed by {agent}".
    maw exec default -- br close --actor {agent} <id> --reason="Completed" --suggest-next.
    bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done.
-   maw ws merge $WS --destroy (produces linear squashed history and auto-moves main; if conflict, preserve and announce).
-   bus claims release --agent {agent} --all.
-   maw exec default -- br sync --flush-only.
-   Then proceed to step 8 (RELEASE CHECK)."#,
+   bus claims release --agent {agent} "bead://{project}/<id>".
+   Keep workspace claim — the lead will merge it.
+   STOP — do not proceed to RELEASE CHECK (only leads check for releases after merging)."#,
                 agent = self.agent,
                 project = self.project,
             )
