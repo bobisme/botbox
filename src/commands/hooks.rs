@@ -351,6 +351,7 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
 
     let channel = config.channel();
     let project_name = &config.project.name;
+    let agent = config.default_agent();
 
     // Validate names before using them in commands
     validate_name(project_name, "project name")?;
@@ -359,120 +360,65 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
         validate_name(reviewer, "reviewer name")?;
     }
 
+    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
+    let root_str = root.display().to_string();
+
     // Register router hook (claim-based)
-    let router_claim = format!("agent://{}-router", project_name);
+    let router_claim = format!("agent://{project_name}-router");
+    let spawn_name = format!("{project_name}-router");
+    let description = format!("botbox:{project_name}:responder");
 
-    // Check if router hook already exists
-    let existing = run_command("bus", &["hooks", "list", "--format", "json"], Some(root)).ok();
-    let needs_router = if let Some(ref json) = existing {
-        if let Ok(data) = serde_json::from_str::<serde_json::Value>(json) {
-            !data["hooks"]
-                .as_array()
-                .map(|arr| {
-                    arr.iter().any(|h| {
-                        h["condition"]["pattern"]
-                            .as_str()
-                            .map(|c| c == router_claim)
-                            .unwrap_or(false)
-                    })
-                })
-                .unwrap_or(false)
-        } else {
-            true
-        }
-    } else {
-        true
-    };
-
-    if needs_router {
-        let spawn_name = format!("{}-router", project_name);
-        // Pass command as separate argv elements to avoid shell interpretation
-        run_command(
-            "bus",
-            &[
-                "hooks",
-                "add",
-                "--channel",
-                &channel,
-                "--claim",
-                &router_claim,
-                "--ttl",
-                "600",
-                "--cwd",
-                &root.display().to_string(),
-                "--",
-                "botty",
-                "spawn",
-                "--env-inherit",
-                "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK",
-                "--name",
-                &spawn_name,
-                "--cwd",
-                &root.display().to_string(),
-                "--",
-                "botbox",
-                "run",
-                "responder",
-            ],
-            Some(root),
-        )
-        .with_context(|| "registering router hook")?;
-        println!("Registered router hook for #{channel}");
+    match crate::subprocess::ensure_bus_hook(
+        &description,
+        &[
+            "--agent", &agent,
+            "--channel", &channel,
+            "--claim", &router_claim,
+            "--claim-owner", &agent,
+            "--cwd", &root_str,
+            "--ttl", "600",
+            "--",
+            "botty", "spawn",
+            "--env-inherit", env_inherit,
+            "--name", &spawn_name,
+            "--cwd", &root_str,
+            "--",
+            "botbox", "run", "responder",
+        ],
+    ) {
+        Ok((action, _)) => println!("Router hook {action} for #{channel}"),
+        Err(e) => eprintln!("Warning: failed to register router hook: {e}"),
     }
 
     // Register reviewer hooks (mention-based)
     for reviewer in &config.review.reviewers {
-        let mention_name = format!("{project_name}-{reviewer}");
+        let reviewer_agent = format!("{project_name}-{reviewer}");
+        let claim_uri = format!("agent://{reviewer_agent}");
+        let desc = format!("botbox:{project_name}:reviewer-{reviewer}");
 
-        let needs_reviewer = if let Some(ref json) = existing {
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(json) {
-                !data["hooks"]
-                    .as_array()
-                    .map(|arr| {
-                        arr.iter().any(|h| {
-                            h["condition"]["mention"]
-                                .as_str()
-                                .map(|m| m == mention_name)
-                                .unwrap_or(false)
-                        })
-                    })
-                    .unwrap_or(false)
-            } else {
-                true
-            }
-        } else {
-            true
-        };
-
-        if needs_reviewer {
-            let agent_name = format!("botbox-{reviewer}-${{BOTBUS_HOOK_ID}}");
-            run_command(
-                "bus",
-                &[
-                    "hooks",
-                    "add",
-                    "--channel",
-                    &channel,
-                    "--mention",
-                    &mention_name,
-                    "--cwd",
-                    &root.display().to_string(),
-                    "--",
-                    "botty",
-                    "spawn",
-                    "--env-inherit",
-                    &agent_name,
-                    "--",
-                    "botbox",
-                    "run",
-                    "reviewer-loop",
-                    "--role",
-                    reviewer,
-                ],
-                Some(root),
-            )
-            .with_context(|| format!("registering reviewer hook for @{mention_name}"))?;
-            println!("Registered reviewer hook for @{mention_name}");
+        match crate::subprocess::ensure_bus_hook(
+            &desc,
+            &[
+                "--agent", &agent,
+                "--channel", &channel,
+                "--mention", &reviewer_agent,
+                "--claim", &claim_uri,
+                "--claim-owner", &reviewer_agent,
+                "--ttl", "600",
+                "--priority", "1",
+                "--cwd", &root_str,
+                "--",
+                "botty", "spawn",
+                "--env-inherit", env_inherit,
+                "--name", &reviewer_agent,
+                "--cwd", &root_str,
+                "--",
+                "botbox", "run", "reviewer-loop",
+                "--agent", &reviewer_agent,
+            ],
+        ) {
+            Ok((action, _)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
+            Err(e) => eprintln!("Warning: failed to register reviewer hook for @{reviewer_agent}: {e}"),
         }
     }
 

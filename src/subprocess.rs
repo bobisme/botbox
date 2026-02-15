@@ -292,6 +292,66 @@ mod tests {
     }
 }
 
+/// Ensure exactly one bus hook exists with the given description.
+///
+/// Performs idempotent upsert: finds any existing hook(s) matching the
+/// description, removes them, then adds a new hook with current parameters.
+/// The `add_args` slice should contain all args for `bus hooks add` *except*
+/// `--description` (which is added automatically).
+///
+/// Returns `Ok(("created"|"updated"|"unchanged", hook_id))`.
+pub fn ensure_bus_hook(description: &str, add_args: &[&str]) -> anyhow::Result<(String, String)> {
+    // List existing hooks
+    let existing = Tool::new("bus")
+        .args(&["hooks", "list", "--format", "json"])
+        .run();
+
+    let mut removed = false;
+    if let Ok(output) = existing {
+        if output.success() {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
+                if let Some(hooks) = parsed.get("hooks").and_then(|h| h.as_array()) {
+                    for hook in hooks {
+                        let desc = hook.get("description").and_then(|d| d.as_str());
+                        if desc == Some(description) {
+                            if let Some(id) = hook.get("id").and_then(|i| i.as_str()) {
+                                let _ = Tool::new("bus")
+                                    .args(&["hooks", "remove", id])
+                                    .run();
+                                removed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Add with --description
+    let mut args = vec!["hooks", "add", "--description", description];
+    args.extend_from_slice(add_args);
+
+    let result = Tool::new("bus").args(&args).run()?;
+
+    if !result.success() {
+        anyhow::bail!(
+            "bus hooks add failed: {}",
+            result.stderr.trim()
+        );
+    }
+
+    // Extract hook ID from output (format: "Added: Hook hk-xxx created")
+    let hook_id = result
+        .stdout
+        .split_whitespace()
+        .find(|s| s.starts_with("hk-"))
+        .unwrap_or("unknown")
+        .to_string();
+
+    let action = if removed { "updated" } else { "created" };
+    Ok((action.to_string(), hook_id))
+}
+
 /// Simple helper to run a command with args, optionally in a specific directory.
 /// Returns stdout on success, or an error.
 pub fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::Result<String> {
