@@ -139,6 +139,39 @@ fn hint(s: &str, c: &Colors) -> String {
         c.reset())
 }
 
+/// Strip emoji characters from a string, collapsing any resulting double spaces.
+fn strip_emoji(s: &str) -> String {
+    let stripped: String = s.chars()
+        .filter(|c| !is_emoji(*c))
+        .collect();
+    // Collapse runs of spaces left by removed emoji
+    let mut result = String::with_capacity(stripped.len());
+    let mut prev_space = false;
+    for c in stripped.chars() {
+        if c == ' ' {
+            if !prev_space {
+                result.push(c);
+            }
+            prev_space = true;
+        } else {
+            prev_space = false;
+            result.push(c);
+        }
+    }
+    result.trim().to_string()
+}
+
+fn is_emoji(c: char) -> bool {
+    matches!(c as u32,
+        0x2600..=0x27BF |       // Misc symbols, dingbats
+        0xFE00..=0xFE0F |       // Variation selectors
+        0x1F300..=0x1F9FF |     // Misc symbols & pictographs, emoticons, etc.
+        0x200D |                // Zero-width joiner
+        0x20E3 |                // Combining enclosing keycap
+        0xE0020..=0xE007F       // Tags
+    )
+}
+
 /// Get the agent name from BOTBUS_AGENT env var, falling back to "$AGENT"
 fn agent_name() -> String {
     std::env::var("BOTBUS_AGENT").unwrap_or_else(|_| "$AGENT".to_string())
@@ -238,7 +271,7 @@ pub fn run_triage() -> anyhow::Result<()> {
             println!("   {} ({}{}): {}", rec.id, priority, labels, rec.title);
             if let Some(reasons) = &rec.reasons
                 && !reasons.is_empty() {
-                    println!("      - {}", reasons[0]);
+                    println!("      - {}", strip_emoji(&reasons[0]));
                 }
         }
         println!();

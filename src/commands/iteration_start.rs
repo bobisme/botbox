@@ -5,7 +5,6 @@ use serde::Deserialize;
 
 use crate::config::Config;
 use crate::subprocess::Tool;
-use super::triage::TriageResponse;
 
 // ===== Data Structures =====
 
@@ -219,52 +218,9 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
     }
     println!();
 
-    // 2. Beads (via triage: top picks + quick wins)
-    println!("{}", h2(&c, "Beads"));
-    let mut has_beads = false;
-    let mut first_bead_id = String::new();
-
-    let triage_output = run_triage_json();
-
-    if let Some(triage) = triage_output {
-        let top_picks = &triage.triage.quick_ref.top_picks;
-        let quick_wins = &triage.triage.quick_wins;
-
-        if !top_picks.is_empty() || !quick_wins.is_empty() {
-            has_beads = true;
-        }
-
-        if let Some(first) = top_picks.first() {
-            first_bead_id = first.id.clone();
-        } else if let Some(first) = quick_wins.first() {
-            first_bead_id = first.id.clone();
-        }
-
-        if !top_picks.is_empty() {
-            println!("   {}{}Top Picks{}", c.bold, c.cyan, c.reset);
-            for pick in top_picks.iter().take(5) {
-                let score = (pick.score * 100.0).round() as i32;
-                let unblocks = if pick.unblocks > 0 {
-                    format!(" (unblocks {})", pick.unblocks)
-                } else {
-                    String::new()
-                };
-                println!("   {} [{}%{}]: {}", pick.id, score, unblocks, pick.title);
-            }
-        }
-
-        if !quick_wins.is_empty() {
-            println!("   {}{}Quick Wins{}", c.bold, c.cyan, c.reset);
-            for win in quick_wins.iter().take(3) {
-                println!("   {}: {}", win.id, win.title);
-            }
-        }
-
-        if top_picks.is_empty() && quick_wins.is_empty() {
-            println!("   {}No actionable beads{}", c.dim, c.reset);
-        }
-    } else {
-        println!("   {}Could not fetch triage data{}", c.dim, c.reset);
+    // 2. Beads (via triage)
+    if let Err(e) = super::triage::run_triage() {
+        println!("   {}Could not fetch triage data: {}{}", c.dim, e, c.reset);
     }
     println!();
 
@@ -355,8 +311,6 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
         println!("{}", hint(&c, &format!("Get unread messages and mark them as read: bus inbox --agent {} --channels {} --mark-read", agent, project)));
     } else if has_reviews {
         println!("{}", hint(&c, &format!("Start review: maw exec default -- crit inbox --agent {}", agent)));
-    } else if has_beads && !first_bead_id.is_empty() {
-        println!("{}", hint(&c, &format!("Claim top: maw exec default -- br update --actor {} {} --status in_progress", agent, first_bead_id)));
     } else {
         println!("{}", hint(&c, "No work pending"));
     }
@@ -364,16 +318,3 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Run `bv --robot-triage` and parse the JSON response
-fn run_triage_json() -> Option<TriageResponse> {
-    let output = Tool::new("bv")
-        .arg("--robot-triage")
-        .in_workspace("default").ok()?
-        .run().ok()?;
-
-    if !output.success() {
-        return None;
-    }
-
-    output.parse_json::<TriageResponse>().ok()
-}
