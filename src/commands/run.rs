@@ -116,9 +116,8 @@ impl RunCommand {
                     model.clone(),
                 )
             }
-            RunCommand::Responder { .. } => {
-                eprintln!("responder: not yet implemented");
-                Ok(())
+            RunCommand::Responder { project_root, agent, model } => {
+                crate::commands::responder::run_responder(project_root.clone(), agent.clone(), model.clone())
             }
             RunCommand::Triage { .. } => {
                 crate::commands::triage::run_triage()
