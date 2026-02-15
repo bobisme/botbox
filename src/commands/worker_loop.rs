@@ -402,16 +402,6 @@ At the end of your work, output exactly one of these completion signals:
 
 {finish_step}
 
-8. RELEASE CHECK (before signaling COMPLETE):
-   Check for unreleased commits: maw exec default -- jj log -r 'tags()..main' --no-graph -T 'description.first_line() ++ "\n"'
-   If any commits start with "feat:" or "fix:" (user-visible changes), a release is needed:
-   - Bump version in Cargo.toml/package.json (semantic versioning)
-   - Update changelog if one exists
-   - Release: maw release vX.Y.Z (this tags, pushes, and updates bookmarks)
-   - Announce: bus send --agent {agent} {project} "<project> vX.Y.Z released - <summary>" -L release
-   If only "chore:", "docs:", "refactor:" commits, no release needed.
-   Output: <promise>COMPLETE</promise>
-
 Key rules:
 - Exactly one small task per cycle.
 - Always finish or release before stopping.
