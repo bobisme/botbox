@@ -13,7 +13,6 @@ pub struct WorkerLoop {
     project: String,
     model: String,
     timeout: u64,
-    push_main: bool,
     review_enabled: bool,
     critical_approvers: Vec<String>,
     dispatched_bead: Option<String>,
@@ -51,7 +50,6 @@ impl WorkerLoop {
             .unwrap_or_default();
 
         let timeout = worker_config.map(|w| w.timeout).unwrap_or(600);
-        let push_main = config.push_main;
         let review_enabled = config.review.enabled;
         let critical_approvers = config.project.critical_approvers.clone().unwrap_or_default();
 
@@ -87,7 +85,6 @@ impl WorkerLoop {
             project,
             model,
             timeout,
-            push_main,
             review_enabled,
             critical_approvers,
             dispatched_bead,
@@ -118,12 +115,6 @@ impl WorkerLoop {
 
     /// Build the worker loop prompt.
     fn build_prompt(&self) -> String {
-        let push_main_step = if self.push_main {
-            "\n   Push to GitHub: maw push (if fails, announce issue)."
-        } else {
-            ""
-        };
-
         let dispatched_section = if let (Some(bead), Some(ws)) =
             (&self.dispatched_bead, &self.dispatched_workspace)
         {
@@ -272,11 +263,10 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
    bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done.
    maw ws merge $WS --destroy (produces linear squashed history and auto-moves main; if conflict, preserve and announce).
    bus claims release --agent {agent} --all.
-   maw exec default -- br sync --flush-only.{push_main}
+   maw exec default -- br sync --flush-only.
    Then proceed to step 8 (RELEASE CHECK)."#,
                 agent = self.agent,
                 project = self.project,
-                push_main = push_main_step,
             )
         };
 
@@ -667,7 +657,6 @@ mod tests {
             project: "testproject".to_string(),
             model: "haiku".to_string(),
             timeout: 600,
-            push_main: false,
             review_enabled: true,
             critical_approvers: vec![],
             dispatched_bead: None,
@@ -699,7 +688,6 @@ mod tests {
             project: "testproject".to_string(),
             model: "haiku".to_string(),
             timeout: 600,
-            push_main: false,
             review_enabled: true,
             critical_approvers: vec![],
             dispatched_bead: Some("bd-test".to_string()),
@@ -730,7 +718,6 @@ mod tests {
             project: "testproject".to_string(),
             model: "haiku".to_string(),
             timeout: 600,
-            push_main: false,
             review_enabled: false,
             critical_approvers: vec![],
             dispatched_bead: None,
