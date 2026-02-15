@@ -920,9 +920,9 @@ fn register_router_hook(
                 }
             }
 
-    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID";
+    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
     let claim_uri = format!("agent://{name}-router");
-    let spawn_name = format!("{agent}/router");
+    let spawn_name = format!("{name}-router");
 
     let result = Tool::new("bus")
         .args(&[

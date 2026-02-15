@@ -1018,80 +1018,98 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
     }
 
     /// Handle !leads — spawn multi-lead session.
-    /// Discovers existing leads via bus statuses and spawns additional leads up to maxLeads.
+    /// Uses numbered slot claims for admission control and identity (proposal §1, §3).
     fn handle_leads(&self, body: &str) -> anyhow::Result<()> {
         if !self.multi_lead_enabled {
             self.bus_send("Multi-lead sessions are not enabled for this project. Set agents.dev.multiLead.enabled in .botbox.json.", None)?;
             return Ok(());
         }
 
-        // Discover existing leads
-        let existing_leads = self.count_existing_leads();
-        let needed = self.multi_lead_max_leads.saturating_sub(existing_leads);
+        // Parse requested count from body (e.g., "!leads 2" → 2), default to max
+        let requested: u32 = body.trim().split_whitespace().next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(self.multi_lead_max_leads);
 
-        if needed == 0 {
-            let msg = format!("Already at max leads ({}/{})", existing_leads, self.multi_lead_max_leads);
-            eprintln!("{msg}");
-            self.bus_send(&msg, Some("feedback"))?;
-            return Ok(());
-        }
+        let cwd = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+        let mut spawned: u32 = 0;
 
-        eprintln!("Spawning {needed} lead(s) (existing: {existing_leads}, max: {})", self.multi_lead_max_leads);
+        // Iterate slots 0..maxLeads, try to acquire each via atomic claim
+        for slot in 0..self.multi_lead_max_leads {
+            if spawned >= requested {
+                break;
+            }
 
-        for i in 0..needed {
-            // Generate unique lead name
-            let lead_name = match Tool::new("bus").args(&["generate-name"]).run_ok() {
-                Ok(output) => output.stdout.trim().to_string(),
-                Err(_) => format!("{}-lead-{}", self.project, i),
-            };
+            let lead_name = format!("{}/{}", self.agent, slot);
+            let claim_uri = format!("agent://{}", lead_name);
 
-            eprintln!("Spawning lead: {lead_name}");
-            let spawn_result = Tool::new("botty")
+            // Try to stake the slot claim — atomic admission control
+            let claim_result = Tool::new("bus")
                 .args(&[
-                    "spawn", "--env-inherit",
-                    &lead_name,
-                    "botbox", "run", "dev-loop", "--agent", &lead_name,
+                    "claims", "stake", "--agent", &lead_name,
+                    &claim_uri, "--ttl", "900", "-m", &format!("lead slot {slot}"),
                 ])
                 .run();
 
-            match spawn_result {
+            match claim_result {
                 Ok(output) if output.success() => {
-                    let msg = format!("Lead {lead_name} spawned ({}/{}).", i + 1 + existing_leads, self.multi_lead_max_leads);
-                    let _ = self.bus_send(&msg, Some("spawn-ack"));
+                    // Slot acquired — spawn lead
+                    eprintln!("Acquired slot {slot}, spawning lead: {lead_name}");
+                    let spawn_result = Tool::new("botty")
+                        .args(&[
+                            "spawn",
+                            "--env-inherit", "SSH_AUTH_SOCK",
+                            "--env", &format!("BOTBUS_AGENT={lead_name}"),
+                            "--env", &format!("BOTBUS_CHANNEL={}", self.channel),
+                            "--name", &lead_name,
+                            "--cwd", &cwd,
+                            "--",
+                            "botbox", "run", "dev-loop", "--agent", &lead_name,
+                        ])
+                        .run();
+
+                    match spawn_result {
+                        Ok(output) if output.success() => {
+                            spawned += 1;
+                            let _ = self.bus_send(
+                                &format!("Lead {lead_name} spawned ({spawned}/{requested})."),
+                                Some("spawn-ack"),
+                            );
+                        }
+                        Ok(output) => {
+                            eprintln!("Failed to spawn lead {lead_name}: {}", output.stderr);
+                            // Release the claim since we couldn't spawn
+                            let _ = Tool::new("bus")
+                                .args(&["claims", "release", "--agent", &lead_name, &claim_uri])
+                                .run();
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to spawn lead {lead_name}: {e}");
+                            let _ = Tool::new("bus")
+                                .args(&["claims", "release", "--agent", &lead_name, &claim_uri])
+                                .run();
+                        }
+                    }
                 }
-                Ok(output) => {
-                    eprintln!("Failed to spawn lead {lead_name}: {}", output.stderr);
-                }
-                Err(e) => {
-                    eprintln!("Failed to spawn lead {lead_name}: {e}");
+                _ => {
+                    // Slot occupied — skip to next
+                    eprintln!("Slot {slot} occupied, skipping");
                 }
             }
         }
 
-        let task_desc = if body.is_empty() { String::new() } else { format!(" Task: {body}") };
-        let _ = self.bus_send(
-            &format!("Multi-lead session started with {} leads.{task_desc}", existing_leads + needed),
-            Some("spawn-ack"),
-        );
+        if spawned == 0 {
+            self.bus_send(
+                &format!("No lead slots available (0/{} free).", self.multi_lead_max_leads),
+                Some("feedback"),
+            )?;
+        } else {
+            let _ = self.bus_send(
+                &format!("Multi-lead session: {spawned} lead(s) spawned."),
+                Some("spawn-ack"),
+            );
+        }
 
         Ok(())
-    }
-
-    fn count_existing_leads(&self) -> u32 {
-        // Check bus statuses for agents with dev-loop-like patterns
-        let result = Tool::new("bus")
-            .args(&["statuses", "list", "--format", "json"])
-            .run();
-        match result {
-            Ok(output) if output.success() => {
-                // Count agents whose status indicates they're running as leads
-                let count = output.stdout.matches(&self.project).count();
-                // Rough heuristic — each lead agent will have a status mentioning the project
-                // Divide by expected mentions per agent (status key + value)
-                (count / 2) as u32
-            }
-            _ => 0,
-        }
     }
 
     // --- Message idempotency ---

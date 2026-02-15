@@ -564,30 +564,53 @@ fn migrate_bus_hooks(config: &Config) {
 
         let cmd_strs: Vec<&str> = cmd.iter().filter_map(|v| v.as_str()).collect();
 
-        // Check if this is a legacy bun-based hook
+        // Check if this is a legacy hook that needs migration:
+        // 1. bun-based (.mjs scripts) — original JS hooks
+        // 2. botbox run responder/reviewer-loop with old naming (e.g., chief-dev/router)
         let has_bun = cmd_strs.iter().any(|s| *s == "bun");
         let mjs_script = cmd_strs.iter().find(|s| s.ends_with(".mjs"));
-        if !has_bun || mjs_script.is_none() {
+        let has_botbox_run = cmd_strs.windows(2).any(|w| w[0] == "botbox" && w[1] == "run");
+
+        // Detect old spawn name pattern: --name {agent}/router (contains /)
+        let old_spawn_name = cmd_strs.windows(2)
+            .find(|w| w[0] == "--name")
+            .map(|w| w[1])
+            .unwrap_or("");
+        let has_old_naming = old_spawn_name.contains('/') && old_spawn_name.ends_with("/router");
+
+        // Detect old env-inherit containing BOTBUS_AGENT
+        let has_old_env = cmd_strs.windows(2)
+            .find(|w| w[0] == "--env-inherit")
+            .map(|w| w[1].contains("BOTBUS_AGENT"))
+            .unwrap_or(false);
+
+        let needs_migration = if has_bun && mjs_script.is_some() {
+            true // Legacy JS hook
+        } else if has_botbox_run && (has_old_naming || has_old_env) {
+            true // Already migrated to Rust but with old naming/env
+        } else {
+            false
+        };
+
+        if !needs_migration {
             continue;
         }
 
-        let script = *mjs_script.unwrap();
+        let script = mjs_script.copied().unwrap_or("");
 
         // Determine what kind of hook this is
-        let is_router = script.contains("respond.mjs") || script.contains("router.mjs");
-        let is_reviewer = script.contains("reviewer-loop.mjs");
+        let is_router = script.contains("respond.mjs") || script.contains("router.mjs")
+            || cmd_strs.contains(&"responder");
+        let is_reviewer = script.contains("reviewer-loop.mjs")
+            || cmd_strs.contains(&"reviewer-loop");
 
         if !is_router && !is_reviewer {
             eprintln!("  Skipping unknown legacy hook {id}: {script}");
             continue;
         }
 
-        // Extract env-inherit and cwd from existing command
-        let env_inherit = cmd_strs
-            .windows(2)
-            .find(|w| w[0] == "--env-inherit")
-            .map(|w| w[1])
-            .unwrap_or("BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID");
+        // Always use canonical env-inherit (don't preserve old BOTBUS_AGENT)
+        let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
         let spawn_cwd = cmd_strs
             .windows(2)
             .find(|w| w[0] == "--cwd")
@@ -613,7 +636,7 @@ fn migrate_bus_hooks(config: &Config) {
                 .map(|s| s.to_string())
                 .unwrap_or_else(|| format!("agent://{name}-router"));
 
-            let spawn_name = format!("{agent}/router");
+            let spawn_name = format!("{name}-router");
 
             let result = Tool::new("bus")
                 .args(&[
