@@ -333,8 +333,12 @@ function buildPrompt(lastIteration, work) {
 	const role = deriveRoleFromAgentName(AGENT);
 	const promptName = getReviewerPromptName(role);
 
-	// Use project-local prompts
-	const promptsDir = join(process.cwd(), '.agents', 'botbox', 'prompts');
+	// Use project-local prompts (check ws/default/ first for maw v2 bare repos)
+	let promptsDir = join(process.cwd(), '.agents', 'botbox', 'prompts');
+	let wsDefaultPrompts = join(process.cwd(), 'ws', 'default', '.agents', 'botbox', 'prompts');
+	if (!existsSync(promptsDir) && existsSync(wsDefaultPrompts)) {
+		promptsDir = wsDefaultPrompts;
+	}
 
 	let basePrompt;
 	try {
