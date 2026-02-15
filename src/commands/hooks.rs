@@ -373,6 +373,8 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
                 &channel,
                 "--claim",
                 &router_claim,
+                "--ttl",
+                "600",
                 "--cwd",
                 &root.display().to_string(),
                 "--",
