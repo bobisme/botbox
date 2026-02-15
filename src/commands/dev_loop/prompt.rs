@@ -327,7 +327,26 @@ If you hold any claims not covered by unfinished beads in step 1:
 - bead:// claim without review: Complete the work, then review or finish.
 - workspace:// claims: These are dispatched workers. Skip to step 7 (MONITOR).
 
-If no additional claims: proceed to step 3 (INBOX).
+If no additional claims: proceed to step 2.5 (ORPHAN CLEANUP).
+
+## 2.5. ORPHAN CLEANUP (detect and release stale claims)
+
+Check for orphaned claims from completed or failed work:
+1. List all your claims: bus claims list --agent {agent} --mine --format json
+2. For each bead:// claim:
+   - Extract bead ID from the URI (e.g., "bead://{project}/bd-abc" → "bd-abc")
+   - Check bead status: maw exec default -- br show <id> --json
+   - If bead is CLOSED or BLOCKED: the claim is orphaned
+   - Release it: bus claims release --agent {agent} "bead://{project}/<id>"
+   - If there's a matching workspace:// claim, release that too:
+     bus claims release --agent {agent} "workspace://{project}/<ws>"
+3. For each workspace:// claim without a matching bead:// claim:
+   - Extract workspace name from the URI
+   - Check if workspace exists: maw ws list --format json
+   - If workspace doesn't exist: release the claim
+     bus claims release --agent {agent} "workspace://{project}/<ws>"
+
+This cleanup prevents orphaned claims from blocking other agents.
 
 ## 3. INBOX
 
@@ -537,7 +556,13 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
   d. MERGE:
      maw ws merge $WS --destroy
 
-  d2. POST-MERGE CHECK:
+  d2. RELEASE WORKER CLAIMS (for dispatched workers only):
+      For workspace that was dispatched to a worker (check bead comments for "Dispatched worker"):
+        bus claims release --agent {agent} "bead://{project}/<id>"
+        bus claims release --agent {agent} "workspace://{project}/$WS"
+      For work you did yourself (no "Dispatched worker" comment): skip this step.
+
+  d3. POST-MERGE CHECK:
       After merging, verify compilation in the default workspace:
         maw exec default -- <project-build-command>  (e.g., cargo check, bun test, npm run build)
       If it fails, the merge introduced a semantic conflict — two workers' code compiles alone but
