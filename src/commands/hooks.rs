@@ -370,7 +370,7 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
                 .as_array()
                 .map(|arr| {
                     arr.iter().any(|h| {
-                        h["condition"]["claim"]
+                        h["condition"]["pattern"]
                             .as_str()
                             .map(|c| c == router_claim)
                             .unwrap_or(false)
@@ -385,6 +385,7 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
     };
 
     if needs_router {
+        let spawn_name = format!("{}-router", project_name);
         // Pass command as separate argv elements to avoid shell interpretation
         run_command(
             "bus",
@@ -403,7 +404,11 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
                 "botty",
                 "spawn",
                 "--env-inherit",
-                &"botbox-router-${BOTBUS_HOOK_ID}-responder".to_string(),
+                "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK",
+                "--name",
+                &spawn_name,
+                "--cwd",
+                &root.display().to_string(),
                 "--",
                 "botbox",
                 "run",
