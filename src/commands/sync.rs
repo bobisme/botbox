@@ -24,7 +24,7 @@ pub struct SyncArgs {
 }
 
 /// Embedded workflow docs
-const WORKFLOW_DOCS: &[(&str, &str)] = &[
+pub(crate) const WORKFLOW_DOCS: &[(&str, &str)] = &[
     ("triage.md", include_str!("../templates/docs/triage.md")),
     ("start.md", include_str!("../templates/docs/start.md")),
     ("update.md", include_str!("../templates/docs/update.md")),
@@ -73,13 +73,13 @@ const WORKFLOW_DOCS: &[(&str, &str)] = &[
 ];
 
 /// Embedded design docs
-const DESIGN_DOCS: &[(&str, &str)] = &[(
+pub(crate) const DESIGN_DOCS: &[(&str, &str)] = &[(
     "cli-conventions.md",
     include_str!("../templates/design/cli-conventions.md"),
 )];
 
 /// Embedded reviewer prompts
-const REVIEWER_PROMPTS: &[(&str, &str)] = &[
+pub(crate) const REVIEWER_PROMPTS: &[(&str, &str)] = &[
     ("reviewer.md", include_str!("../templates/reviewer.md.jinja")),
     (
         "reviewer-security.md",
