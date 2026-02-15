@@ -120,6 +120,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "ctrlc",
+ "libc",
  "minijinja",
  "predicates",
  "regex",

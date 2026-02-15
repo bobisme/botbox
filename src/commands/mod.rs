@@ -1,3 +1,4 @@
+pub mod dev_loop;
 pub mod doctor;
 pub mod hooks;
 pub mod init;

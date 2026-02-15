@@ -95,9 +95,12 @@ impl RunCommand {
             RunCommand::Agent { agent_type, prompt, model, timeout, format, skip_permissions } => {
                 crate::commands::run_agent::run_agent(agent_type, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions)
             }
-            RunCommand::DevLoop { .. } => {
-                eprintln!("dev-loop: not yet implemented");
-                Ok(())
+            RunCommand::DevLoop { project_root, agent, model } => {
+                crate::commands::dev_loop::run(
+                    project_root.as_deref(),
+                    agent.as_deref(),
+                    model.as_deref(),
+                )
             }
             RunCommand::WorkerLoop { project_root, agent, model } => {
                 crate::commands::worker_loop::run_worker_loop(

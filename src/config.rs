@@ -122,6 +122,19 @@ pub struct DevAgentConfig {
     pub multi_lead: Option<MultiLeadConfig>,
 }
 
+impl Default for DevAgentConfig {
+    fn default() -> Self {
+        Self {
+            model: default_model_opus(),
+            max_loops: default_max_loops(),
+            pause: default_pause(),
+            timeout: default_timeout_900(),
+            missions: None,
+            multi_lead: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MissionsConfig {
