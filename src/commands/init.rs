@@ -455,12 +455,10 @@ impl InitArgs {
                 })
                 .collect();
             prompt_multi_select("Tools to enable", AVAILABLE_TOOLS, &defaults)?
+        } else if detected.tools.is_empty() {
+            AVAILABLE_TOOLS.iter().map(|s| s.to_string()).collect()
         } else {
-            if detected.tools.is_empty() {
-                AVAILABLE_TOOLS.iter().map(|s| s.to_string()).collect()
-            } else {
-                detected.tools.clone()
-            }
+            detected.tools.clone()
         };
 
         // Reviewers
@@ -841,7 +839,7 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
     let agent = format!("{name}-dev");
 
     // Detect maw v2 workspace context
-    let (hook_cwd, spawn_cwd, script_prefix) = detect_hook_paths(&abs_path);
+    let (hook_cwd, spawn_cwd) = detect_hook_paths(&abs_path);
 
     // Check if bus supports hooks
     if Tool::new("bus").arg("hooks").arg("list").run().is_err() {
@@ -849,7 +847,7 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
     }
 
     // Register router hook
-    register_router_hook(&hook_cwd, &spawn_cwd, &script_prefix, name, &agent);
+    register_router_hook(&hook_cwd, &spawn_cwd, name, &agent);
 
     // Register reviewer hooks
     for role in reviewers {
@@ -857,7 +855,6 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
         register_reviewer_hook(
             &hook_cwd,
             &spawn_cwd,
-            &script_prefix,
             name,
             &agent,
             &reviewer_agent,
@@ -865,32 +862,22 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
     }
 }
 
-fn detect_hook_paths(abs_path: &Path) -> (String, String, String) {
+fn detect_hook_paths(abs_path: &Path) -> (String, String) {
     // In maw v2, if we're inside ws/default/, use the bare root
     let abs_str = abs_path.display().to_string();
-    if let Some(parent) = abs_path.parent() {
-        if parent.file_name().is_some_and(|n| n == "ws") {
-            if let Some(bare_root) = parent.parent() {
-                if bare_root.join(".jj").exists() {
+    if let Some(parent) = abs_path.parent()
+        && parent.file_name().is_some_and(|n| n == "ws")
+            && let Some(bare_root) = parent.parent()
+                && bare_root.join(".jj").exists() {
                     let bare_str = bare_root.display().to_string();
-                    let script_prefix =
-                        format!("{abs_str}/.agents/botbox/scripts/");
-                    return (bare_str.clone(), bare_str, script_prefix);
+                    return (bare_str.clone(), bare_str);
                 }
-            }
-        }
-    }
-    (
-        abs_str.clone(),
-        abs_str,
-        ".agents/botbox/scripts/".to_string(),
-    )
+    (abs_str.clone(), abs_str)
 }
 
 fn register_router_hook(
     hook_cwd: &str,
     spawn_cwd: &str,
-    script_prefix: &str,
     name: &str,
     agent: &str,
 ) {
@@ -899,9 +886,9 @@ fn register_router_hook(
         .args(&["hooks", "list", "--format", "json"])
         .run();
 
-    if let Ok(output) = existing {
-        if output.success() {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
+    if let Ok(output) = existing
+        && output.success()
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
                 let hooks = parsed
                     .get("hooks")
                     .and_then(|h| h.as_array())
@@ -920,7 +907,7 @@ fn register_router_hook(
                             .is_some_and(|cmds| {
                                 cmds.iter().any(|c| {
                                     c.as_str().is_some_and(|s| {
-                                        s.contains("router.mjs") || s.contains("respond.mjs")
+                                        s.contains("responder") || s.contains("respond.mjs") || s.contains("router.mjs")
                                     })
                                 })
                             });
@@ -932,13 +919,10 @@ fn register_router_hook(
                     }
                 }
             }
-        }
-    }
 
     let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID";
     let claim_uri = format!("agent://{name}-router");
     let spawn_name = format!("{agent}/router");
-    let script_path = format!("{script_prefix}router.mjs");
 
     let result = Tool::new("bus")
         .args(&[
@@ -966,16 +950,15 @@ fn register_router_hook(
             "--cwd",
             spawn_cwd,
             "--",
-            "bun",
-            &script_path,
-            name,
-            agent,
+            "botbox",
+            "run",
+            "responder",
         ])
         .run();
 
     match result {
         Ok(output) if output.success() => {
-            println!("Registered router hook (router.mjs) for all channel messages");
+            println!("Registered router hook (responder) for all channel messages");
         }
         _ => eprintln!("Warning: Failed to register router hook"),
     }
@@ -984,7 +967,6 @@ fn register_router_hook(
 fn register_reviewer_hook(
     hook_cwd: &str,
     spawn_cwd: &str,
-    script_prefix: &str,
     name: &str,
     agent: &str,
     reviewer_agent: &str,
@@ -994,9 +976,9 @@ fn register_reviewer_hook(
         .args(&["hooks", "list", "--format", "json"])
         .run();
 
-    if let Ok(output) = existing {
-        if output.success() {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
+    if let Ok(output) = existing
+        && output.success()
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
                 let hooks = parsed
                     .get("hooks")
                     .and_then(|h| h.as_array())
@@ -1017,12 +999,9 @@ fn register_reviewer_hook(
                     }
                 }
             }
-        }
-    }
 
     let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID";
     let claim_uri = format!("agent://{reviewer_agent}");
-    let script_path = format!("{script_prefix}reviewer-loop.mjs");
 
     let result = Tool::new("bus")
         .args(&[
@@ -1054,9 +1033,10 @@ fn register_reviewer_hook(
             "--cwd",
             spawn_cwd,
             "--",
-            "bun",
-            &script_path,
-            name,
+            "botbox",
+            "run",
+            "reviewer-loop",
+            "--agent",
             reviewer_agent,
         ])
         .run();

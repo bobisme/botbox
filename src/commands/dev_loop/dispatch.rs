@@ -18,7 +18,7 @@ pub fn create_workspace() -> anyhow::Result<String> {
         .find_map(|line| {
             // Try to extract workspace name from various output formats
             if line.contains("Created workspace:") {
-                line.split(':').last().map(|s| s.trim().to_string())
+                line.split(':').next_back().map(|s| s.trim().to_string())
             } else if !line.is_empty() && line.chars().all(|c| c.is_alphanumeric() || c == '-') {
                 Some(line.trim().to_string())
             } else {

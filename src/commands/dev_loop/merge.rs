@@ -68,12 +68,10 @@ pub fn acquire_merge_mutex(
                         "-n", "1", "--since", "2 minutes ago",
                     ])
                     .run()
-                {
-                    if output.success() && !output.stdout.trim().is_empty() {
+                    && output.success() && !output.stdout.trim().is_empty() {
                         eprintln!("coord:merge detected — retrying immediately");
                         continue;
                     }
-                }
 
                 thread::sleep(Duration::from_secs(actual_delay));
             }

@@ -206,22 +206,30 @@ fn resolve_project_root(project_root: Option<&Path>) -> Result<PathBuf> {
     let canonical = path
         .canonicalize()
         .with_context(|| format!("resolving project root: {}", path.display()))?;
-    // Verify .botbox.json exists at this path
-    if !canonical.join(".botbox.json").exists() {
-        anyhow::bail!(
-            "no .botbox.json found at {} — is this a botbox project?",
-            canonical.display()
-        );
+    // Check .botbox.json at root, then ws/default/ (maw v2 bare repo)
+    if canonical.join(".botbox.json").exists() {
+        return Ok(canonical);
     }
-    Ok(canonical)
+    let ws_default = canonical.join("ws/default");
+    if ws_default.join(".botbox.json").exists() {
+        return Ok(ws_default);
+    }
+    anyhow::bail!(
+        "no .botbox.json found at {} or ws/default/ — is this a botbox project?",
+        canonical.display()
+    );
 }
 
 fn load_config(root: &Path) -> Result<Config> {
     let config_path = root.join(".botbox.json");
-    if !config_path.exists() {
-        return Err(ExitError::Config("no .botbox.json found".into()).into());
+    if config_path.exists() {
+        return Config::load(&config_path);
     }
-    Config::load(&config_path)
+    let ws_default_path = root.join("ws/default/.botbox.json");
+    if ws_default_path.exists() {
+        return Config::load(&ws_default_path);
+    }
+    Err(ExitError::Config("no .botbox.json found".into()).into())
 }
 
 fn generate_settings_json(
@@ -395,7 +403,7 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
                 "botty",
                 "spawn",
                 "--env-inherit",
-                &format!("botbox-router-${{BOTBUS_HOOK_ID}}-responder"),
+                &"botbox-router-${BOTBUS_HOOK_ID}-responder".to_string(),
                 "--",
                 "botbox",
                 "run",

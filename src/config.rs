@@ -77,6 +77,7 @@ impl ToolsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ReviewConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -84,14 +85,6 @@ pub struct ReviewConfig {
     pub reviewers: Vec<String>,
 }
 
-impl Default for ReviewConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            reviewers: Vec::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AgentsConfig {

@@ -8,7 +8,7 @@ test:
 
 # Install the binary to ~/.cargo/bin
 install:
-    cargo install --path .
+    cargo install --path . --locked
 
 # Lint with clippy
 lint:

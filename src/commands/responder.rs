@@ -181,7 +181,7 @@ fn match_explicit_model(input: &str, bang_prefix: &str) -> Option<(String, Strin
 
 /// Match `q(model): rest` pattern (legacy).
 fn match_explicit_model_colon(input: &str) -> Option<(String, String)> {
-    if !input.starts_with(|c: char| c == 'q' || c == 'Q') {
+    if !input.starts_with(['q', 'Q']) {
         return None;
     }
     let after_q = &input[1..];
@@ -396,7 +396,6 @@ struct Responder {
     claude_timeout: u64,
     max_conversations: u32,
     transcript: Transcript,
-    project_root: PathBuf,
     multi_lead_enabled: bool,
     multi_lead_max_leads: u32,
 }
@@ -470,7 +469,6 @@ impl Responder {
             multi_lead_enabled,
             multi_lead_max_leads,
             transcript: Transcript::new(),
-            project_root,
         })
     }
 
@@ -556,7 +554,7 @@ impl Responder {
         eprintln!("Running Claude (model: {model})...");
         let timeout_str = self.claude_timeout.to_string();
         let output = Tool::new("botbox")
-            .args(&["run", "agent", "claude", "-p", prompt, "-m", model, "-t", &timeout_str])
+            .args(&["run", "agent", "claude", "--skip-permissions", "-p", prompt, "-m", model, "-t", &timeout_str])
             .run_ok()?;
         Ok(output.stdout)
     }
@@ -677,31 +675,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         )
     }
 
-    // --- Find script path ---
-
-    fn find_script_path(&self, script: &str) -> PathBuf {
-        // Allowlist valid script names to prevent path traversal
-        let allowed_scripts = ["dev-loop.mjs", "agent-loop.mjs", "reviewer-loop.mjs", "respond.mjs"];
-        if !allowed_scripts.contains(&script) {
-            eprintln!("Warning: unknown script name {script:?}, using default path");
-        }
-
-        // Ensure script name has no path separators
-        if script.contains('/') || script.contains('\\') || script.contains("..") {
-            eprintln!("Warning: invalid script name {script:?}");
-            return self.project_root.join(".agents/botbox/scripts").join("dev-loop.mjs");
-        }
-
-        let direct = self.project_root.join(".agents/botbox/scripts").join(script);
-        if direct.exists() && direct.is_file() {
-            return direct;
-        }
-        let ws_default = self.project_root.join("ws/default/.agents/botbox/scripts").join(script);
-        if ws_default.exists() && ws_default.is_file() {
-            return ws_default;
-        }
-        direct
-    }
+    // --- (script path lookup removed — loops are now built into botbox binary) ---
 
     // --- Check for escalation tag ---
 
@@ -814,8 +788,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             .collect();
         if !keywords.is_empty() {
             let search_query = keywords.join(" ");
-            if let Ok(result) = self.br(&["search", &search_query]) {
-                if !result.contains("Found 0") {
+            if let Ok(result) = self.br(&["search", &search_query])
+                && !result.contains("Found 0") {
                     let matches: Vec<&str> = result.lines()
                         .filter(|l| l.contains("bd-"))
                         .take(3)
@@ -829,7 +803,6 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                         return Ok(());
                     }
                 }
-            }
         }
 
         // Create the bead
@@ -863,16 +836,13 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
     }
 
     fn handle_dev(&self, _body: &str) -> anyhow::Result<()> {
-        let script_path = self.find_script_path("dev-loop.mjs");
-        eprintln!("Exec into dev-loop: bun {} {} {}", script_path.display(), self.project, self.agent);
+        eprintln!("Exec into dev-loop: botbox run dev-loop --agent {}", self.agent);
 
         let _ = self.bus_send("Dev agent spawned — working on it.", Some("spawn-ack"));
 
         // Hand off to dev-loop with inherited stdio — replaces our process
-        let status = Command::new("bun")
-            .arg(script_path)
-            .arg(&self.project)
-            .arg(&self.agent)
+        let status = Command::new("botbox")
+            .args(["run", "dev-loop", "--agent", &self.agent])
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -919,13 +889,10 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         let _ = self.bus_send(&format!("Mission created: {bead_id}: {title}"), Some("feedback"));
         let _ = self.bus_send(&format!("Dev agent spawned for mission {bead_id}."), Some("spawn-ack"));
 
-        let script_path = self.find_script_path("dev-loop.mjs");
-        eprintln!("Exec into dev-loop with mission {bead_id}: bun {} {} {}", script_path.display(), self.project, self.agent);
+        eprintln!("Exec into dev-loop with mission {bead_id}: botbox run dev-loop --agent {}", self.agent);
 
-        let status = Command::new("bun")
-            .arg(script_path)
-            .arg(&self.project)
-            .arg(&self.agent)
+        let status = Command::new("botbox")
+            .args(["run", "dev-loop", "--agent", &self.agent])
             .env("BOTBOX_MISSION", &bead_id)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -1071,7 +1038,6 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
         eprintln!("Spawning {needed} lead(s) (existing: {existing_leads}, max: {})", self.multi_lead_max_leads);
 
-        let script_path = self.find_script_path("dev-loop.mjs");
         for i in 0..needed {
             // Generate unique lead name
             let lead_name = match Tool::new("bus").args(&["generate-name"]).run_ok() {
@@ -1080,12 +1046,11 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             };
 
             eprintln!("Spawning lead: {lead_name}");
-            let script_str = script_path.to_string_lossy().to_string();
             let spawn_result = Tool::new("botty")
                 .args(&[
                     "spawn", "--env-inherit",
                     &lead_name,
-                    "bun", &script_str, &self.project, &lead_name,
+                    "botbox", "run", "dev-loop", "--agent", &lead_name,
                 ])
                 .run();
 
@@ -1184,31 +1149,28 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 match route.route_type {
                     RouteType::Dev => {
                         eprintln!("Drain: processing !dev from {}", msg.agent);
-                        if let Some(ref id) = msg.id {
-                            if !self.stake_message_claim(id) {
+                        if let Some(ref id) = msg.id
+                            && !self.stake_message_claim(id) {
                                 eprintln!("Drain: message {} already claimed, skipping", id);
                                 continue;
                             }
-                        }
                         self.handle_dev(&route.body)?;
                     }
                     RouteType::Mission => {
                         eprintln!("Drain: processing !mission from {}", msg.agent);
-                        if let Some(ref id) = msg.id {
-                            if !self.stake_message_claim(id) {
+                        if let Some(ref id) = msg.id
+                            && !self.stake_message_claim(id) {
                                 eprintln!("Drain: message {} already claimed, skipping", id);
                                 continue;
                             }
-                        }
                         self.handle_mission(&route.body)?;
                     }
                     RouteType::Leads => {
                         eprintln!("Drain: processing !leads from {}", msg.agent);
-                        if let Some(ref id) = msg.id {
-                            if !self.stake_message_claim(id) {
+                        if let Some(ref id) = msg.id
+                            && !self.stake_message_claim(id) {
                                 continue;
                             }
-                        }
                         self.handle_leads(&route.body)?;
                     }
                     _ => {
@@ -1266,8 +1228,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             .unwrap_or(InboxResponse { channels: Vec::new() });
 
         for ch in &inbox.channels {
-            if ch.channel == self.channel {
-                if let Some(msg) = ch.messages.last() {
+            if ch.channel == self.channel
+                && let Some(msg) = ch.messages.last() {
                     return Ok(BusMessage {
                         id: msg.id.clone(),
                         agent: msg.agent.clone(),
@@ -1275,7 +1237,6 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                         labels: msg.labels.clone(),
                     });
                 }
-            }
         }
 
         Err(anyhow!("No unread messages in channel and no message ID provided"))
@@ -1320,13 +1281,12 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         }
 
         // Message idempotency: stake claim to prevent duplicate processing
-        if let Some(ref msg_id) = trigger_message.id {
-            if !self.stake_message_claim(msg_id) {
+        if let Some(ref msg_id) = trigger_message.id
+            && !self.stake_message_claim(msg_id) {
                 eprintln!("Message {} already being handled, skipping", msg_id);
                 self.cleanup();
                 return Ok(());
             }
-        }
 
         // Route the message
         let route = route_message(&trigger_message.body);

@@ -107,7 +107,7 @@ impl WorkerLoop {
         // Build prompt for Claude
         let prompt = self.build_prompt();
 
-        // Run Claude via botbox run-agent
+        // Run Claude via botbox run agent
         let output = run_claude(&prompt, &self.model, self.timeout)?;
 
         // Parse completion signal
@@ -196,8 +196,11 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
    First, check the bead's risk label: maw exec default -- br show <id> — look for risk:low, risk:high, or risk:critical labels.
    No risk label = risk:medium (standard review, current default).
 
-   RISK:LOW PATH — Lightweight review:
-     Same as RISK:MEDIUM below. risk:low still gets reviewed when REVIEW is true — the reviewer can fast-track it.
+   RISK:LOW PATH (evals, docs, tests, config) — Self-review and merge directly:
+     No security review needed regardless of REVIEW setting.
+     Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
+     Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+     Proceed directly to step 7 (FINISH).
 
    RISK:MEDIUM PATH — Standard review (current default):
      Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
@@ -237,11 +240,9 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
                 }
             )
         } else {
-            format!(
-                r#"   REVIEW is disabled. Skip code review.
+            r#"   REVIEW is disabled. Skip code review.
    Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
-   Proceed directly to step 7 (FINISH)."#
-            )
+   Proceed directly to step 7 (FINISH)."#.to_string()
         };
 
         let finish_step_7 = if self.dispatched_bead.is_some() {
@@ -281,7 +282,7 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
 
         let review_status_str = if self.review_enabled { "true" } else { "false" };
         let review_note = if self.review_enabled {
-            "ALL risk levels go through review (risk:low gets lightweight review, risk:medium standard, risk:high failure-mode checklist, risk:critical human approval)."
+            "risk:low (evals, docs, tests, config) skips security review — self-review and merge directly. risk:medium gets standard review. risk:high requires failure-mode checklist. risk:critical requires human approval."
         } else {
             "Review is disabled. Skip review and proceed to FINISH after describing commit."
         };
@@ -474,11 +475,13 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
     Config::load(&config_path)
 }
 
-/// Run Claude via botbox run-agent.
+/// Run Claude via botbox run agent.
 fn run_claude(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
     let mut tool = Tool::new("botbox")
-        .arg("run-agent")
+        .arg("run")
+        .arg("agent")
         .arg("claude")
+        .arg("--skip-permissions")
         .arg("-p")
         .arg(prompt)
         .arg("-t")
@@ -499,7 +502,7 @@ fn run_claude(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String>
         Ok(output.stdout)
     } else {
         anyhow::bail!(
-            "botbox run-agent exited with code {}: {}",
+            "botbox run agent exited with code {}: {}",
             output.exit_code,
             output.stderr.trim()
         );
@@ -540,8 +543,8 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
         .in_workspace("default")?
         .run();
 
-    if let Ok(output) = result {
-        if let Ok(beads) = output.parse_json::<Vec<serde_json::Value>>() {
+    if let Ok(output) = result
+        && let Ok(beads) = output.parse_json::<Vec<serde_json::Value>>() {
             for bead in beads {
                 if let Some(id) = bead.get("id").and_then(|v| v.as_str()) {
                     let _ = Tool::new("br")
@@ -565,7 +568,6 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
                 }
             }
         }
-    }
 
     // Sign off on bus
     let _ = Tool::new("bus")

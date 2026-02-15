@@ -43,6 +43,8 @@ enum Commands {
         #[command(subcommand)]
         command: HooksCommand,
     },
+    /// Run triage (bead scoring and recommendations)
+    Triage,
 }
 
 fn main() -> ExitCode {
@@ -55,6 +57,7 @@ fn main() -> ExitCode {
         Commands::Doctor(args) => args.execute(),
         Commands::Status(args) => args.execute(),
         Commands::Hooks { command } => command.execute(),
+        Commands::Triage => commands::triage::run_triage(),
     };
 
     match result {

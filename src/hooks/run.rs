@@ -194,17 +194,16 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
         )
         .ok();
 
-        if let Some(output) = list_output {
-            if let Ok(data) = serde_json::from_str::<serde_json::Value>(&output) {
-                if let Some(claims) = data["claims"].as_array() {
+        if let Some(output) = list_output
+            && let Ok(data) = serde_json::from_str::<serde_json::Value>(&output)
+                && let Some(claims) = data["claims"].as_array() {
                     for claim in claims {
-                        if let Some(patterns) = claim["patterns"].as_array() {
-                            if patterns
+                        if let Some(patterns) = claim["patterns"].as_array()
+                            && patterns
                                 .iter()
                                 .any(|p| p.as_str() == Some(&claim_uri))
-                            {
-                                if let Some(expires_in) = claim["expires_in_secs"].as_i64() {
-                                    if expires_in < refresh_threshold {
+                                && let Some(expires_in) = claim["expires_in_secs"].as_i64()
+                                    && expires_in < refresh_threshold {
                                         let _ = run_command(
                                             "bus",
                                             &[
@@ -220,13 +219,8 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
                                             Some(project_root),
                                         );
                                     }
-                                }
-                            }
-                        }
                     }
                 }
-            }
-        }
         return Ok(());
     }
 

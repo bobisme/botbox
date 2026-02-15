@@ -50,25 +50,23 @@ pub fn run(
     let missions_config = dev_config.missions.clone();
     let missions_enabled = missions_config
         .as_ref()
-        .map_or(true, |m| m.enabled);
+        .is_none_or(|m| m.enabled);
     let multi_lead_config = dev_config.multi_lead.clone();
     let multi_lead_enabled = multi_lead_config
         .as_ref()
-        .map_or(false, |m| m.enabled);
+        .is_some_and(|m| m.enabled);
 
     let ctx = LoopContext {
         agent: agent.clone(),
         project: project.clone(),
         model,
         worker_model,
-        timeout_secs,
         review_enabled,
         push_main,
         missions_enabled,
         missions_config,
         multi_lead_enabled,
         multi_lead_config,
-        project_root: project_root.clone(),
     };
 
     eprintln!("Agent:     {agent}");
@@ -121,7 +119,7 @@ pub fn run(
     // Install signal handler for cleanup
     let cleanup_agent = agent.clone();
     let cleanup_project = project.clone();
-    ctrlc::handle(move || {
+    let _ = ctrlc::set_handler(move || {
         // Best-effort cleanup on signal
         let _ = cleanup(&cleanup_agent, &cleanup_project);
         std::process::exit(0);
@@ -278,14 +276,12 @@ pub struct LoopContext {
     pub project: String,
     pub model: String,
     pub worker_model: String,
-    pub timeout_secs: u64,
     pub review_enabled: bool,
     pub push_main: bool,
     pub missions_enabled: bool,
     pub missions_config: Option<crate::config::MissionsConfig>,
     pub multi_lead_enabled: bool,
     pub multi_lead_config: Option<crate::config::MultiLeadConfig>,
-    pub project_root: PathBuf,
 }
 
 /// Info about a sibling lead agent.
@@ -299,7 +295,7 @@ fn resolve_project_root(explicit: Option<&Path>) -> anyhow::Result<PathBuf> {
     if let Some(p) = explicit {
         return Ok(p.to_path_buf());
     }
-    Ok(std::env::current_dir().context("getting current directory")?)
+    std::env::current_dir().context("getting current directory")
 }
 
 /// Load config from .botbox.json (checking both project root and ws/default/).
@@ -359,13 +355,12 @@ fn has_work(agent: &str, project: &str) -> anyhow::Result<bool> {
     if let Ok(output) = Tool::new("bus")
         .args(&["claims", "list", "--agent", agent, "--mine", "--format", "json"])
         .run()
-    {
-        if output.success() {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
+        && output.success()
+            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
                 let claims = parsed["claims"].as_array();
                 if let Some(claims) = claims {
                     let has_work_claims = claims.iter().any(|c| {
-                        c["patterns"].as_array().map_or(false, |patterns| {
+                        c["patterns"].as_array().is_some_and(|patterns| {
                             patterns.iter().any(|p| {
                                 let s = p.as_str().unwrap_or("");
                                 s.starts_with("bead://") || s.starts_with("workspace://")
@@ -377,8 +372,6 @@ fn has_work(agent: &str, project: &str) -> anyhow::Result<bool> {
                     }
                 }
             }
-        }
-    }
 
     // Check inbox
     if let Ok(output) = Tool::new("bus")
@@ -387,28 +380,24 @@ fn has_work(agent: &str, project: &str) -> anyhow::Result<bool> {
             "--count-only", "--format", "json",
         ])
         .run()
-    {
-        if output.success() {
+        && output.success() {
             let count = parse_inbox_count(&output.stdout);
             if count > 0 {
                 return Ok(true);
             }
         }
-    }
 
     // Check ready beads
     if let Ok(output) = Tool::new("br")
         .args(&["ready", "--json"])
         .in_workspace("default")?
         .run()
-    {
-        if output.success() {
+        && output.success() {
             let count = parse_ready_count(&output.stdout);
             if count > 0 {
                 return Ok(true);
             }
         }
-    }
 
     Ok(false)
 }
@@ -567,9 +556,9 @@ fn discover_sibling_leads(agent: &str) -> anyhow::Result<Vec<SiblingLead>> {
     Ok(siblings)
 }
 
-/// Run Claude via `botbox run-agent`.
+/// Run Claude via `botbox run agent`.
 fn run_claude(prompt: &str, model: &str, timeout_secs: u64) -> anyhow::Result<String> {
-    let mut args = vec!["run-agent", "claude", "-p", prompt];
+    let mut args = vec!["run", "agent", "claude", "--skip-permissions", "-p", prompt];
 
     let model_owned;
     if !model.is_empty() {
@@ -592,7 +581,7 @@ fn run_claude(prompt: &str, model: &str, timeout_secs: u64) -> anyhow::Result<St
         .stdout(Stdio::piped())
         .stderr(Stdio::inherit())
         .spawn()
-        .context("spawning botbox run-agent")?;
+        .context("spawning botbox run agent")?;
 
     let stdout = child.stdout.take().context("capturing stdout")?;
     let reader = BufReader::new(stdout);
@@ -605,12 +594,12 @@ fn run_claude(prompt: &str, model: &str, timeout_secs: u64) -> anyhow::Result<St
         output.push('\n');
     }
 
-    let status = child.wait().context("waiting for botbox run-agent")?;
+    let status = child.wait().context("waiting for botbox run agent")?;
     if status.success() {
         Ok(output)
     } else {
         let code = status.code().unwrap_or(-1);
-        anyhow::bail!("botbox run-agent exited with code {code}")
+        anyhow::bail!("botbox run agent exited with code {code}")
     }
 }
 
@@ -720,32 +709,3 @@ fn kill_child_workers(agent: &str) {
     }
 }
 
-/// Signal handling using AtomicBool for async-signal-safe operation.
-mod ctrlc {
-    use std::sync::atomic::{AtomicBool, Ordering};
-
-    static SHUTDOWN_REQUESTED: AtomicBool = AtomicBool::new(false);
-
-    /// Register signal handlers. The provided closure is called from a
-    /// dedicated thread when a signal is received (not from signal context).
-    pub fn handle<F: Fn() + Send + Sync + 'static>(f: F) {
-        // Set up atomic flag for signal-safe notification
-        let _ = unsafe {
-            libc::signal(libc::SIGINT, signal_handler as libc::sighandler_t);
-            libc::signal(libc::SIGTERM, signal_handler as libc::sighandler_t);
-        };
-
-        // Spawn a thread that polls the atomic flag and runs the handler
-        std::thread::spawn(move || {
-            while !SHUTDOWN_REQUESTED.load(Ordering::Relaxed) {
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-            f();
-        });
-    }
-
-    extern "C" fn signal_handler(_sig: libc::c_int) {
-        // Only set atomic flag — async-signal-safe operation
-        SHUTDOWN_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
-    }
-}

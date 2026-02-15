@@ -58,7 +58,7 @@ pub fn load_prompt(prompt_name: &str, agent: &str, project: &str, prompts_dir: &
     let file_path = prompts_dir.join(format!("{}.md", prompt_name));
 
     let template = fs::read_to_string(&file_path)
-        .with_context(|| format!("reading prompt template"))?;
+        .with_context(|| "reading prompt template".to_string())?;
 
     // Simple variable substitution
     let mut result = template;
@@ -69,7 +69,7 @@ pub fn load_prompt(prompt_name: &str, agent: &str, project: &str, prompts_dir: &
 }
 
 /// Get XDG-compliant cache directory for this project.
-pub fn get_cache_dir() -> Result<PathBuf> {
+fn get_cache_dir() -> Result<PathBuf> {
     let base = if let Ok(xdg) = env::var("XDG_CACHE_HOME") {
         PathBuf::from(xdg)
     } else if cfg!(target_os = "macos") {
@@ -110,18 +110,11 @@ pub fn get_cache_dir() -> Result<PathBuf> {
 }
 
 /// Get the journal path for a specific agent.
-pub fn get_journal_path(agent_name: &str) -> Result<PathBuf> {
+fn get_journal_path(agent_name: &str) -> Result<PathBuf> {
     let role = derive_role_from_agent_name(agent_name);
     let role_suffix = role.as_deref().unwrap_or("reviewer");
     let cache_dir = get_cache_dir()?;
     Ok(cache_dir.join(format!("review-loop-{}.txt", role_suffix)))
-}
-
-/// Ensure the cache directory exists.
-pub fn ensure_cache_dir() -> Result<()> {
-    let cache_dir = get_cache_dir()?;
-    fs::create_dir_all(&cache_dir)?;
-    Ok(())
 }
 
 /// Workspace information from maw ws list.
@@ -174,7 +167,7 @@ struct WorkItem {
 }
 
 /// Find pending reviews and threads across all workspaces.
-pub fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
+fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
     // Get list of workspaces
     let workspaces = match Tool::new("maw")
         .args(&["ws", "list", "--format", "json"])
@@ -198,9 +191,9 @@ pub fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
             .args(&["inbox", "--agent", agent, "--format", "json"])
             .run();
 
-        if let Ok(output) = result {
-            if output.success() {
-                if let Ok(inbox) = output.parse_json::<CritInbox>() {
+        if let Ok(output) = result
+            && output.success()
+                && let Ok(inbox) = output.parse_json::<CritInbox>() {
                     // Deduplicate reviews
                     for review in inbox.reviews_awaiting_vote {
                         if seen_reviews.insert(review.review_id.clone()) {
@@ -227,8 +220,6 @@ pub fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
                         }
                     }
                 }
-            }
-        }
         // Silently skip workspaces where crit fails (stale, no .crit, etc.)
     }
 
@@ -236,7 +227,7 @@ pub fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
 }
 
 /// Build the reviewer prompt with workspace context and last iteration.
-pub fn build_prompt(
+fn build_prompt(
     agent: &str,
     project: &str,
     work_items: &[WorkItem],
@@ -317,7 +308,7 @@ pub fn build_prompt(
 }
 
 /// Read the last iteration from the journal.
-pub fn read_last_iteration(journal_path: &Path) -> Option<(String, String)> {
+fn read_last_iteration(journal_path: &Path) -> Option<(String, String)> {
     if !journal_path.exists() {
         return None;
     }
@@ -341,123 +332,8 @@ pub fn read_last_iteration(journal_path: &Path) -> Option<(String, String)> {
     Some((content.trim().to_string(), age_str))
 }
 
-/// Get the current jj change ID for journal entries.
-pub fn get_jj_change_id() -> Option<String> {
-    let output = Tool::new("jj")
-        .in_workspace("default").ok()?
-        .args(&["log", "-r", "@", "--no-graph", "-T", "change_id.short()"])
-        .run()
-        .ok()?;
-
-    if output.success() {
-        Some(output.stdout.trim().to_string())
-    } else {
-        None
-    }
-}
-
-/// Append an iteration summary to the journal.
-pub fn append_journal(journal_path: &Path, entry: &str) -> Result<()> {
-    ensure_cache_dir()?;
-
-    let timestamp = chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
-    let change_id = get_jj_change_id();
-
-    let mut header = format!("\n--- {}", timestamp);
-    if let Some(id) = change_id {
-        header.push_str(&format!(" | jj:{}", id));
-    }
-    header.push_str(" ---\n");
-
-    let content = format!("{}{}\n", header, entry.trim());
-
-    // Validate journal path is within expected cache directory
-    if let Ok(cache_dir) = get_cache_dir() {
-        if let (Ok(canonical_journal), Ok(canonical_cache)) = (
-            journal_path.canonicalize().or_else(|_| Ok::<PathBuf, std::io::Error>(journal_path.to_path_buf())),
-            cache_dir.canonicalize().or_else(|_| Ok::<PathBuf, std::io::Error>(cache_dir.clone())),
-        ) {
-            if !canonical_journal.starts_with(&canonical_cache) {
-                anyhow::bail!("journal path escapes cache directory");
-            }
-        }
-    }
-
-    // Check file size — cap at 1MB to prevent disk exhaustion
-    if journal_path.exists() {
-        let metadata = fs::metadata(journal_path)?;
-        if metadata.len() > 1_048_576 {
-            // Truncate by keeping only the last 512KB
-            let content_bytes = fs::read(journal_path)?;
-            let keep_from = content_bytes.len().saturating_sub(524_288);
-            fs::write(journal_path, &content_bytes[keep_from..])?;
-            eprintln!("Journal truncated to 512KB (was {}KB)", metadata.len() / 1024);
-        }
-    }
-
-    use std::io::Write;
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(journal_path)?;
-    file.write_all(content.as_bytes())?;
-
-    Ok(())
-}
-
-/// Extract iteration summary from Claude output.
-/// Limited to 10KB to prevent unbounded allocation from large outputs.
-pub fn extract_iteration_summary(output: &str) -> Option<String> {
-    // Only search the last 20KB of output to limit memory usage
-    let search_region = if output.len() > 20_480 {
-        &output[output.len() - 20_480..]
-    } else {
-        output
-    };
-
-    let start = search_region.find("<iteration-summary>")?;
-    let end = search_region.find("</iteration-summary>")?;
-    if end <= start {
-        return None;
-    }
-
-    let content = &search_region[start + "<iteration-summary>".len()..end];
-    let trimmed = content.trim();
-
-    // Cap summary size
-    if trimmed.len() > 10_240 {
-        Some(format!("{}... [truncated]", &trimmed[..10_240]))
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-/// Check for completion signals in the tail of the output (last 1000 chars).
-pub fn check_completion_signal(output: &str) -> CompletionSignal {
-    let tail = if output.len() > 1000 {
-        &output[output.len() - 1000..]
-    } else {
-        output
-    };
-
-    if tail.contains("<promise>COMPLETE</promise>") {
-        CompletionSignal::Complete
-    } else if tail.contains("<promise>BLOCKED</promise>") {
-        CompletionSignal::Blocked
-    } else {
-        CompletionSignal::None
-    }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum CompletionSignal {
-    Complete,
-    Blocked,
-    None,
-}
-
 /// Cleanup handler - release claims, clear status, send sign-off.
-pub fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
+fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
     eprintln!("Cleaning up...");
 
     if !already_signed_off {
@@ -626,14 +502,14 @@ pub fn run_reviewer_loop(
 
         let prompt = build_prompt(&agent, &project, &work_items, last_iter_ref)?;
 
-        // Run Claude via run-agent
+        // Run Claude via run agent (loops are autonomous, always skip permissions)
         let run_agent_result = crate::commands::run_agent::run_agent(
             "claude",
             &prompt,
             Some(&model),
             timeout,
             Some("text"),
-            false,
+            true,
         );
 
         match run_agent_result {
@@ -683,38 +559,4 @@ mod tests {
         assert_eq!(get_reviewer_prompt_name(None), "reviewer");
     }
 
-    #[test]
-    fn test_extract_iteration_summary() {
-        let output = "some text\n<iteration-summary>\nReviewed 3 files\n</iteration-summary>\nmore text";
-        assert_eq!(extract_iteration_summary(output), Some("Reviewed 3 files".to_string()));
-
-        let no_summary = "no summary here";
-        assert_eq!(extract_iteration_summary(no_summary), None);
-    }
-
-    #[test]
-    fn test_check_completion_signal_complete() {
-        let output = "work done\n<promise>COMPLETE</promise>";
-        assert_eq!(check_completion_signal(output), CompletionSignal::Complete);
-    }
-
-    #[test]
-    fn test_check_completion_signal_blocked() {
-        let output = "stuck\n<promise>BLOCKED</promise>";
-        assert_eq!(check_completion_signal(output), CompletionSignal::Blocked);
-    }
-
-    #[test]
-    fn test_check_completion_signal_none() {
-        let output = "no signal";
-        assert_eq!(check_completion_signal(output), CompletionSignal::None);
-    }
-
-    #[test]
-    fn test_check_completion_signal_in_tail() {
-        // Signal should be detected even in long output (only checks last 1000 chars)
-        let mut long_output = "x".repeat(2000);
-        long_output.push_str("<promise>COMPLETE</promise>");
-        assert_eq!(check_completion_signal(&long_output), CompletionSignal::Complete);
-    }
 }

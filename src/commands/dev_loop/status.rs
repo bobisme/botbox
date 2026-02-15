@@ -91,7 +91,7 @@ fn gather_claims(agent: &str) -> Option<String> {
     let work_claims: Vec<_> = claims
         .iter()
         .filter(|c| {
-            c["patterns"].as_array().map_or(false, |patterns| {
+            c["patterns"].as_array().is_some_and(|patterns| {
                 patterns.iter().any(|p| {
                     let s = p.as_str().unwrap_or("");
                     s.starts_with("bead://") || s.starts_with("workspace://")
@@ -260,7 +260,7 @@ fn gather_active_workers(agent: &str) -> Option<String> {
         .filter(|a| {
             a["id"]
                 .as_str()
-                .map_or(false, |id| id.starts_with(&prefix))
+                .is_some_and(|id| id.starts_with(&prefix))
         })
         .collect();
 

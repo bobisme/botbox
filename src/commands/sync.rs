@@ -188,6 +188,9 @@ impl SyncArgs {
             println!("Updated design docs");
         }
 
+        // Clean up legacy JS artifacts (scripts, shell hooks)
+        self.cleanup_legacy_artifacts(&agents_dir, &mut changed_files);
+
         // Auto-commit if changes were made
         if !changed_files.is_empty() && !self.no_commit {
             self.auto_commit(&project_root, &changed_files)?;
@@ -265,6 +268,51 @@ impl SyncArgs {
         }
 
         Ok(())
+    }
+
+    /// Remove legacy JS-era artifacts that are no longer needed.
+    /// The Rust rewrite builds loops into the binary, so .mjs scripts and
+    /// shell hook wrappers are dead weight.
+    fn cleanup_legacy_artifacts(&self, agents_dir: &Path, changed_files: &mut Vec<&str>) {
+        // Remove .agents/botbox/scripts/ (JS loop scripts)
+        let scripts_dir = agents_dir.join("scripts");
+        if scripts_dir.is_dir() {
+            if self.check {
+                eprintln!("Legacy scripts/ directory exists (will be removed on sync)");
+            } else {
+                match fs::remove_dir_all(&scripts_dir) {
+                    Ok(_) => {
+                        println!("Removed legacy scripts/ directory");
+                        changed_files.push(".agents/botbox/scripts/");
+                    }
+                    Err(e) => eprintln!("Warning: failed to remove legacy scripts/: {e}"),
+                }
+            }
+        }
+
+        // Remove .agents/botbox/hooks/ (shell hook scripts — now built into botbox binary)
+        let hooks_dir = agents_dir.join("hooks");
+        if hooks_dir.is_dir() {
+            if self.check {
+                eprintln!("Legacy hooks/ directory exists (will be removed on sync)");
+            } else {
+                match fs::remove_dir_all(&hooks_dir) {
+                    Ok(_) => {
+                        println!("Removed legacy hooks/ directory");
+                        changed_files.push(".agents/botbox/hooks/");
+                    }
+                    Err(e) => eprintln!("Warning: failed to remove legacy hooks/: {e}"),
+                }
+            }
+        }
+
+        // Remove stale version markers from JS era
+        for marker in &[".scripts-version", ".hooks-version"] {
+            let path = agents_dir.join(marker);
+            if path.exists() && !self.check {
+                let _ = fs::remove_file(&path);
+            }
+        }
     }
 
     fn check_docs_staleness(&self, agents_dir: &Path) -> Result<bool> {

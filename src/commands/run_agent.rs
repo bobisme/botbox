@@ -153,19 +153,15 @@ pub fn run_agent(
 
     thread::spawn(move || {
         let reader = BufReader::new(stdout);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                let _ = stdout_tx.send(line);
-            }
+        for line in reader.lines().flatten() {
+            let _ = stdout_tx.send(line);
         }
     });
 
     thread::spawn(move || {
         let reader = BufReader::new(stderr);
-        for line in reader.lines() {
-            if let Ok(line) = line {
-                let _ = stderr_tx.send(line);
-            }
+        for line in reader.lines().flatten() {
+            let _ = stderr_tx.send(line);
         }
     });
 
@@ -209,13 +205,12 @@ fn process_output(
         }
 
         // Check if we should kill after result
-        if let Some(result_instant) = result_time {
-            if result_instant.elapsed() >= Duration::from_secs(2) {
+        if let Some(result_instant) = result_time
+            && result_instant.elapsed() >= Duration::from_secs(2) {
                 // Kill hung process
                 eprintln!("Warning: Process hung after completion, killing...");
                 return Ok(());
             }
-        }
 
         // Check if process exited
         match child.try_wait() {
@@ -343,8 +338,8 @@ fn print_assistant_event(event: &Value, style: &Style) {
                     let formatted = format_markdown(text, style);
                     println!("\n{}", formatted);
                 }
-            } else if item.get("type").and_then(|t| t.as_str()) == Some("tool_use") {
-                if let Some(tool_name) = item.get("name").and_then(|n| n.as_str()) {
+            } else if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
+                && let Some(tool_name) = item.get("name").and_then(|n| n.as_str()) {
                     let input = item.get("input").unwrap_or(&Value::Null);
                     let input_str = serde_json::to_string(input).unwrap_or_default();
                     let truncated = if input_str.len() > 80 {
@@ -363,7 +358,6 @@ fn print_assistant_event(event: &Value, style: &Style) {
                         style.reset
                     );
                 }
-            }
         }
     }
 }

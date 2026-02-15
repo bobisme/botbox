@@ -25,7 +25,6 @@ impl HookEvent {
 pub struct HookEntry {
     pub name: &'static str,
     pub events: &'static [HookEvent],
-    pub description: &'static str,
 }
 
 impl HookEntry {
@@ -49,17 +48,14 @@ impl HookRegistry {
             HookEntry {
                 name: "init-agent",
                 events: &[HookEvent::SessionStart, HookEvent::PreCompact],
-                description: "Display agent identity from .botbox.json",
             },
             HookEntry {
                 name: "check-jj",
                 events: &[HookEvent::SessionStart, HookEvent::PreCompact],
-                description: "Remind agent to use jj commands in jj repos",
             },
             HookEntry {
                 name: "check-bus-inbox",
                 events: &[HookEvent::PostToolUse],
-                description: "Check for unread bus messages",
             },
             HookEntry {
                 name: "claim-agent",
@@ -68,7 +64,6 @@ impl HookRegistry {
                     HookEvent::PostToolUse,
                     HookEvent::SessionEnd,
                 ],
-                description: "Claim agent:// lock, set status, release on exit",
             },
         ]
     }
@@ -81,14 +76,7 @@ impl HookRegistry {
             .collect()
     }
 
-    /// Get a hook entry by name
-    pub fn get(name: &str) -> Option<HookEntry> {
-        Self::all().into_iter().find(|entry| entry.name == name)
-    }
 }
-
-/// Singleton instance for convenience (analogous to JS export)
-pub static HOOK_REGISTRY: HookRegistry = HookRegistry;
 
 #[cfg(test)]
 mod tests {
@@ -149,16 +137,4 @@ mod tests {
         assert_eq!(eligible.len(), 0);
     }
 
-    #[test]
-    fn get_hook_by_name() {
-        let hook = HookRegistry::get("init-agent").unwrap();
-        assert_eq!(hook.name, "init-agent");
-        assert_eq!(hook.events.len(), 2);
-    }
-
-    #[test]
-    fn get_nonexistent_hook() {
-        let hook = HookRegistry::get("nonexistent");
-        assert!(hook.is_none());
-    }
 }

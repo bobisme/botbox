@@ -23,7 +23,7 @@ impl RunOutput {
     /// Parse stdout as JSON.
     pub fn parse_json<T: serde::de::DeserializeOwned>(&self) -> anyhow::Result<T> {
         serde_json::from_str(&self.stdout)
-            .with_context(|| format!("parsing JSON output from subprocess"))
+            .with_context(|| "parsing JSON output from subprocess".to_string())
     }
 }
 

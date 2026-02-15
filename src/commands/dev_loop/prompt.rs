@@ -1,4 +1,3 @@
-use std::path::Path;
 
 use super::journal::LastIteration;
 use super::{LoopContext, SiblingLead};
@@ -41,7 +40,7 @@ pub fn build(
         .map_or(60, |m| m.merge_timeout_sec);
 
     let push_main_step = if ctx.push_main {
-        format!("\n  14. Push to GitHub: maw push (if fails, announce issue).")
+        "\n  14. Push to GitHub: maw push (if fails, announce issue).".to_string()
     } else {
         String::new()
     };
@@ -242,7 +241,7 @@ When all children are closed:
     };
 
     let multi_lead_rules = if ctx.multi_lead_enabled {
-        format!("\n- MULTI-LEAD: Other leads may be active. Always check bead claims before picking work. Use bus claims stake to claim beads atomically — if it fails, another lead got there first. Skip to the next bead.")
+        "\n- MULTI-LEAD: Other leads may be active. Always check bead claims before picking work. Use bus claims stake to claim beads atomically — if it fails, another lead got there first. Skip to the next bead.".to_string()
     } else {
         String::new()
     };
@@ -257,8 +256,8 @@ When all children are closed:
         String::new()
     };
 
-    // Find the agent-loop.mjs script path (used in dispatch template)
-    let script_path = find_script_path(&ctx.project_root);
+    // Worker dispatch command (built into botbox binary)
+    let worker_cmd = "botbox run worker-loop";
 
     format!(
         r#"You are lead dev agent "{agent}" for project "{project}".
@@ -396,10 +395,8 @@ Same as the standard worker loop:
 11. REVIEW (risk-aware):
   Check the bead's risk label (maw exec default -- br show <id>). No risk label = risk:medium.
 
-  RISK:LOW (and REVIEW is true) — Lightweight review:
-    Same as RISK:MEDIUM below. risk:low still gets reviewed when REVIEW is true — the reviewer can fast-track it.
-
-  RISK:LOW (and REVIEW is false) — Self-review:
+  RISK:LOW (evals, docs, tests, config) — Self-review and merge directly:
+    No security review needed regardless of REVIEW setting.
     Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
     Proceed directly to merge/finish below.
 
@@ -465,13 +462,13 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
     --env "BOTBOX_PROJECT={project}" \
     --timeout <model-timeout> \
     --cwd $(pwd) \
-    -- bun {script_path} --model <selected-model> {project} {agent}/<worker-suffix>
+    -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
 
 Set --timeout based on the selected model (complex work needs more time):
   opus: 900, sonnet: 600, haiku: 300
 
 The hierarchical name ({agent}/<suffix>) lets you find all your workers via `botty list`.
-The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell agent-loop.mjs to skip triage and go straight to the assigned work.
+The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
 
 After dispatching all workers, skip to step 6 (MONITOR).
 {mission_section_5c}
@@ -572,7 +569,14 @@ Already reviewed and approved (LGTM — reached from unfinished work check step 
   maw exec default -- br close --actor {agent} <id> --reason="Completed"
   bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
-Not yet reviewed — RISK:LOW or RISK:MEDIUM (REVIEW is true):
+Not yet reviewed — RISK:LOW (evals, docs, tests, config):
+  Self-review and merge directly. No security review needed.
+  Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+  Run MERGE PROTOCOL above for $WS
+  maw exec default -- br close --actor {agent} <id> --reason="Completed"
+  bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+
+Not yet reviewed — RISK:MEDIUM (REVIEW is true):
   CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
   Create review with reviewer (if none exists): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
   IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace <ws-name>"
@@ -620,21 +624,8 @@ Key rules:
 - All br/bv commands: maw exec default -- br/bv ...
 - All crit/jj commands in a workspace: maw exec $WS -- crit/jj ...
 - For parallel dispatch, note limitations of this prompt-based approach
-- RISK LABELS: Always assess risk during grooming. When REVIEW is true, ALL risk levels go through review (risk:low gets lightweight review, risk:medium standard, risk:high failure-mode checklist, risk:critical human approval). When REVIEW is false, risk:low can self-review.{mission_rules}{multi_lead_rules}
+- RISK LABELS: Always assess risk during grooming. risk:low (evals, docs, tests, config) skips security review entirely — self-review and merge directly. risk:medium gets standard review (when REVIEW is true). risk:high requires failure-mode checklist. risk:critical requires human approval.{mission_rules}{multi_lead_rules}
 - Output completion signal at end"#
     )
 }
 
-/// Find the agent-loop.mjs script path.
-fn find_script_path(project_root: &Path) -> String {
-    let direct = project_root.join(".agents/botbox/scripts/agent-loop.mjs");
-    if direct.exists() {
-        return direct.to_string_lossy().to_string();
-    }
-    let ws_default = project_root.join("ws/default/.agents/botbox/scripts/agent-loop.mjs");
-    if ws_default.exists() {
-        return ws_default.to_string_lossy().to_string();
-    }
-    // Fall back to direct path
-    direct.to_string_lossy().to_string()
-}

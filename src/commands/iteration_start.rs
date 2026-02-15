@@ -1,9 +1,11 @@
 use std::fs;
+use std::io::IsTerminal;
 
 use serde::Deserialize;
 
 use crate::config::Config;
 use crate::subprocess::Tool;
+use super::triage::TriageResponse;
 
 // ===== Data Structures =====
 
@@ -26,14 +28,6 @@ pub struct InboxMessage {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct Bead {
-    pub id: String,
-    pub title: String,
-    pub priority: i32,
-    pub owner: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
 pub struct ReviewsResponse {
     pub reviews_awaiting_vote: Option<Vec<ReviewInfo>>,
     pub threads_with_new_responses: Option<Vec<ThreadInfo>>,
@@ -47,9 +41,7 @@ pub struct ReviewInfo {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct ThreadInfo {
-    pub thread_id: String,
-}
+pub struct ThreadInfo {}
 
 #[derive(Debug, Deserialize)]
 pub struct ClaimsResponse {
@@ -62,39 +54,58 @@ pub struct Claim {
     pub expires_in_secs: Option<i32>,
 }
 
-// ANSI color codes
-pub struct Colors;
+// ANSI color codes — conditionally applied based on TTY detection
+pub struct Colors {
+    pub reset: &'static str,
+    pub bold: &'static str,
+    pub dim: &'static str,
+    pub cyan: &'static str,
+    pub green: &'static str,
+}
 
 impl Colors {
-    pub const RESET: &'static str = "\x1b[0m";
-    pub const BOLD: &'static str = "\x1b[1m";
-    pub const DIM: &'static str = "\x1b[2m";
-    pub const CYAN: &'static str = "\x1b[36m";
-    pub const GREEN: &'static str = "\x1b[32m";
-    pub const RED: &'static str = "\x1b[31m";
+    pub fn detect() -> Self {
+        if std::io::stdout().is_terminal() {
+            Self {
+                reset: "\x1b[0m",
+                bold: "\x1b[1m",
+                dim: "\x1b[2m",
+                cyan: "\x1b[36m",
+                green: "\x1b[32m",
+            }
+        } else {
+            Self {
+                reset: "",
+                bold: "",
+                dim: "",
+                cyan: "",
+                green: "",
+            }
+        }
+    }
 }
 
-pub fn h1(s: &str) -> String {
-    format!("{}{}● {}{}",
-        Colors::BOLD,
-        Colors::CYAN,
+pub fn h1(c: &Colors, s: &str) -> String {
+    format!("{}{}# {}{}",
+        c.bold,
+        c.cyan,
         s,
-        Colors::RESET)
+        c.reset)
 }
 
-pub fn h2(s: &str) -> String {
-    format!("{}{}▸ {}{}",
-        Colors::BOLD,
-        Colors::GREEN,
+pub fn h2(c: &Colors, s: &str) -> String {
+    format!("{}{}## {}{}",
+        c.bold,
+        c.green,
         s,
-        Colors::RESET)
+        c.reset)
 }
 
-pub fn hint(s: &str) -> String {
-    format!("{}→ {}{}",
-        Colors::DIM,
+pub fn hint(c: &Colors, s: &str) -> String {
+    format!("{}> {}{}",
+        c.dim,
         s,
-        Colors::RESET)
+        c.reset)
 }
 
 /// Fetch config from .botbox.json or ws/default/.botbox.json
@@ -155,18 +166,25 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
     let default_agent = config.default_agent();
     let agent = agent_override.unwrap_or(default_agent.as_str());
     let project = config.channel();
+    let c = Colors::detect();
 
-    println!("{}", h1(&format!("Iteration Start: {}", agent)));
+    println!("{}", h1(&c, &format!("Iteration Start: {}", agent)));
     println!();
 
-    // 1. Inbox messages
-    println!("{}", h2("Inbox"));
+    // 1. Unread bus messages
     let inbox_output = run_json_tool("bus", &["inbox", "--agent", agent, "--channels", &project]);
+    let mut unread_count = 0;
+
+    if let Some(output) = &inbox_output
+        && let Ok(inbox) = serde_json::from_str::<InboxResponse>(output) {
+            unread_count = inbox.total_unread;
+        }
+
+    println!("{}", h2(&c, &format!("Unread Bus Messages ({})", unread_count)));
 
     if let Some(output) = inbox_output {
         if let Ok(inbox) = serde_json::from_str::<InboxResponse>(&output) {
             if inbox.total_unread > 0 {
-                println!("   {} unread message(s)", inbox.total_unread);
                 if let Some(channels) = inbox.channels {
                     for channel in channels {
                         if let Some(messages) = channel.messages {
@@ -181,9 +199,9 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                                     msg.body.clone()
                                 };
                                 println!("   {}{}{} {}: {}",
-                                    Colors::DIM,
+                                    c.dim,
                                     msg.agent,
-                                    Colors::RESET,
+                                    c.reset,
                                     label,
                                     body);
                             }
@@ -191,58 +209,67 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                     }
                 }
             } else {
-                println!("   {}No unread messages{}", Colors::DIM, Colors::RESET);
+                println!("   {}No unread messages{}", c.dim, c.reset);
             }
         } else {
-            println!("   {}No unread messages{}", Colors::DIM, Colors::RESET);
+            println!("   {}No unread messages{}", c.dim, c.reset);
         }
     } else {
-        println!("   {}No unread messages{}", Colors::DIM, Colors::RESET);
+        println!("   {}No unread messages{}", c.dim, c.reset);
     }
     println!();
 
-    // 2. Ready beads
-    println!("{}", h2("Ready Beads"));
-    let beads_output = run_json_tool("br", &["ready"]);
+    // 2. Beads (via triage: top picks + quick wins)
+    println!("{}", h2(&c, "Beads"));
     let mut has_beads = false;
     let mut first_bead_id = String::new();
 
-    if let Some(output) = beads_output {
-        if let Ok(beads) = serde_json::from_str::<Vec<Bead>>(&output) {
-            if !beads.is_empty() {
-                has_beads = true;
-                if let Some(first) = beads.first() {
-                    first_bead_id = first.id.clone();
-                }
-                println!("   {} bead(s) ready", beads.len());
-                for bead in beads.iter().take(5) {
-                    let priority = format!("P{}", bead.priority);
-                    let owner = bead.owner
-                        .as_ref()
-                        .map(|o| format!("({})", o))
-                        .unwrap_or_default();
-                    println!("   {} {} {}: {}",
-                        bead.id,
-                        priority,
-                        owner,
-                        bead.title);
-                }
-                if beads.len() > 5 {
-                    println!("   {}... and {} more{}", Colors::DIM, beads.len() - 5, Colors::RESET);
-                }
-            } else {
-                println!("   {}No ready beads{}", Colors::DIM, Colors::RESET);
+    let triage_output = run_triage_json();
+
+    if let Some(triage) = triage_output {
+        let top_picks = &triage.triage.quick_ref.top_picks;
+        let quick_wins = &triage.triage.quick_wins;
+
+        if !top_picks.is_empty() || !quick_wins.is_empty() {
+            has_beads = true;
+        }
+
+        if let Some(first) = top_picks.first() {
+            first_bead_id = first.id.clone();
+        } else if let Some(first) = quick_wins.first() {
+            first_bead_id = first.id.clone();
+        }
+
+        if !top_picks.is_empty() {
+            println!("   {}{}Top Picks{}", c.bold, c.cyan, c.reset);
+            for pick in top_picks.iter().take(5) {
+                let score = (pick.score * 100.0).round() as i32;
+                let unblocks = if pick.unblocks > 0 {
+                    format!(" (unblocks {})", pick.unblocks)
+                } else {
+                    String::new()
+                };
+                println!("   {} [{}%{}]: {}", pick.id, score, unblocks, pick.title);
             }
-        } else {
-            println!("   {}No ready beads{}", Colors::DIM, Colors::RESET);
+        }
+
+        if !quick_wins.is_empty() {
+            println!("   {}{}Quick Wins{}", c.bold, c.cyan, c.reset);
+            for win in quick_wins.iter().take(3) {
+                println!("   {}: {}", win.id, win.title);
+            }
+        }
+
+        if top_picks.is_empty() && quick_wins.is_empty() {
+            println!("   {}No actionable beads{}", c.dim, c.reset);
         }
     } else {
-        println!("   {}No ready beads{}", Colors::DIM, Colors::RESET);
+        println!("   {}Could not fetch triage data{}", c.dim, c.reset);
     }
     println!();
 
     // 3. Pending reviews
-    println!("{}", h2("Pending Reviews"));
+    println!("{}", h2(&c, "Pending Reviews"));
     let reviews_output = run_json_tool("crit", &["inbox", "--agent", agent]);
     let mut has_reviews = false;
 
@@ -268,18 +295,18 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                     println!("   {} thread(s) with new responses", threads.len());
                 }
             } else {
-                println!("   {}No pending reviews{}", Colors::DIM, Colors::RESET);
+                println!("   {}No pending reviews{}", c.dim, c.reset);
             }
         } else {
-            println!("   {}No pending reviews{}", Colors::DIM, Colors::RESET);
+            println!("   {}No pending reviews{}", c.dim, c.reset);
         }
     } else {
-        println!("   {}Could not fetch reviews{}", Colors::DIM, Colors::RESET);
+        println!("   {}Could not fetch reviews{}", c.dim, c.reset);
     }
     println!();
 
     // 4. Active claims
-    println!("{}", h2("Active Claims"));
+    println!("{}", h2(&c, "Active Claims"));
     let claims_output = run_json_tool("bus", &["claims", "list", "--agent", agent, "--mine"]);
 
     if let Some(output) = claims_output {
@@ -287,8 +314,8 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
             if let Some(claims) = claims_data.claims {
                 // Filter out agent identity claims (those that start with "agent://")
                 let resource_claims: Vec<_> = claims.iter()
-                    .filter(|c| {
-                        c.patterns.as_ref()
+                    .filter(|cl| {
+                        cl.patterns.as_ref()
                             .map(|p| !p.iter().all(|pat| pat.starts_with("agent://")))
                             .unwrap_or(true)
                     })
@@ -310,33 +337,43 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                         }
                     }
                 } else {
-                    println!("   {}No resource claims{}", Colors::DIM, Colors::RESET);
+                    println!("   {}No resource claims{}", c.dim, c.reset);
                 }
             } else {
-                println!("   {}No active claims{}", Colors::DIM, Colors::RESET);
+                println!("   {}No active claims{}", c.dim, c.reset);
             }
         } else {
-            println!("   {}No active claims{}", Colors::DIM, Colors::RESET);
+            println!("   {}No active claims{}", c.dim, c.reset);
         }
     } else {
-        println!("   {}No active claims{}", Colors::DIM, Colors::RESET);
+        println!("   {}No active claims{}", c.dim, c.reset);
     }
     println!();
 
     // Summary hint
-    if let Some(output) = run_json_tool("bus", &["inbox", "--agent", agent, "--channels", &project]) {
-        if let Ok(inbox) = serde_json::from_str::<InboxResponse>(&output) {
-            if inbox.total_unread > 0 {
-                println!("{}", hint(&format!("Process inbox: bus inbox --agent {} --channels {} --mark-read", agent, project)));
-            } else if has_reviews {
-                println!("{}", hint(&format!("Start review: maw exec default -- crit inbox --agent {}", agent)));
-            } else if has_beads && !first_bead_id.is_empty() {
-                println!("{}", hint(&format!("Claim top: maw exec default -- br update --actor {} {} --status in_progress", agent, first_bead_id)));
-            } else {
-                println!("{}", hint("No work pending"));
-            }
-        }
+    if unread_count > 0 {
+        println!("{}", hint(&c, &format!("Get unread messages and mark them as read: bus inbox --agent {} --channels {} --mark-read", agent, project)));
+    } else if has_reviews {
+        println!("{}", hint(&c, &format!("Start review: maw exec default -- crit inbox --agent {}", agent)));
+    } else if has_beads && !first_bead_id.is_empty() {
+        println!("{}", hint(&c, &format!("Claim top: maw exec default -- br update --actor {} {} --status in_progress", agent, first_bead_id)));
+    } else {
+        println!("{}", hint(&c, "No work pending"));
     }
 
     Ok(())
+}
+
+/// Run `bv --robot-triage` and parse the JSON response
+fn run_triage_json() -> Option<TriageResponse> {
+    let output = Tool::new("bv")
+        .arg("--robot-triage")
+        .in_workspace("default").ok()?
+        .run().ok()?;
+
+    if !output.success() {
+        return None;
+    }
+
+    output.parse_json::<TriageResponse>().ok()
 }

@@ -2,7 +2,6 @@
 
 use minijinja::Environment;
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::config::{Config, ReviewConfig, ToolsConfig};
 
@@ -199,16 +198,14 @@ pub fn update_managed_section(content: &str, ctx: &TemplateContext) -> anyhow::R
     let managed = render_managed_section(ctx)?;
     let full_managed = format!("{}\n{}\n{}", MANAGED_START, managed, MANAGED_END);
 
-    if let Some(start_idx) = content.find(MANAGED_START) {
-        if let Some(end_idx) = content.find(MANAGED_END) {
-            if end_idx > start_idx {
+    if let Some(start_idx) = content.find(MANAGED_START)
+        && let Some(end_idx) = content.find(MANAGED_END)
+            && end_idx > start_idx {
                 // Valid markers, replace content between them
                 let before = &content[..start_idx];
                 let after = &content[end_idx + MANAGED_END.len()..];
                 return Ok(format!("{}{}{}", before, full_managed, after));
             }
-        }
-    }
 
     // Missing or invalid markers — append a clean managed section
     let temp = content
@@ -216,56 +213,6 @@ pub fn update_managed_section(content: &str, ctx: &TemplateContext) -> anyhow::R
         .replace(MANAGED_END, "");
     let cleaned = temp.trim_end();
     Ok(format!("{}\n\n{}\n", cleaned, full_managed))
-}
-
-/// Render a reviewer prompt with variable substitution
-pub fn render_prompt(
-    prompt_name: &str,
-    agent: &str,
-    project: &str,
-) -> anyhow::Result<String> {
-    let template_content = match prompt_name {
-        "reviewer" => include_str!("templates/reviewer.md.jinja"),
-        "reviewer-security" => include_str!("templates/reviewer-security.md.jinja"),
-        _ => {
-            return Err(anyhow::anyhow!(
-                "Unknown prompt template: {}",
-                prompt_name
-            ))
-        }
-    };
-
-    let mut env = Environment::new();
-    env.add_template(prompt_name, template_content)?;
-
-    let template = env.get_template(prompt_name)?;
-
-    #[derive(Serialize)]
-    struct PromptVars {
-        #[serde(rename = "AGENT")]
-        agent: String,
-        #[serde(rename = "PROJECT")]
-        project: String,
-    }
-
-    let vars = PromptVars {
-        agent: agent.to_string(),
-        project: project.to_string(),
-    };
-
-    let rendered = template.render(&vars)?;
-    Ok(rendered)
-}
-
-/// Compute SHA-256 hash of all template files for version tracking
-pub fn compute_templates_version() -> String {
-    let mut hasher = Sha256::new();
-
-    // Hash all embedded template files
-    hasher.update(AGENTS_MANAGED_TEMPLATE);
-
-    let result = hasher.finalize();
-    format!("{:x}", result)[..12].to_string()
 }
 
 #[cfg(test)]
@@ -361,21 +308,4 @@ More custom content.
         assert!(result.contains("## Botbox Workflow"));
     }
 
-    #[test]
-    fn test_render_prompt() {
-        let result = render_prompt("reviewer", "test-reviewer", "test-project").unwrap();
-
-        assert!(result.contains("You are reviewer agent \"test-reviewer\""));
-        assert!(result.contains("for project \"test-project\""));
-        assert!(result.contains("--agent test-reviewer"));
-        assert!(result.contains("BOTBOX_PROJECT=test-project"));
-    }
-
-    #[test]
-    fn test_compute_templates_version() {
-        let version = compute_templates_version();
-        assert_eq!(version.len(), 12);
-        // Verify it's hex
-        assert!(version.chars().all(|c| c.is_ascii_hexdigit()));
-    }
 }

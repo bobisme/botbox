@@ -100,9 +100,8 @@ impl StatusArgs {
             .arg("--format")
             .arg("json")
             .run()
-        {
-            if let Ok(beads_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
-                if let Some(items) = beads_json.get("items").and_then(|v| v.as_array()) {
+            && let Ok(beads_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+                && let Some(items) = beads_json.get("items").and_then(|v| v.as_array()) {
                     report.ready_beads.count = items.len();
                     for item in items.iter().take(5) {
                         if let (Some(id), Some(title)) = (
@@ -116,8 +115,6 @@ impl StatusArgs {
                         }
                     }
                 }
-            }
-        }
 
         // 2. Active workspaces
         if let Ok(output) = Tool::new("maw")
@@ -126,8 +123,7 @@ impl StatusArgs {
             .arg("--format")
             .arg("json")
             .run()
-        {
-            if let Ok(ws_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
+            && let Ok(ws_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
                 if let Some(workspaces) = ws_json.get("workspaces").and_then(|v| v.as_array()) {
                     report.workspaces.total = workspaces.len();
                     for ws in workspaces {
@@ -149,7 +145,6 @@ impl StatusArgs {
                         .count();
                 }
             }
-        }
 
         // 3. Pending inbox
         if let Ok(output) = Tool::new("bus")
@@ -157,13 +152,10 @@ impl StatusArgs {
             .arg("--format")
             .arg("json")
             .run()
-        {
-            if let Ok(inbox_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
-                if let Some(messages) = inbox_json.get("messages").and_then(|v| v.as_array()) {
+            && let Ok(inbox_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+                && let Some(messages) = inbox_json.get("messages").and_then(|v| v.as_array()) {
                     report.inbox.unread = messages.len();
                 }
-            }
-        }
 
         // 4. Running agents
         if let Ok(output) = Tool::new("botty")
@@ -171,13 +163,10 @@ impl StatusArgs {
             .arg("--format")
             .arg("json")
             .run()
-        {
-            if let Ok(agents_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
-                if let Some(agents) = agents_json.get("agents").and_then(|v| v.as_array()) {
+            && let Ok(agents_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+                && let Some(agents) = agents_json.get("agents").and_then(|v| v.as_array()) {
                     report.agents.running = agents.len();
                 }
-            }
-        }
 
         // 5. Active claims
         if let Ok(output) = Tool::new("bus")
@@ -186,13 +175,10 @@ impl StatusArgs {
             .arg("--format")
             .arg("json")
             .run()
-        {
-            if let Ok(claims_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
-                if let Some(claims) = claims_json.get("claims").and_then(|v| v.as_array()) {
+            && let Ok(claims_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+                && let Some(claims) = claims_json.get("claims").and_then(|v| v.as_array()) {
                     report.claims.active = claims.len();
                 }
-            }
-        }
 
         match format {
             OutputFormat::Pretty => {
