@@ -112,12 +112,10 @@ impl RunCommand {
                 Ok(())
             }
             RunCommand::Triage { .. } => {
-                eprintln!("triage: not yet implemented");
-                Ok(())
+                crate::commands::triage::run_triage()
             }
-            RunCommand::IterationStart { .. } => {
-                eprintln!("iteration-start: not yet implemented");
-                Ok(())
+            RunCommand::IterationStart { agent, .. } => {
+                crate::commands::iteration_start::run_iteration_start(agent.as_deref())
             }
         }
     }
