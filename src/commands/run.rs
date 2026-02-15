@@ -99,9 +99,12 @@ impl RunCommand {
                 eprintln!("dev-loop: not yet implemented");
                 Ok(())
             }
-            RunCommand::WorkerLoop { .. } => {
-                eprintln!("worker-loop: not yet implemented");
-                Ok(())
+            RunCommand::WorkerLoop { project_root, agent, model } => {
+                crate::commands::worker_loop::run_worker_loop(
+                    project_root.clone(),
+                    agent.clone(),
+                    model.clone(),
+                )
             }
             RunCommand::ReviewerLoop { .. } => {
                 eprintln!("reviewer-loop: not yet implemented");

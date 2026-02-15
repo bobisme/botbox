@@ -35,6 +35,8 @@ pub struct ProjectConfig {
     pub channel: Option<String>,
     #[serde(default)]
     pub install_command: Option<String>,
+    #[serde(default)]
+    pub critical_approvers: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

@@ -283,6 +283,7 @@ mod tests {
                 channel: Some("test".to_string()),
                 install_command: Some("just install".to_string()),
                 languages: vec![],
+                critical_approvers: None,
             },
             tools: ToolsConfig {
                 beads: true,
@@ -331,6 +332,7 @@ More custom content.
                 channel: None,
                 install_command: None,
                 languages: vec![],
+                critical_approvers: None,
             },
             tools: ToolsConfig {
                 beads: true,

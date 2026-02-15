@@ -1,0 +1,747 @@
+use std::path::{Path, PathBuf};
+use std::process;
+
+use anyhow::Context;
+
+use crate::config::Config;
+use crate::subprocess::Tool;
+
+/// Worker loop state and configuration.
+pub struct WorkerLoop {
+    project_root: PathBuf,
+    agent: String,
+    project: String,
+    model: String,
+    timeout: u64,
+    push_main: bool,
+    review_enabled: bool,
+    critical_approvers: Vec<String>,
+    dispatched_bead: Option<String>,
+    dispatched_workspace: Option<String>,
+    dispatched_mission: Option<String>,
+    dispatched_siblings: Option<String>,
+    dispatched_mission_outcome: Option<String>,
+    dispatched_file_hints: Option<String>,
+}
+
+impl WorkerLoop {
+    /// Create a new worker loop instance.
+    pub fn new(
+        project_root: Option<PathBuf>,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> anyhow::Result<Self> {
+        let project_root = project_root
+            .or_else(|| std::env::current_dir().ok())
+            .context("determining project root")?;
+
+        // Find and load config
+        let config = load_config(&project_root)?;
+
+        // Agent name: CLI arg > auto-generated (empty for worker)
+        let agent = agent.unwrap_or_default();
+
+        // Project name from config
+        let project = config.channel();
+
+        // Model: CLI arg > config > default
+        let worker_config = config.agents.worker.as_ref();
+        let model = model
+            .or_else(|| worker_config.map(|w| w.model.clone()))
+            .unwrap_or_default();
+
+        let timeout = worker_config.map(|w| w.timeout).unwrap_or(600);
+        let push_main = config.push_main;
+        let review_enabled = config.review.enabled;
+        let critical_approvers = config.project.critical_approvers.clone().unwrap_or_default();
+
+        // Dispatched worker env vars (set by dev-loop)
+        // Validate bead ID format: bd-XXXX (alphanumeric + hyphens)
+        let dispatched_bead = std::env::var("BOTBOX_BEAD").ok().filter(|v| {
+            !v.is_empty() && v.len() <= 20
+                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+        // Validate workspace name: lowercase alphanumeric + hyphens, no path components
+        let dispatched_workspace = std::env::var("BOTBOX_WORKSPACE").ok().filter(|v| {
+            !v.is_empty() && v.len() <= 64
+                && v.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+                && !v.starts_with('-')
+                && !v.contains("..")
+        });
+        // Mission ID has same format as bead ID
+        let dispatched_mission = std::env::var("BOTBOX_MISSION").ok().filter(|v| {
+            !v.is_empty() && v.len() <= 20
+                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        });
+        // Siblings and file hints are informational — limit size to prevent prompt bloat
+        let dispatched_siblings = std::env::var("BOTBOX_SIBLINGS").ok()
+            .map(|v| if v.len() > 4096 { v[..4096].to_string() } else { v });
+        let dispatched_mission_outcome = std::env::var("BOTBOX_MISSION_OUTCOME").ok()
+            .map(|v| if v.len() > 2048 { v[..2048].to_string() } else { v });
+        let dispatched_file_hints = std::env::var("BOTBOX_FILE_HINTS").ok()
+            .map(|v| if v.len() > 4096 { v[..4096].to_string() } else { v });
+
+        Ok(Self {
+            project_root,
+            agent,
+            project,
+            model,
+            timeout,
+            push_main,
+            review_enabled,
+            critical_approvers,
+            dispatched_bead,
+            dispatched_workspace,
+            dispatched_mission,
+            dispatched_siblings,
+            dispatched_mission_outcome,
+            dispatched_file_hints,
+        })
+    }
+
+    /// Run one iteration of the worker loop.
+    pub fn run_once(&self) -> anyhow::Result<LoopStatus> {
+        // Set up cleanup handlers
+        register_cleanup_handlers(&self.agent, &self.project);
+
+        // Build prompt for Claude
+        let prompt = self.build_prompt();
+
+        // Run Claude via botbox run-agent
+        let output = run_claude(&prompt, &self.model, self.timeout)?;
+
+        // Parse completion signal
+        let status = parse_completion_signal(&output);
+
+        Ok(status)
+    }
+
+    /// Build the worker loop prompt.
+    fn build_prompt(&self) -> String {
+        let push_main_step = if self.push_main {
+            "\n   Push to GitHub: maw push (if fails, announce issue)."
+        } else {
+            ""
+        };
+
+        let dispatched_section = if let (Some(bead), Some(ws)) =
+            (&self.dispatched_bead, &self.dispatched_workspace)
+        {
+            let mission_section = if let Some(ref mission) = self.dispatched_mission {
+                let outcome = if let Some(ref outcome) = self.dispatched_mission_outcome {
+                    format!("Mission outcome: {outcome}")
+                } else {
+                    format!("Read mission context: maw exec default -- br show {mission}")
+                };
+
+                let siblings = if let Some(ref sibs) = self.dispatched_siblings {
+                    format!("\nSibling beads (other workers in this mission):\n{sibs}")
+                } else {
+                    String::new()
+                };
+
+                let file_hints = if let Some(ref hints) = self.dispatched_file_hints {
+                    format!("\nAdvisory file ownership (avoid editing files owned by siblings):\n{hints}")
+                } else {
+                    String::new()
+                };
+
+                format!(
+                    "Mission: {mission}\n{outcome}{siblings}{file_hints}"
+                )
+            } else {
+                String::new()
+            };
+
+            let ws_path = self.project_root.join("ws").join(ws);
+
+            format!(
+                r#"## DISPATCHED WORKER — FAST PATH
+
+You were dispatched by a lead dev agent with a pre-assigned bead and workspace.
+Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE) entirely.
+
+Pre-assigned bead: {bead}
+Pre-assigned workspace: {ws}
+Workspace path: {ws_path}
+{mission_section}
+
+Go directly to:
+1. Verify your bead: maw exec default -- br show {bead}
+2. Verify your workspace: maw ws list (confirm {ws} exists)
+3. Your bead is already in_progress and claimed. Proceed to step 4 (WORK).
+   Use absolute workspace path: {ws_path}
+   For commands in workspace: maw exec {ws} -- <command>
+
+"#,
+                bead = bead,
+                ws = ws,
+                ws_path = ws_path.display(),
+                mission_section = mission_section,
+            )
+        } else {
+            String::new()
+        };
+
+        let dispatched_intro = if self.dispatched_bead.is_some() {
+            "You are a dispatched worker — follow the FAST PATH section below."
+        } else {
+            r#"Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
+then STOP. Do not start a second task — the outer loop handles iteration."#
+        };
+
+        let review_step_6 = if self.review_enabled {
+            format!(
+                r#"6. REVIEW REQUEST (risk-aware):
+   First, check the bead's risk label: maw exec default -- br show <id> — look for risk:low, risk:high, or risk:critical labels.
+   No risk label = risk:medium (standard review, current default).
+
+   RISK:LOW PATH — Lightweight review:
+     Same as RISK:MEDIUM below. risk:low still gets reviewed when REVIEW is true — the reviewer can fast-track it.
+
+   RISK:MEDIUM PATH — Standard review (current default):
+     Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
+     CHECK for existing review first:
+       - Run: maw exec default -- br comments <id> | grep "Review created:"
+       - If found, extract <review-id> and skip to requesting review (don't create duplicate)
+     Create review with reviewer assignment (only if none exists):
+       - maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
+       - IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace $WS"
+     bus statuses set --agent {agent} "Review: <review-id>".
+     Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
+     Do NOT close the bead. Do NOT merge. Do NOT release claims.
+     Output: <promise>COMPLETE</promise>
+     STOP this iteration.
+
+   RISK:HIGH PATH — Security review + failure-mode checklist:
+     Same as risk:medium, but when creating the review, add to description: "risk:high — failure-mode checklist required."
+     The security reviewer will include the 5 failure-mode questions in their review:
+       1. What could fail in production?  2. How would we detect it quickly?
+       3. What is the fastest safe rollback?  4. What dependency could invalidate this plan?
+       5. What assumption is least certain?
+     MUST request security reviewer. Do not skip.
+     STOP this iteration.
+
+   RISK:CRITICAL PATH — Security review + human approval required:
+     Same as risk:high, but ALSO:
+     - Add to review description: "risk:critical — REQUIRES HUMAN APPROVAL before merge."
+     - Post to bus requesting human approval:
+       bus send --agent {agent} {project} "risk:critical review for <id>: requires human approval before merge. {critical_approvers}" -L review-request
+     STOP this iteration."#,
+                agent = self.agent,
+                project = self.project,
+                critical_approvers = if self.critical_approvers.is_empty() {
+                    "Check project.criticalApprovers in .botbox.json".to_string()
+                } else {
+                    format!("Approvers: {}", self.critical_approvers.join(", "))
+                }
+            )
+        } else {
+            format!(
+                r#"   REVIEW is disabled. Skip code review.
+   Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
+   Proceed directly to step 7 (FINISH)."#
+            )
+        };
+
+        let finish_step_7 = if self.dispatched_bead.is_some() {
+            format!(
+                r#"7. FINISH (dispatched worker — lead handles merge):
+   Describe commit: maw exec $WS -- jj describe -m "<id>: <summary>"
+   Close bead: maw exec default -- br close --actor {agent} <id> --reason="Completed"
+   Announce: bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+   Release bead claim: bus claims release --agent {agent} "bead://{project}/<id>"
+   Do NOT merge the workspace — the lead dev will handle merging via the merge protocol.
+   Do NOT run the release check — the lead handles releases.
+   Output: <promise>COMPLETE</promise>"#,
+                agent = self.agent,
+                project = self.project,
+            )
+        } else {
+            format!(
+                r#"7. FINISH (only reached after LGTM from step 0, or after step 6 when REVIEW is false):
+   If a review was conducted:
+     maw exec default -- crit reviews mark-merged <review-id> --agent {agent}.
+   RISK:CRITICAL CHECK — Before merging a risk:critical bead:
+     Verify human approval exists: bus history {project} -n 50 -L review-request | look for approval message referencing this bead/review from an authorized approver.
+     If no approval found, do NOT merge. Post: bus send --agent {agent} {project} "Waiting for human approval on risk:critical <id>" -L review-request. STOP.
+     If approval found, record it: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Human approval: <approver> via bus message <msg-id>"
+   maw exec default -- br comments add --actor {agent} --author {agent} <id> "Completed by {agent}".
+   maw exec default -- br close --actor {agent} <id> --reason="Completed" --suggest-next.
+   bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done.
+   maw ws merge $WS --destroy (produces linear squashed history and auto-moves main; if conflict, preserve and announce).
+   bus claims release --agent {agent} --all.
+   maw exec default -- br sync --flush-only.{push_main}
+   Then proceed to step 8 (RELEASE CHECK)."#,
+                agent = self.agent,
+                project = self.project,
+                push_main = push_main_step,
+            )
+        };
+
+        let review_status_str = if self.review_enabled { "true" } else { "false" };
+        let review_note = if self.review_enabled {
+            "ALL risk levels go through review (risk:low gets lightweight review, risk:medium standard, risk:high failure-mode checklist, risk:critical human approval)."
+        } else {
+            "Review is disabled. Skip review and proceed to FINISH after describing commit."
+        };
+
+        format!(
+            r#"You are worker agent "{agent}" for project "{project}".
+
+IMPORTANT: Use --agent {agent} on ALL bus and crit commands. Use --actor {agent} on ALL mutating br commands (create, update, close, comments add, dep add, label add). Also use --owner {agent} on br create and --author {agent} on br comments add. Set BOTBOX_PROJECT={project}.
+
+CRITICAL - HUMAN MESSAGE PRIORITY: If you see a system reminder with "STOP:" showing unread bus messages, these are from humans or other agents trying to reach you. IMMEDIATELY check inbox and respond before continuing your current task. Human questions, clarifications, and redirects take priority over heads-down work.
+
+COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. All crit/jj commands run in their workspace.
+  br/bv: maw exec default -- br <args>       or  maw exec default -- bv <args>
+  crit:  maw exec $WS -- crit <args>
+  jj:    maw exec $WS -- jj <args>
+  other: maw exec $WS -- <command>           (cargo test, etc.)
+
+{dispatched}{dispatched_intro}
+
+At the end of your work, output exactly one of these completion signals:
+- <promise>COMPLETE</promise> if you completed a task or determined there is no work
+- <promise>BLOCKED</promise> if you are stuck and cannot proceed
+
+0. RESUME CHECK (do this FIRST):
+   Run: bus claims list --agent {agent} --mine
+   If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
+   - Run: maw exec default -- br comments <bead-id> to understand what was done before and what remains.
+   - Look for workspace info in comments (workspace name and path).
+   - If a "Review created: <review-id>" comment exists:
+     * Find the review: maw exec $WS -- crit review <review-id>
+     * Check review status: maw exec $WS -- crit review <review-id>
+     * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
+     * If BLOCKED (changes requested): fix the issues, then re-request review:
+       1. Read threads: maw exec $WS -- crit review <review-id> (threads show inline with comments)
+       2. For each unresolved thread with reviewer feedback:
+          - Fix the code in the workspace (use absolute WS_PATH for file edits)
+          - Reply: maw exec $WS -- crit reply <thread-id> --agent {agent} "Fixed: <what you did>"
+          - Resolve: maw exec $WS -- crit threads resolve <thread-id> --agent {agent}
+       3. Update commit: maw exec $WS -- jj describe -m "<id>: <summary> (addressed review feedback)"
+       4. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers {project}-security --agent {agent}
+       5. Announce: bus send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
+       STOP this iteration — wait for re-review.
+     * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
+     * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
+   - If no review comment (work was in progress when session ended):
+     * Read the workspace code to see what's already done.
+     * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
+     * After completing: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Resumed and completed: <what you finished>".
+     * Then proceed to step 6 (REVIEW REQUEST) or step 7 (FINISH).
+   If no active claims: proceed to step 1 (INBOX).
+
+1. INBOX (do this before triaging):
+   Run: bus inbox --agent {agent} --channels {project} --mark-read
+   For each message:
+   - Task request (-L task-request or asks for work): create a bead with maw exec default -- br create.
+   - Status check or question: reply on bus, do NOT create a bead.
+   - Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bead. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
+   - Announcements from other agents ("Working on...", "Completed...", "online"): ignore, no action.
+   - Duplicate of existing bead: do NOT create another bead, note it covers the request.
+
+2. TRIAGE: Check maw exec default -- br ready. If no ready beads and inbox created none, say "NO_WORK_AVAILABLE" and stop.
+   GROOM each ready bead (maw exec default -- br show <id>): ensure clear title, description with acceptance criteria
+   and testing strategy, appropriate priority, and risk label. Fix anything missing, comment what you changed.
+   RISK LABELS: Assess each bead for risk using these dimensions: blast radius, data sensitivity, reversibility, dependency uncertainty.
+   - risk:low — typo fixes, doc updates, config tweaks (add label: br label add --actor {agent} -l risk:low <id>)
+   - risk:medium — standard features/bugs (default, no label needed)
+   - risk:high — security-sensitive, data integrity, user-visible behavior changes (add label)
+   - risk:critical — irreversible actions, migrations, regulated changes (add label)
+   Any agent can escalate risk upward. Downgrades require lead approval with justification comment.
+   Use maw exec default -- bv --robot-next to pick exactly one small task. If the task is large, break it down with
+   maw exec default -- br create + br dep add, then bv --robot-next again. If a bead is claimed
+   (bus claims check --agent {agent} "bead://{project}/<id>"), skip it.
+
+   MISSION CONTEXT: After picking a bead, check if it has a mission:bd-xxx label (visible in br show output).
+   If it does, read the mission bead for shared context:
+     maw exec default -- br show <mission-id>
+   Note the mission's Outcome, Constraints, and Stop criteria. Check siblings:
+     maw exec default -- br list -l "mission:<mission-id>"
+   Use this context to understand how your work fits into the larger effort.
+
+   SIBLING COORDINATION (missions only):
+   When working on a mission bead, you share the codebase with sibling workers. Coordinate through bus:
+
+   READ siblings: Before editing a file listed in BOTBOX_FILE_HINTS as owned by a sibling, and periodically
+   during work (~every 5 minutes), check for sibling messages:
+     bus history {project} -n 10 -L "mission:<mission-id>" --since "5 minutes ago"
+   Look for coord:interface messages — these tell you about API/schema/config changes siblings made.
+   If a sibling changed something you depend on, adapt your implementation to match.
+
+   POST discoveries: When you change an API, schema, config format, shared type, or exported interface
+   that siblings might depend on, announce it immediately:
+     bus send --agent {agent} {project} "<file>: <what changed and why>" -L coord:interface -L "mission:<mission-id>"
+
+   COORDINATION LABELS on bus messages:
+   - coord:interface — API/schema/config changes that affect siblings
+   - coord:blocker — You need something from a sibling: bus send --agent {agent} {project} "Blocked by <sibling-bead>: <reason>" -L coord:blocker -L "mission:<mission-id>"
+   - task-done — Signal completion: bus send --agent {agent} {project} "Completed <id>" -L task-done -L "mission:<mission-id>"
+
+3. START: maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}.
+   bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>".
+   Create workspace: run maw ws create --random. Note the workspace name AND absolute path
+   from the output (e.g., name "frost-castle", path "/abs/path/ws/frost-castle").
+   Store the name as WS and the absolute path as WS_PATH.
+   IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
+   For commands in the workspace: maw exec $WS -- <command>.
+   Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
+   bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>".
+   maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)".
+   bus statuses set --agent {agent} "Working: <id>" --ttl 30m.
+   Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim.
+
+4. WORK: maw exec default -- br show <id>, then implement the task in the workspace.
+   If this bead is part of a mission, check bus for sibling updates BEFORE starting implementation:
+     bus history {project} -n 10 -L "mission:<mission-id>" -L coord:interface
+   Adapt your approach if siblings have already defined interfaces you need to consume or conform to.
+   Add at least one progress comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Progress: ...".
+
+5. STUCK CHECK: If same approach tried twice, info missing, or tool fails repeatedly — you are
+   stuck. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Blocked: <details>".
+   bus statuses set --agent {agent} "Blocked: <short reason>".
+   bus send --agent {agent} {project} "Stuck on <id>: <reason>" -L task-blocked.
+   maw exec default -- br update --actor {agent} <id> --status=blocked.
+   Release: bus claims release --agent {agent} "bead://{project}/<id>".
+   Output: <promise>BLOCKED</promise>
+   Stop this cycle.
+
+{review_step}
+
+{finish_step}
+
+8. RELEASE CHECK (before signaling COMPLETE):
+   Check for unreleased commits: maw exec default -- jj log -r 'tags()..main' --no-graph -T 'description.first_line() ++ "\n"'
+   If any commits start with "feat:" or "fix:" (user-visible changes), a release is needed:
+   - Bump version in Cargo.toml/package.json (semantic versioning)
+   - Update changelog if one exists
+   - Release: maw release vX.Y.Z (this tags, pushes, and updates bookmarks)
+   - Announce: bus send --agent {agent} {project} "<project> vX.Y.Z released - <summary>" -L release
+   If only "chore:", "docs:", "refactor:" commits, no release needed.
+   Output: <promise>COMPLETE</promise>
+
+Key rules:
+- Exactly one small task per cycle.
+- Always finish or release before stopping.
+- If claim denied, pick something else.
+- All bus and crit commands use --agent {agent}.
+- All file operations use the absolute workspace path from maw ws create output. Do NOT cd into the workspace and stay there.
+- All br/bv commands: maw exec default -- br/bv ...
+- All crit/jj commands in a workspace: maw exec $WS -- crit/jj ...
+- If a tool behaves unexpectedly, report it: bus send --agent {agent} {project} "Tool issue: <details>" -L tool-issue.
+- STOP after completing one task or determining no work. Do not loop.
+- Always output <promise>COMPLETE</promise> or <promise>BLOCKED</promise> at the end.
+- RISK LABELS: Check bead risk labels before review. REVIEW={review_status}. {review_note}"#,
+            agent = self.agent,
+            project = self.project,
+            dispatched = dispatched_section,
+            dispatched_intro = dispatched_intro,
+            review_step = review_step_6,
+            finish_step = finish_step_7,
+            review_status = review_status_str,
+            review_note = review_note,
+        )
+    }
+}
+
+/// Status of a loop iteration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoopStatus {
+    Complete,
+    Blocked,
+    Unknown,
+}
+
+/// Find .botbox.json config file.
+fn find_config_path(root: &Path) -> Option<PathBuf> {
+    let direct = root.join(".botbox.json");
+    if direct.exists() {
+        return Some(direct);
+    }
+    let ws_default = root.join("ws/default/.botbox.json");
+    if ws_default.exists() {
+        return Some(ws_default);
+    }
+    None
+}
+
+/// Load .botbox.json config.
+fn load_config(root: &Path) -> anyhow::Result<Config> {
+    let config_path = find_config_path(root)
+        .context("no .botbox.json found in project root or ws/default/")?;
+    Config::load(&config_path)
+}
+
+/// Run Claude via botbox run-agent.
+fn run_claude(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
+    let mut tool = Tool::new("botbox")
+        .arg("run-agent")
+        .arg("claude")
+        .arg("-p")
+        .arg(prompt)
+        .arg("-t")
+        .arg(&timeout.to_string());
+
+    if !model.is_empty() {
+        tool = tool.arg("-m").arg(model);
+    }
+
+    let output = tool.run()?;
+
+    // Pass through stderr for visibility
+    if !output.stderr.is_empty() {
+        eprint!("{}", output.stderr);
+    }
+
+    if output.success() {
+        Ok(output.stdout)
+    } else {
+        anyhow::bail!(
+            "botbox run-agent exited with code {}: {}",
+            output.exit_code,
+            output.stderr.trim()
+        );
+    }
+}
+
+/// Parse completion signal from Claude output.
+fn parse_completion_signal(output: &str) -> LoopStatus {
+    if output.contains("<promise>COMPLETE</promise>") {
+        LoopStatus::Complete
+    } else if output.contains("<promise>BLOCKED</promise>") {
+        LoopStatus::Blocked
+    } else {
+        LoopStatus::Unknown
+    }
+}
+
+/// Register cleanup handlers for SIGINT/SIGTERM.
+fn register_cleanup_handlers(agent: &str, project: &str) {
+    let agent = agent.to_string();
+    let project = project.to_string();
+
+    ctrlc::set_handler(move || {
+        eprintln!("Received interrupt signal, cleaning up...");
+        let _ = cleanup(&agent, &project);
+        process::exit(0);
+    })
+    .expect("Error setting Ctrl-C handler");
+}
+
+/// Cleanup: release claims, clear status, sync beads.
+fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
+    eprintln!("Cleaning up...");
+
+    // Reset orphaned in-progress beads
+    let result = Tool::new("br")
+        .args(&["list", "--status", "in_progress", "--assignee", agent, "--json"])
+        .in_workspace("default")?
+        .run();
+
+    if let Ok(output) = result {
+        if let Ok(beads) = output.parse_json::<Vec<serde_json::Value>>() {
+            for bead in beads {
+                if let Some(id) = bead.get("id").and_then(|v| v.as_str()) {
+                    let _ = Tool::new("br")
+                        .args(&["update", "--actor", agent, id, "--status=open"])
+                        .in_workspace("default")?
+                        .run();
+                    let _ = Tool::new("br")
+                        .args(&[
+                            "comments",
+                            "add",
+                            "--actor",
+                            agent,
+                            "--author",
+                            agent,
+                            id,
+                            &format!("Worker {agent} exited without completing. Resetting to open for reassignment."),
+                        ])
+                        .in_workspace("default")?
+                        .run();
+                    eprintln!("Reset orphaned bead {id} to open");
+                }
+            }
+        }
+    }
+
+    // Sign off on bus
+    let _ = Tool::new("bus")
+        .args(&[
+            "send",
+            "--agent",
+            agent,
+            project,
+            &format!("Agent {agent} signing off."),
+            "-L",
+            "agent-idle",
+        ])
+        .run();
+
+    // Clear status
+    let _ = Tool::new("bus")
+        .args(&["statuses", "clear", "--agent", agent])
+        .run();
+
+    // Release agent claim
+    let _ = Tool::new("bus")
+        .args(&["claims", "release", "--agent", agent, &format!("agent://{agent}")])
+        .run();
+
+    // Release all claims
+    let _ = Tool::new("bus")
+        .args(&["claims", "release", "--agent", agent, "--all"])
+        .run();
+
+    // Sync beads
+    let _ = Tool::new("br")
+        .args(&["sync", "--flush-only"])
+        .in_workspace("default")?
+        .run();
+
+    eprintln!("Cleanup complete for {agent}.");
+    Ok(())
+}
+
+/// Run the worker loop.
+pub fn run_worker_loop(
+    project_root: Option<PathBuf>,
+    agent: Option<String>,
+    model: Option<String>,
+) -> anyhow::Result<()> {
+    let worker = WorkerLoop::new(project_root, agent, model)?;
+    let status = worker.run_once()?;
+
+    match status {
+        LoopStatus::Complete => {
+            eprintln!("Worker loop completed successfully");
+            Ok(())
+        }
+        LoopStatus::Blocked => {
+            eprintln!("Worker loop blocked");
+            Ok(())
+        }
+        LoopStatus::Unknown => {
+            eprintln!("Warning: completion signal not found in output");
+            Ok(())
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_completion_signal_complete() {
+        let output = "some text\n<promise>COMPLETE</promise>\nmore text";
+        assert_eq!(parse_completion_signal(output), LoopStatus::Complete);
+    }
+
+    #[test]
+    fn parse_completion_signal_blocked() {
+        let output = "error occurred\n<promise>BLOCKED</promise>";
+        assert_eq!(parse_completion_signal(output), LoopStatus::Blocked);
+    }
+
+    #[test]
+    fn parse_completion_signal_missing() {
+        let output = "no signal here";
+        assert_eq!(parse_completion_signal(output), LoopStatus::Unknown);
+    }
+
+    #[test]
+    fn build_prompt_contains_agent_identity() {
+        unsafe {
+            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_WORKSPACE", "");
+        }
+
+        let worker = WorkerLoop {
+            project_root: PathBuf::from("/test"),
+            agent: "test-worker".to_string(),
+            project: "testproject".to_string(),
+            model: "haiku".to_string(),
+            timeout: 600,
+            push_main: false,
+            review_enabled: true,
+            critical_approvers: vec![],
+            dispatched_bead: None,
+            dispatched_workspace: None,
+            dispatched_mission: None,
+            dispatched_siblings: None,
+            dispatched_mission_outcome: None,
+            dispatched_file_hints: None,
+        };
+
+        let prompt = worker.build_prompt();
+        assert!(prompt.contains("test-worker"));
+        assert!(prompt.contains("testproject"));
+        assert!(prompt.contains("RESUME CHECK"));
+        assert!(prompt.contains("INBOX"));
+        assert!(prompt.contains("TRIAGE"));
+    }
+
+    #[test]
+    fn build_prompt_dispatched_fast_path() {
+        unsafe {
+            std::env::set_var("BOTBOX_BEAD", "bd-test");
+            std::env::set_var("BOTBOX_WORKSPACE", "test-ws");
+        }
+
+        let worker = WorkerLoop {
+            project_root: PathBuf::from("/test"),
+            agent: "test-worker".to_string(),
+            project: "testproject".to_string(),
+            model: "haiku".to_string(),
+            timeout: 600,
+            push_main: false,
+            review_enabled: true,
+            critical_approvers: vec![],
+            dispatched_bead: Some("bd-test".to_string()),
+            dispatched_workspace: Some("test-ws".to_string()),
+            dispatched_mission: None,
+            dispatched_siblings: None,
+            dispatched_mission_outcome: None,
+            dispatched_file_hints: None,
+        };
+
+        let prompt = worker.build_prompt();
+        assert!(prompt.contains("DISPATCHED WORKER — FAST PATH"));
+        assert!(prompt.contains("Pre-assigned bead: bd-test"));
+        assert!(prompt.contains("Pre-assigned workspace: test-ws"));
+        assert!(prompt.contains("Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE)"));
+    }
+
+    #[test]
+    fn build_prompt_review_disabled() {
+        unsafe {
+            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_WORKSPACE", "");
+        }
+
+        let worker = WorkerLoop {
+            project_root: PathBuf::from("/test"),
+            agent: "test-worker".to_string(),
+            project: "testproject".to_string(),
+            model: "haiku".to_string(),
+            timeout: 600,
+            push_main: false,
+            review_enabled: false,
+            critical_approvers: vec![],
+            dispatched_bead: None,
+            dispatched_workspace: None,
+            dispatched_mission: None,
+            dispatched_siblings: None,
+            dispatched_mission_outcome: None,
+            dispatched_file_hints: None,
+        };
+
+        let prompt = worker.build_prompt();
+        assert!(prompt.contains("REVIEW is disabled"));
+        assert!(prompt.contains("Skip code review"));
+        assert!(prompt.contains("REVIEW=false"));
+    }
+}

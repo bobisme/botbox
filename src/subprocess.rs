@@ -74,9 +74,12 @@ impl Tool {
                 .bytes()
                 .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
             || workspace.starts_with('-')
+            || workspace.contains("..")
+            || workspace.contains('/')
+            || workspace.len() > 64
         {
             anyhow::bail!(
-                "invalid workspace name {workspace:?}: must match [a-z0-9][a-z0-9-]*"
+                "invalid workspace name {workspace:?}: must match [a-z0-9][a-z0-9-]*, max 64 chars, no path components"
             );
         }
         self.maw_workspace = Some(workspace.to_string());
