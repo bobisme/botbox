@@ -445,10 +445,10 @@ impl Responder {
             .map(|m| m.max_leads)
             .unwrap_or(3);
 
-        // Resolve agent name: CLI flag > env > config > default
-        let agent = agent
-            .or_else(|| std::env::var("BOTBUS_AGENT").ok())
-            .unwrap_or(default_agent);
+        // Resolve agent name: CLI flag > config default
+        // Note: we intentionally ignore BOTBUS_AGENT here because in hook context
+        // it's set to the message *sender*, not the responder's identity.
+        let agent = agent.unwrap_or(default_agent);
 
         // Resolve channel from env (set by hook) — required
         let channel = std::env::var("BOTBUS_CHANNEL")
