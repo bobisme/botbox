@@ -104,10 +104,24 @@ fn audit_hooks(project_root: Option<&Path>, format: super::doctor::OutputFormat)
                                 .as_array()
                                 .map(|hooks| {
                                     hooks.iter().any(|h| {
-                                        h["command"]
-                                            .as_str()
-                                            .map(|cmd| cmd.contains(&format!("run {}", hook_entry.name)))
-                                            .unwrap_or(false)
+                                        // Check both string and array command formats
+                                        // String format: "botbox hooks run init-agent --project-root ..."
+                                        // Array format: ["botbox", "hooks", "run", "init-agent", "--project-root", ...]
+                                        let cmd_value = &h["command"];
+
+                                        if let Some(cmd_str) = cmd_value.as_str() {
+                                            // String format check
+                                            cmd_str.contains(&format!("run {}", hook_entry.name))
+                                        } else if let Some(cmd_arr) = cmd_value.as_array() {
+                                            // Array format check - look for ["botbox", "hooks", "run", "<hook_name>", ...]
+                                            cmd_arr.len() >= 4
+                                                && cmd_arr[0].as_str() == Some("botbox")
+                                                && cmd_arr[1].as_str() == Some("hooks")
+                                                && cmd_arr[2].as_str() == Some("run")
+                                                && cmd_arr[3].as_str() == Some(hook_entry.name)
+                                        } else {
+                                            false
+                                        }
                                     })
                                 })
                                 .unwrap_or(false)

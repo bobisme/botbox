@@ -742,6 +742,10 @@ fn sync_design_docs(agents_dir: &Path) -> Result<()> {
 }
 
 fn sync_hooks(project_dir: &Path) -> Result<()> {
+    use std::collections::HashMap;
+    use crate::hooks::HookRegistry;
+    use crate::config::Config;
+
     let claude_dir = project_dir.join(".claude");
     fs::create_dir_all(&claude_dir)?;
 
@@ -752,27 +756,24 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
         .unwrap_or_else(|_| project_dir.to_path_buf());
     let project_root_str = canonical.display().to_string();
 
-    // Build the botbox hook entries per event type
-    let botbox_session_start = serde_json::json!({
-        "matcher": "",
-        "hooks": [
-            {
+    // Load config to determine eligible hooks
+    let config = Config::load(&project_dir.join(".botbox.json"))?;
+    let eligible_hooks = HookRegistry::eligible(&config.tools);
+
+    // Group hooks by event type
+    let mut hooks_by_event: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
+    for hook_entry in &eligible_hooks {
+        for event in hook_entry.events {
+            let hook_json = serde_json::json!({
                 "type": "command",
-                "command": ["botbox", "hooks", "run", "init-agent", "--project-root", &project_root_str]
-            },
-            {
-                "type": "command",
-                "command": ["botbox", "hooks", "run", "check-jj", "--project-root", &project_root_str]
-            }
-        ]
-    });
-    let botbox_post_tool_use = serde_json::json!({
-        "matcher": "",
-        "hooks": [{
-            "type": "command",
-            "command": ["botbox", "hooks", "run", "check-bus-inbox", "--project-root", &project_root_str]
-        }]
-    });
+                "command": ["botbox", "hooks", "run", hook_entry.name, "--project-root", &project_root_str]
+            });
+            hooks_by_event
+                .entry(event.as_str().to_string())
+                .or_default()
+                .push(hook_json);
+        }
+    }
 
     // Merge with existing settings.json to preserve non-botbox hooks
     let mut settings: serde_json::Value = if settings_path.exists() {
@@ -789,17 +790,14 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
         .entry("hooks")
         .or_insert_with(|| serde_json::json!({}));
 
-    for (event, botbox_entry) in [
-        ("SessionStart", botbox_session_start),
-        ("PostToolUse", botbox_post_tool_use),
-    ] {
-        let event_hooks = hooks
+    for (event_name, event_hooks) in &hooks_by_event {
+        let event_array = hooks
             .as_object_mut()
             .context("hooks is not an object")?
-            .entry(event)
+            .entry(event_name)
             .or_insert_with(|| serde_json::json!([]));
 
-        if let Some(arr) = event_hooks.as_array_mut() {
+        if let Some(arr) = event_array.as_array_mut() {
             // Remove existing botbox entries (identified by command containing "botbox")
             arr.retain(|entry| {
                 let is_botbox = entry
@@ -818,8 +816,13 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
                     });
                 !is_botbox
             });
-            // Add botbox entry
-            arr.push(botbox_entry);
+
+            // Add botbox entry with all hooks for this event
+            let entry = serde_json::json!({
+                "matcher": "",
+                "hooks": event_hooks
+            });
+            arr.push(entry);
         }
     }
 
