@@ -7,7 +7,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::Config;
 use crate::error::ExitError;
-use crate::subprocess::run_command;
+use crate::subprocess::{run_command, Tool};
 use crate::template::{update_managed_section, TemplateContext};
 
 #[derive(Debug, Args)]
@@ -190,6 +190,9 @@ impl SyncArgs {
 
         // Clean up legacy JS artifacts (scripts, shell hooks)
         self.cleanup_legacy_artifacts(&agents_dir, &mut changed_files);
+
+        // Migrate bus hooks from bun .mjs to botbox run
+        migrate_bus_hooks(&config);
 
         // Auto-commit if changes were made
         if !changed_files.is_empty() && !self.no_commit {
@@ -503,6 +506,185 @@ impl SyncArgs {
         )?;
 
         Ok(())
+    }
+}
+
+/// Migrate bus hooks from legacy `bun .../*.mjs` commands to `botbox run ...`.
+///
+/// Lists all hooks, finds any whose command contains `bun` and a `.mjs` script,
+/// removes them and re-registers with the correct `botbox run` command.
+fn migrate_bus_hooks(config: &Config) {
+    let output = match Tool::new("bus")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(o) if o.success() => o,
+        _ => return, // bus not available, skip silently
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let hooks = parsed
+        .get("hooks")
+        .and_then(|h| h.as_array())
+        .or_else(|| parsed.as_array());
+
+    let hooks = match hooks {
+        Some(h) => h,
+        None => return,
+    };
+
+    let name = &config.project.name;
+    let agent = config.default_agent();
+
+    for hook in hooks {
+        let id = match hook.get("id").and_then(|i| i.as_str()) {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+
+        let channel = hook
+            .get("channel")
+            .and_then(|c| c.as_str())
+            .unwrap_or("");
+
+        // Only migrate hooks for this project's channel
+        if channel != name {
+            continue;
+        }
+
+        let cmd = hook.get("command").and_then(|c| c.as_array());
+        let cmd = match cmd {
+            Some(c) => c,
+            None => continue,
+        };
+
+        let cmd_strs: Vec<&str> = cmd.iter().filter_map(|v| v.as_str()).collect();
+
+        // Check if this is a legacy bun-based hook
+        let has_bun = cmd_strs.iter().any(|s| *s == "bun");
+        let mjs_script = cmd_strs.iter().find(|s| s.ends_with(".mjs"));
+        if !has_bun || mjs_script.is_none() {
+            continue;
+        }
+
+        let script = *mjs_script.unwrap();
+
+        // Determine what kind of hook this is
+        let is_router = script.contains("respond.mjs") || script.contains("router.mjs");
+        let is_reviewer = script.contains("reviewer-loop.mjs");
+
+        if !is_router && !is_reviewer {
+            eprintln!("  Skipping unknown legacy hook {id}: {script}");
+            continue;
+        }
+
+        // Extract env-inherit and cwd from existing command
+        let env_inherit = cmd_strs
+            .windows(2)
+            .find(|w| w[0] == "--env-inherit")
+            .map(|w| w[1])
+            .unwrap_or("BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT,BOTBUS_HOOK_ID");
+        let spawn_cwd = cmd_strs
+            .windows(2)
+            .find(|w| w[0] == "--cwd")
+            .map(|w| w[1])
+            .unwrap_or(".");
+
+        // Remove old hook
+        let remove = Tool::new("bus")
+            .args(&["hooks", "remove", &id])
+            .run();
+
+        if remove.is_err() || !remove.as_ref().unwrap().success() {
+            eprintln!("  Warning: failed to remove legacy hook {id}");
+            continue;
+        }
+
+        if is_router {
+            // Extract condition details from old hook
+            let claim_uri = hook
+                .get("condition")
+                .and_then(|c| c.get("claim"))
+                .and_then(|c| c.as_str())
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| format!("agent://{name}-router"));
+
+            let spawn_name = format!("{agent}/router");
+
+            let result = Tool::new("bus")
+                .args(&[
+                    "hooks", "add",
+                    "--agent", &agent,
+                    "--channel", name,
+                    "--claim", &claim_uri,
+                    "--claim-owner", &agent,
+                    "--cwd", spawn_cwd,
+                    "--ttl", "60",
+                    "--",
+                    "botty", "spawn",
+                    "--env-inherit", env_inherit,
+                    "--name", &spawn_name,
+                    "--cwd", spawn_cwd,
+                    "--",
+                    "botbox", "run", "responder",
+                ])
+                .run();
+
+            match result {
+                Ok(o) if o.success() => {
+                    println!("  Migrated router hook {id} → botbox run responder");
+                }
+                _ => eprintln!("  Warning: failed to re-register router hook"),
+            }
+        } else if is_reviewer {
+            // Extract reviewer agent name from command args or condition
+            let reviewer_agent = hook
+                .get("condition")
+                .and_then(|c| c.get("agent"))
+                .and_then(|a| a.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if reviewer_agent.is_empty() {
+                eprintln!("  Warning: could not determine reviewer agent for hook {id}");
+                continue;
+            }
+
+            let claim_uri = format!("agent://{reviewer_agent}");
+
+            let result = Tool::new("bus")
+                .args(&[
+                    "hooks", "add",
+                    "--agent", &agent,
+                    "--channel", name,
+                    "--mention", &reviewer_agent,
+                    "--claim", &claim_uri,
+                    "--claim-owner", &reviewer_agent,
+                    "--ttl", "600",
+                    "--priority", "1",
+                    "--cwd", spawn_cwd,
+                    "--",
+                    "botty", "spawn",
+                    "--env-inherit", env_inherit,
+                    "--name", &reviewer_agent,
+                    "--cwd", spawn_cwd,
+                    "--",
+                    "botbox", "run", "reviewer-loop",
+                    "--agent", &reviewer_agent,
+                ])
+                .run();
+
+            match result {
+                Ok(o) if o.success() => {
+                    println!("  Migrated reviewer hook {id} → botbox run reviewer-loop --agent {reviewer_agent}");
+                }
+                _ => eprintln!("  Warning: failed to re-register reviewer hook for {reviewer_agent}"),
+            }
+        }
     }
 }
 
