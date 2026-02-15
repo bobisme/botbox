@@ -455,36 +455,56 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
 }
 
 /// Run Claude via botbox run agent.
+/// Echoes output to stderr for visibility in botty while capturing stdout for parsing.
 fn run_claude(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
-    let mut tool = Tool::new("botbox")
-        .arg("run")
-        .arg("agent")
-        .arg("claude")
-        .arg("--skip-permissions")
-        .arg("-p")
-        .arg(prompt)
-        .arg("-t")
-        .arg(&timeout.to_string());
+    use std::io::{BufRead, BufReader};
+    use std::process::{Command, Stdio};
 
+    let timeout_string = timeout.to_string();
+    let mut args = vec![
+        "run",
+        "agent",
+        "claude",
+        "--skip-permissions",
+        "-p",
+        prompt,
+        "-t",
+        &timeout_string,
+    ];
+
+    let model_string;
     if !model.is_empty() {
-        tool = tool.arg("-m").arg(model);
+        model_string = model.to_string();
+        args.push("-m");
+        args.push(&model_string);
     }
 
-    let output = tool.run()?;
+    let mut child = Command::new("botbox")
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .context("spawning botbox run agent")?;
 
-    // Pass through stderr for visibility
-    if !output.stderr.is_empty() {
-        eprint!("{}", output.stderr);
+    let stdout = child.stdout.take().context("capturing stdout")?;
+    let reader = BufReader::new(stdout);
+
+    let mut output = String::new();
+    for line in reader.lines() {
+        let line = line.context("reading line from botbox run agent")?;
+        // Echo to stderr for visibility in botty
+        eprintln!("{}", line);
+        output.push_str(&line);
+        output.push('\n');
     }
 
-    if output.success() {
-        Ok(output.stdout)
+    let status = child.wait().context("waiting for botbox run agent")?;
+    if status.success() {
+        Ok(output)
     } else {
-        anyhow::bail!(
-            "botbox run agent exited with code {}: {}",
-            output.exit_code,
-            output.stderr.trim()
-        );
+        let code = status.code().unwrap_or(-1);
+        anyhow::bail!("botbox run agent exited with code {code}")
     }
 }
 
