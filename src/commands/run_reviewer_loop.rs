@@ -185,6 +185,13 @@ fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
     let mut seen_threads = std::collections::HashSet::new();
 
     for ws in workspaces {
+        // Sync crit index to pick up newly created reviews (avoids race
+        // condition when reviewer spawns before crit has indexed a new review)
+        let _ = Tool::new("crit")
+            .in_workspace(&ws)?
+            .args(&["sync"])
+            .run();
+
         // Check crit inbox in this workspace
         let result = Tool::new("crit")
             .in_workspace(&ws)?

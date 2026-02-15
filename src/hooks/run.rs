@@ -224,8 +224,8 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
         return Ok(());
     }
 
-    // SessionStart / PreCompact / other: stake claim and set status
-    let stake_result = run_command(
+    // SessionStart / PreCompact / other: stake claim
+    let _ = run_command(
         "bus",
         &[
             "claims",
@@ -239,14 +239,6 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
         ],
         Some(project_root),
     );
-
-    if stake_result.is_ok() {
-        let _ = run_command(
-            "bus",
-            &["statuses", "set", "--agent", &agent, "Claude Code", "-q"],
-            Some(project_root),
-        );
-    }
 
     Ok(())
 }
