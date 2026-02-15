@@ -30,8 +30,8 @@ Understanding the full chain from "message arrives" to "agent does work" is crit
 1. Message lands on a botbus channel (e.g., `bus send myproject "New task" -L task-request`)
 2. botbus checks registered hooks (`bus hooks list`) for matching conditions
 3. Matching hook fires → runs its command (typically `botty spawn ...`)
-4. botty spawn creates a PTY session, runs `botbox run-agent` or `bun <script>.mjs`
-5. The loop script starts iterating: triage → start → work → review → finish
+4. botty spawn creates a PTY session, runs `botbox run-agent <subcommand>`
+5. The agent loop iterates: triage → start → work → review → finish
 6. Agent communicates back via `bus send`, updates beads via `br`, manages workspace via `maw`
 ```
 
@@ -41,10 +41,10 @@ Registered during `botbox init` (and updated via migrations):
 
 | Hook Type | Trigger | Spawns | Example |
 |-----------|---------|--------|---------|
-| **Router** (claim-based) | Any message on project channel, when no agent claimed | respond.mjs (universal router) | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
+| **Router** (claim-based) | Any message on project channel, when no agent claimed | `botbox run-agent responder` | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
 | **Reviewer** (mention-based) | `@myproject-security` mention | Reviewer agent | `bus hooks add --channel myproject --mention "myproject-security" ...` |
 
-The router hook spawns `respond.mjs` which routes messages based on `!` prefixes:
+The router hook spawns `botbox run-agent responder` which routes messages based on `!` prefixes:
 - `!dev [msg]` — create bead + spawn dev-loop
 - `!bead [desc]` — create bead (with dedup via `br search`)
 - `!q [question]` — answer with sonnet
@@ -85,7 +85,7 @@ SQLite-backed channel messaging system. Default output is `text` format (concise
 - `bus inbox [--channels <ch>] [--mentions] [--mark-read]` — Check unread messages. `--mentions` checks all channels for @agent mentions. `--count-only` for just the count.
 - `bus history <channel> [-n count] [--from agent] [--since time]` — Browse message history. Channel can also be passed as `-c/--channel <ch>`. `bus history projects` shows the project registry.
 - `bus search <query> [-c channel]` — Full-text search (FTS5 syntax)
-- `bus wait [-c channel] [--mention] [-L label] [-t timeout]` — Block until matching message arrives. Used by respond.mjs for follow-up conversations.
+- `bus wait [-c channel] [--mention] [-L label] [-t timeout]` — Block until matching message arrives. Used by the responder for follow-up conversations.
 - `bus watch [-c channel] [--all]` — Stream messages in real-time
 
 **Claims (advisory locks):**
@@ -184,11 +184,11 @@ File-based issue tracker designed for crash recovery. Beads are stored in `.bead
 
 **Priority levels:** P1 (critical/blocking) → P2 (normal) → P3 (nice-to-have) → P4 (backlog)
 
-## Agent Loop Scripts
+## Agent Subcommands
 
-Scripts in `packages/cli/scripts/` are copied to target projects at `.agents/botbox/scripts/`. They are self-contained `.mjs` files (cannot import from `../src/lib/`).
+All agent loops are built into the `botbox` binary as subcommands under `botbox run-agent`. They are invoked by botbus hooks via `botty spawn`.
 
-### dev-loop.mjs — Lead Dev Agent
+### `botbox run-agent dev-loop` — Lead Dev Agent
 
 Triages work, dispatches parallel workers, monitors progress, merges completed work.
 
@@ -204,7 +204,7 @@ Triages work, dispatches parallel workers, monitors progress, merges completed w
 
 **Dispatch pattern:** Creates workspace per worker, generates random worker name via `bus generate-name`, stakes claims, comments bead with worker/workspace info, spawns via `botty spawn`.
 
-### agent-loop.mjs — Worker Agent
+### `botbox run-agent worker-loop` — Worker Agent
 
 Sequential: one bead per iteration. Triage → start → work → review → finish.
 
@@ -220,7 +220,7 @@ Sequential: one bead per iteration. Triage → start → work → review → fin
 7. Finish: close bead, merge workspace (`maw ws merge --destroy`), release claims, sync
 8. Release check: unreleased feat/fix → bump version
 
-### reviewer-loop.mjs — Reviewer Agent
+### `botbox run-agent reviewer-loop` — Reviewer Agent
 
 Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
@@ -237,7 +237,7 @@ Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
 **Journal:** Maintains `.agents/botbox/review-loop-<role>.txt` with iteration summaries.
 
-### respond.mjs — Universal Message Router
+### `botbox run-agent responder` — Universal Message Router
 
 THE single entrypoint for all project channel messages. Routes based on `!` prefixes, maintains conversation context across turns, and can escalate to dev-loop mid-conversation.
 
@@ -247,39 +247,35 @@ THE single entrypoint for all project channel messages. Routes based on `!` pref
 
 **Config:** `.botbox.json` → `agents.responder.{model, timeout, wait_timeout, max_conversations}`
 
-### triage.mjs — Token-Efficient Triage
+### `botbox run-agent triage` — Token-Efficient Triage
 
 Wraps `bv --robot-triage` JSON into scannable output: top picks, blockers, quick wins, health metrics.
 
-### iteration-start.mjs — Combined Status
+### `botbox run-agent iteration-start` — Combined Status
 
 Aggregates inbox, ready beads, pending reviews, active claims into a single status snapshot at iteration start.
 
-## Script Eligibility
+## Subcommand Eligibility
 
-Scripts are only deployed if the project has the required tools enabled:
+Subcommands require specific companion tools to be enabled in `.botbox.json`:
 
-| Script | Requires |
-|--------|----------|
-| `agent-loop.mjs`, `dev-loop.mjs` | beads + maw + crit + botbus |
-| `reviewer-loop.mjs` | crit + botbus |
-| `respond.mjs` | botbus |
-| `triage.mjs` | beads |
-| `iteration-start.mjs` | beads + crit + botbus |
-
-Registry: `src/lib/scripts.mjs` → `SCRIPT_REGISTRY`
+| Subcommand | Requires |
+|------------|----------|
+| `worker-loop`, `dev-loop` | beads + maw + crit + botbus |
+| `reviewer-loop` | crit + botbus |
+| `responder` | botbus |
+| `triage` | beads |
+| `iteration-start` | beads + crit + botbus |
 
 ## Claude Code Hooks
 
-Shell scripts in `packages/cli/hooks/`, copied to `.agents/botbox/hooks/`, registered in `.claude/settings.json`:
+Hook shell scripts are generated by `botbox sync` into `.agents/botbox/hooks/`, registered in `.claude/settings.json`:
 
 | Hook | Event | Requires | Purpose |
 |------|-------|----------|---------|
 | `init-agent.sh` | SessionStart | botbus | Display agent identity from `.botbox.json` (defaultAgent, channel) |
 | `check-jj.sh` | SessionStart | maw | Remind agent to use jj; display workspace tips |
 | `check-bus-inbox.sh` | PostToolUse | botbus | Check for unread bus messages, inject reminder with previews |
-
-Registry: `src/lib/hooks.mjs` → `HOOK_REGISTRY`
 
 ## CRITICAL: Track ALL Work in Beads BEFORE Starting
 
@@ -299,26 +295,20 @@ Beads enable crash recovery, handoffs, and resumption. Without beads, work is lo
 
 - **Workflow docs** (`.agents/botbox/*.md`) — copied from bundled source
 - **AGENTS.md managed section** — regenerated from templates (between `<!-- botbox:managed-start/end -->` markers)
-- **Loop scripts** (`.agents/botbox/scripts/*.mjs`) — copied based on enabled tools
-- **Prompts** (`.agents/botbox/prompts/*.md`) — reviewer prompt templates
 - **Claude Code hooks** (`.agents/botbox/hooks/*.sh`) — shell scripts for Claude Code events
+- **Prompts** (`.agents/botbox/prompts/*.md`) — reviewer prompt templates
 - **Design docs** (`.agents/botbox/design/*.md`) — copied based on project type
 - **Config migrations** (`.botbox.json`) — runs pending migrations
 
-Each component is version-tracked via SHA-256 content hashes stored in marker files (`.version`, `.scripts-version`, `.hooks-version`, `.prompts-version`, `.design-docs-version`). Sync detects staleness by comparing installed hash vs current bundled hash.
+Each component is version-tracked via SHA-256 content hashes stored in marker files (`.version`, `.hooks-version`, `.prompts-version`, `.design-docs-version`). Sync detects staleness by comparing installed hash vs current bundled hash.
 
 ### Migrations
 
 **Botbus hooks** (registered via `bus hooks add`) and other runtime changes are managed through **migrations**, not direct sync logic.
 
-Migrations live in `src/migrations/index.mjs`. Each has:
-- `id`: Semantic version (e.g., "1.0.5")
-- `title`: Short description
-- `up(ctx)`: Migration function with access to `{ projectDir, agentsDir, configPath, config, log, warn }`
+Migrations are defined in `src/commands/sync.rs`. Each has an ID (semantic version), title, and migration function.
 
 Migrations run automatically during `botbox sync` when the config version is behind. **When adding new botbus hook types or changing runtime behavior, add a migration.**
-
-Current migrations: 1.0.1 (move scripts to .agents/), 1.0.2 (.sh → .mjs scripts), 1.0.3 (update botbus hooks to .mjs), 1.0.4 (add defaultAgent/channel to config), 1.0.5 (add respond hook for @dev mentions), 1.0.6 (add --pass-env to botty spawn hooks), 1.0.10 (rename snake_case config keys to camelCase), 1.0.12 (update hook cwd for maw v2), 1.0.14 (use bare repo root for hook CWDs).
 
 ### Init vs Sync
 
@@ -358,56 +348,51 @@ Scripts read `project.defaultAgent` and `project.channel` on startup, making CLI
 
 ## Botbox Release Process
 
-Changes to workflow docs, scripts, prompts, or templates require a release:
+Changes to workflow docs, templates, or commands require a release:
 
-1. **Make changes** in `packages/cli/`
-2. **Add migration** if behavior changes (see `src/migrations/index.mjs`)
-3. **Run tests**: `bun test` — version hashes auto-update
+1. **Make changes** in `src/`
+2. **Add migration** if behavior changes (see `src/commands/sync.rs`)
+3. **Run tests**: `cargo test`
 4. **Commit and push** to main
 5. **Tag and push**: `maw release vX.Y.Z`
 6. **Install locally**: `maw exec default -- just install`
 
-Use semantic versioning and conventional commits. See [packages/cli/AGENTS.md](packages/cli/AGENTS.md) for component details.
+Use semantic versioning and conventional commits.
 
 ## Repository Structure
 
 ```
-packages/cli/          @botbox/cli — the main CLI (commander + inquirer)
-  ├── src/
-  │   ├── commands/    init.mjs, sync.mjs, doctor.mjs, status.mjs, run-agent.mjs
-  │   ├── lib/         docs.mjs, templates.mjs, scripts.mjs, hooks.mjs, design-docs.mjs,
-  │   │                prompts.mjs, config.mjs, errors.mjs, jj.mjs
-  │   └── migrations/  index.mjs (versioned migrations)
-  ├── docs/            Workflow docs (bundled, copied to target projects)
-  ├── scripts/         Loop scripts (agent-loop.mjs, dev-loop.mjs, etc.)
-  ├── hooks/           Claude Code hooks (init-agent.sh, check-jj.sh, check-bus-inbox.sh)
-  └── prompts/         Reviewer prompts (reviewer.md, reviewer-security.md)
-packages/botbox/       botbox — npm alias that re-exports @botbox/cli
-scripts/               Shell launchers (symlinks to package scripts)
+src/
+  ├── commands/        init, sync, doctor, status, run_agent, dev_loop/, worker_loop, etc.
+  ├── hooks/           Claude Code hook management (registry, runner)
+  ├── templates/       Embedded templates (docs, prompts, design docs, agents-managed.md)
+  ├── config.rs        .botbox.json config parsing
+  ├── template.rs      Minijinja template engine
+  ├── error.rs         Error types
+  ├── lib.rs           Library root
+  └── main.rs          CLI entrypoint (clap)
+tests/                 Integration tests
 evals/                 Behavioral eval framework: rubrics, scripts, results
 notes/                 Extended docs (eval-framework.md, migration-system.md, workflow-docs-maintenance.md)
+docs/                  Architecture docs
 .beads/                Issue tracker (beads)
 ```
 
-**Why two packages?** `@botbox/cli` is the scoped package with all the code. `botbox` is an unscoped alias so users can run `npx botbox init` without the `@` prefix.
-
 ## Development
 
-Runtime: **bun** (not node). Tooling: **oxlint** (lint), **oxfmt** (format), **tsc** (type check via jsconfig.json).
+Runtime: **Rust** (stable). Tooling: **clippy** (lint), **rustfmt** (format), **cargo check** (type check).
 
 ```bash
-maw exec default -- just install    # bun link from workspace
-maw exec default -- just lint       # oxlint
-maw exec default -- just fmt        # oxfmt --write
-maw exec default -- just check      # tsc -p jsconfig.json
-maw exec default -- bun test        # run tests (packages/cli/)
+maw exec default -- just install    # cargo install --path .
+maw exec default -- just lint       # cargo clippy
+maw exec default -- just fmt        # cargo fmt
+maw exec default -- just check      # cargo check
+maw exec default -- just test       # cargo test
 ```
-
-All source is `.mjs` with JSDoc type annotations — no build step. Types are enforced by `tsc --checkJs` with strict settings.
 
 ## Testing
 
-**Automated tests**: Run `bun test` - these use isolated environments automatically.
+**Automated tests**: Run `cargo test` — these use isolated environments automatically.
 
 **Manual testing**: ALWAYS use isolated data directories to avoid polluting actual project data:
 
@@ -422,11 +407,12 @@ rm -rf /tmp/test-botbus
 ## Conventions
 
 - **Version control: jj** (not git). Use `jj describe -m "message"` to set commit messages and `jj new` to finalize. Never use `git commit`. Run `maw jj-intro` for a git-to-jj quick reference.
-- `let` for all variables, `const` only for true constants (module-level, unchanging values)
-- No build step — `.mjs` + JSDoc everywhere
-- Tests use `bun:test` — colocated as `*.test.mjs` next to source
-- Strict linting (oxlint with correctness + suspicious as errors)
-- Commands throw `ExitError` instead of calling `process.exit()` directly
+- Rust stable edition 2024
+- Error handling via `anyhow::Result` with `thiserror` for custom error types
+- CLI parsing via `clap` derive macros
+- Templates embedded at compile time via `include_str!` and rendered with `minijinja`
+- Tests in `tests/` (integration) — run with `cargo test`
+- Strict linting (`cargo clippy -- -D warnings`)
 - All commits include the trailer `Co-Authored-By: Claude <noreply@anthropic.com>` when Claude contributes
 
 ## Debugging and Troubleshooting
@@ -442,7 +428,7 @@ When asked to look at a botty session, immediately run `botty tail <name> --last
 Drop whatever you're doing and run the tail command. Analyze the output and report what the agent is doing, whether it's stuck, and what might need fixing.
 
 ### Agent not spawning
-1. Check hook registration: `bus hooks list` — is the router hook there? Does the channel match? It should point to `respond.mjs`.
+1. Check hook registration: `bus hooks list` — is the router hook there? Does the channel match? It should point to `botbox run-agent responder`.
 2. Check claim availability: `bus claims list` — is the `agent://X-dev` claim already taken? (router hook won't fire if claimed)
 3. Check botty: `botty list` — is the agent already running?
 4. Verify hook command: the hook should run `botty spawn` with correct script path and `--env-inherit`
@@ -538,7 +524,7 @@ project-root/          ← bare repo (no source files here)
 - `ws/default/` is the main workspace — beads, config, and project files live here
 - **Never merge or destroy the default workspace.** It is where other branches merge INTO, not something you merge.
 - Agent workspaces (`ws/<name>/`) are isolated jj commits for concurrent work
-- **ALL commands must go through `maw exec`** — this includes `br`, `bv`, `crit`, `jj`, `cargo`, `bun`, and any project tool. Never run them directly from the bare repo root.
+- **ALL commands must go through `maw exec`** — this includes `br`, `bv`, `crit`, `jj`, `cargo`, and any project tool. Never run them directly from the bare repo root.
 - Use `maw exec default -- <command>` for beads (`br`, `bv`) and general project commands
 - Use `maw exec <agent-ws> -- <command>` for workspace-scoped commands (`crit`, `jj describe`, `cargo check`)
 - **crit commands must run in the review's workspace**, not default: `maw exec <ws> -- crit ...`

@@ -21,19 +21,21 @@ Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps proj
 
 ## What is botbox?
 
-`botbox` is an npm CLI that:
+`botbox` is a Rust CLI that:
 
 1. **Initializes projects** for multi-agent collaboration (interactive or via flags)
 2. **Syncs workflow docs** from a canonical source to `.agents/botbox/`
 3. **Validates health** via `doctor` command
+4. **Runs agent loops** as built-in subcommands (`dev-loop`, `worker-loop`, `reviewer-loop`, `responder`)
 
-It glues together 5 Rust tools (bus, maw, br/bv, crit, botty) into a cohesive workflow.
+It glues together 5 companion tools (bus, maw, br/bv, crit, botty) into a cohesive workflow.
 
 ## Install
 
 ```bash
-npm install -g botbox
-# or: npm install -g @botbox/cli
+cargo install --path .
+# or from a release:
+cargo install botbox
 ```
 
 ## Usage
@@ -98,15 +100,15 @@ These are the source of truth. When botbox updates, run `botbox sync` to pull ch
 Agents are spawned automatically via botbus hooks when messages arrive on project channels. The spawn chain:
 
 ```
-message → botbus hook → botty spawn → loop script (respond.mjs → dev-loop.mjs)
+message → botbus hook → botty spawn → botbox run-agent responder → botbox run-agent dev-loop
 ```
 
-Loop scripts (`.agents/botbox/scripts/`) drive the autonomous workflow:
+Agent loops are built-in subcommands of the `botbox` binary:
 
-- **respond.mjs** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
-- **dev-loop.mjs** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
-- **agent-loop.mjs** — Worker. Sequential: triage → start → work → review → finish.
-- **reviewer-loop.mjs** — Reviewer. Processes crit reviews, votes LGTM or BLOCK.
+- **`botbox run-agent responder`** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
+- **`botbox run-agent dev-loop`** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
+- **`botbox run-agent worker-loop`** — Worker. Sequential: triage → start → work → review → finish.
+- **`botbox run-agent reviewer-loop`** — Reviewer. Processes crit reviews, votes LGTM or BLOCK.
 
 No manual agent management needed — send a message to a project channel and the hook chain handles the rest.
 
@@ -125,7 +127,7 @@ Botbox coordinates five specialized Rust tools that work together to enable mult
 
 ### Flywheel connection
 
-Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. Our `triage.mjs` script wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
+Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. The built-in `botbox run-agent triage` command wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
 
 ### How they work together
 
@@ -151,4 +153,4 @@ br create --title="Bug: ..." --type=bug --priority=2
 bus send botty "Filed bd-xyz: description @botty-dev" -L feedback
 ```
 
-See `packages/cli/docs/report-issue.md` for full workflow.
+See `.agents/botbox/report-issue.md` for full workflow.

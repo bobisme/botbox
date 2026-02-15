@@ -1,1 +1,0 @@
-../packages/cli/scripts/spawn-security-reviewer.sh

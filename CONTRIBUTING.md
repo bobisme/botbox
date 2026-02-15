@@ -22,14 +22,15 @@ If you do submit a PR:
 
 ## Development Setup
 
-Botbox uses **bun** (not node) as its runtime and **jj** (not git) for version control.
+Botbox is written in **Rust** and uses **jj** (not git) for version control.
 
 ```bash
-bun install              # install dependencies
-bun test                 # run tests
-just lint                # oxlint
-just fmt                 # oxfmt --write
-just check               # tsc type checking
+cargo build              # build
+cargo test               # run tests
+just lint                # cargo clippy
+just fmt                 # cargo fmt
+just check               # cargo check
+just install             # cargo install --path .
 ```
 
 ## Questions

@@ -1,4 +1,6 @@
-# Testing Plan
+# Testing Plan (Legacy — JS era)
+
+> **Note**: This testing plan was written for the JavaScript version of botbox. The project has been rewritten in Rust. For current development, use `cargo test`. The E2E eval scripts in `evals/scripts/` have been updated for the Rust binary.
 
 End-to-end testing of `botbox` CLI against real repos using `botty` for interactive session control.
 

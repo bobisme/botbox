@@ -1,29 +1,23 @@
-# Build (no build step for JS, but run checks)
+# Build the Rust binary
 build:
-    just check
-    just lint
+    cargo build
 
 # Run tests
 test:
-    cd packages/cli && bun test
+    cargo test
 
-# Install globally (link for development)
+# Install the binary to ~/.cargo/bin
 install:
-    cd packages/cli && bun link
+    cargo install --path .
 
-# Lint with oxlint
+# Lint with clippy
 lint:
-    cd packages/cli && bun run lint
+    cargo clippy -- -D warnings
 
-# Format with oxfmt
+# Format with rustfmt
 fmt:
-    cd packages/cli && bun run fmt
+    cargo fmt
 
-# Type-check with tsc
+# Check types without building
 check:
-    cd packages/cli && bun run check
-
-# Publish both npm packages
-publish:
-    cd packages/cli && bun publish --access public
-    cd packages/botbox && bun publish
+    cargo check
