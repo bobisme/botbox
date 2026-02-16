@@ -5,12 +5,24 @@
 //! review is approved (if enabled). Outputs merge steps with conflict
 //! recovery guidance.
 
+use serde::Deserialize;
+
 use super::context::ProtocolContext;
 use super::render::{self, ProtocolGuidance, ProtocolStatus};
 use super::review_gate::{self, ReviewGateStatus};
 use super::shell;
 use crate::commands::doctor::OutputFormat;
 use crate::config::Config;
+
+/// Parsed output from `maw ws merge <ws> --check --format json`.
+#[derive(Debug, Clone, Deserialize)]
+struct MergeCheckResult {
+    ready: bool,
+    #[serde(default)]
+    conflicts: Vec<String>,
+    #[serde(default)]
+    stale: bool,
+}
 
 /// Execute the merge protocol command.
 pub fn execute(
@@ -205,6 +217,37 @@ pub fn execute(
         }
     }
 
+    // Pre-flight conflict check via `maw ws merge --check`
+    match run_merge_check(workspace) {
+        Ok(check) => {
+            if !check.ready {
+                guidance.status = ProtocolStatus::Blocked;
+                if !check.conflicts.is_empty() {
+                    guidance.diagnostic(format!(
+                        "Merge would produce conflicts in {} file(s): {}",
+                        check.conflicts.len(),
+                        check.conflicts.join(", ")
+                    ));
+                }
+                if check.stale {
+                    guidance.diagnostic(
+                        "Workspace is stale — run `maw ws sync` first.".to_string(),
+                    );
+                }
+                add_conflict_recovery_guidance(&mut guidance, workspace);
+                print_guidance(&guidance, format)?;
+                return Ok(());
+            }
+        }
+        Err(e) => {
+            // --check failed (maybe old maw version). Warn but proceed.
+            guidance.diagnostic(format!(
+                "Pre-flight check failed ({}). Proceeding without conflict detection.",
+                e
+            ));
+        }
+    }
+
     // All preconditions met — build merge steps
     guidance.status = ProtocolStatus::Ready;
     let review_id = if review_enabled {
@@ -242,6 +285,21 @@ pub fn execute(
 
     print_guidance(&guidance, format)?;
     Ok(())
+}
+
+/// Run `maw ws merge <ws> --check --format json` to detect conflicts before merging.
+fn run_merge_check(workspace: &str) -> Result<MergeCheckResult, String> {
+    let output = std::process::Command::new("maw")
+        .args(["ws", "merge", workspace, "--check", "--format", "json"])
+        .output()
+        .map_err(|e| format!("failed to run maw ws merge --check: {}", e))?;
+
+    let stdout = String::from_utf8(output.stdout)
+        .map_err(|e| format!("invalid UTF-8: {}", e))?;
+
+    // Parse JSON even on non-zero exit (--check exits non-zero on conflicts)
+    serde_json::from_str(&stdout)
+        .map_err(|e| format!("failed to parse --check output: {}", e))
 }
 
 /// Build the merge steps: merge, mark-merged, sync, push.
@@ -287,9 +345,14 @@ fn build_merge_steps(
 
     guidance.steps(steps);
 
-    // Add conflict recovery guidance as diagnostics
+    // Add conflict recovery guidance
+    add_conflict_recovery_guidance(guidance, workspace);
+}
+
+/// Append comprehensive jj conflict recovery guidance as diagnostics.
+fn add_conflict_recovery_guidance(guidance: &mut ProtocolGuidance, workspace: &str) {
     guidance.diagnostic(format!(
-        "If merge reports conflicts (WARNING: Merge has conflicts), the workspace is preserved. Recovery steps:\n\
+        "Conflict recovery — workspace is preserved (not destroyed). Steps:\n\
          \n\
          1. View conflicted files:\n\
          \n\
@@ -385,8 +448,8 @@ fn find_review_for_workspace(
 
 /// Execute merge steps and render the execution report.
 ///
-/// Special handling: if the merge step outputs a WARNING about conflicts,
-/// we detect it and report the conflict state rather than continuing.
+/// Runs `--check` pre-flight before executing. Falls back to WARNING pattern
+/// detection if --check is unavailable.
 fn execute_and_render(
     guidance: &ProtocolGuidance,
     workspace: &str,
@@ -397,14 +460,13 @@ fn execute_and_render(
     let report = executor::execute_steps(&guidance.steps)
         .map_err(|e| anyhow::anyhow!("execution failed: {}", e))?;
 
-    // Check if the merge step produced conflict warnings
+    // Fallback conflict detection via WARNING pattern (safety net)
     let merge_had_conflicts = report.results.iter().any(|r| {
         r.stdout.contains("WARNING: Merge has conflicts")
             || r.stdout.contains("conflict(s) remaining")
     });
 
     if merge_had_conflicts {
-        // Re-render with conflict status
         let mut conflict_guidance = ProtocolGuidance::new("merge");
         conflict_guidance.workspace = Some(workspace.to_string());
         conflict_guidance.status = ProtocolStatus::Blocked;
@@ -412,14 +474,7 @@ fn execute_and_render(
             "Merge completed with CONFLICTS. Workspace {} is preserved (not destroyed).",
             workspace
         ));
-
-        // Include the conflict recovery guidance from the original guidance
-        for diag in &guidance.diagnostics {
-            if diag.contains("If merge reports conflicts") {
-                conflict_guidance.diagnostic(diag.clone());
-                break;
-            }
-        }
+        add_conflict_recovery_guidance(&mut conflict_guidance, workspace);
 
         let output = render::render(&conflict_guidance, format)
             .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
@@ -475,6 +530,7 @@ mod tests {
         assert!(guidance.diagnostics.iter().any(|d| d.contains("jj resolve")));
         assert!(guidance.diagnostics.iter().any(|d| d.contains("jj op undo")));
         assert!(guidance.diagnostics.iter().any(|d| d.contains("maw ws restore")));
+        assert!(guidance.diagnostics.iter().any(|d| d.contains("Conflict recovery")));
     }
 
     #[test]
@@ -497,6 +553,39 @@ mod tests {
         // Should still have merge, sync, announce
         assert!(guidance.steps.iter().any(|s| s.contains("maw ws merge")));
         assert!(guidance.steps.iter().any(|s| s.contains("br sync")));
+    }
+
+    #[test]
+    fn test_merge_check_result_parsing_ready() {
+        let json = r#"{"ready": true, "conflicts": [], "stale": false, "workspace": {"name": "frost-castle", "change_id": "abc"}, "description": "feat: ..."}"#;
+        let result: MergeCheckResult = serde_json::from_str(json).unwrap();
+        assert!(result.ready);
+        assert!(result.conflicts.is_empty());
+        assert!(!result.stale);
+    }
+
+    #[test]
+    fn test_merge_check_result_parsing_conflicts() {
+        let json = r#"{"ready": false, "conflicts": ["src/main.rs", "src/lib.rs"], "stale": false}"#;
+        let result: MergeCheckResult = serde_json::from_str(json).unwrap();
+        assert!(!result.ready);
+        assert_eq!(result.conflicts.len(), 2);
+        assert_eq!(result.conflicts[0], "src/main.rs");
+    }
+
+    #[test]
+    fn test_merge_check_result_parsing_stale() {
+        let json = r#"{"ready": false, "conflicts": [], "stale": true}"#;
+        let result: MergeCheckResult = serde_json::from_str(json).unwrap();
+        assert!(!result.ready);
+        assert!(result.stale);
+    }
+
+    #[test]
+    fn test_merge_check_result_extra_fields_tolerated() {
+        let json = r#"{"ready": true, "conflicts": [], "stale": false, "new_field": 42}"#;
+        let result: MergeCheckResult = serde_json::from_str(json).unwrap();
+        assert!(result.ready);
     }
 
     #[test]
