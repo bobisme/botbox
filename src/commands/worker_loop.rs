@@ -416,6 +416,12 @@ At the end of your work, output exactly one of these completion signals:
 
 {finish_step}
 
+8. CLEANUP (always run before stopping, even on error or BLOCKED):
+   Try protocol command: botbox protocol cleanup --agent {agent}
+   If it fails (exit 1 = command unavailable), fall back to manual cleanup:
+     bus statuses clear --agent {agent}
+     maw exec default -- br sync --flush-only
+
 Key rules:
 - Exactly one small task per cycle.
 - Always finish or release before stopping.
@@ -726,6 +732,54 @@ mod tests {
         assert!(prompt.contains("Pre-assigned bead: bd-test"));
         assert!(prompt.contains("Pre-assigned workspace: test-ws"));
         assert!(prompt.contains("Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE)"));
+    }
+
+    #[test]
+    fn build_prompt_contains_all_protocol_commands() {
+        unsafe {
+            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_WORKSPACE", "");
+        }
+
+        let worker = WorkerLoop {
+            project_root: PathBuf::from("/test"),
+            agent: "test-worker".to_string(),
+            project: "testproject".to_string(),
+            model: "haiku".to_string(),
+            timeout: 600,
+            review_enabled: true,
+            critical_approvers: vec![],
+            dispatched_bead: None,
+            dispatched_workspace: None,
+            dispatched_mission: None,
+            dispatched_siblings: None,
+            dispatched_mission_outcome: None,
+            dispatched_file_hints: None,
+        };
+
+        let prompt = worker.build_prompt();
+
+        // All 5 protocol commands must be referenced in the worker prompt
+        assert!(
+            prompt.contains("botbox protocol resume"),
+            "worker prompt must reference 'botbox protocol resume'"
+        );
+        assert!(
+            prompt.contains("botbox protocol start"),
+            "worker prompt must reference 'botbox protocol start'"
+        );
+        assert!(
+            prompt.contains("botbox protocol review"),
+            "worker prompt must reference 'botbox protocol review'"
+        );
+        assert!(
+            prompt.contains("botbox protocol finish"),
+            "worker prompt must reference 'botbox protocol finish'"
+        );
+        assert!(
+            prompt.contains("botbox protocol cleanup"),
+            "worker prompt must reference 'botbox protocol cleanup'"
+        );
     }
 
     #[test]

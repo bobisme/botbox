@@ -600,6 +600,11 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
 
 ### Merge paths by review status:
 
+For each completed bead, try protocol command first:
+  botbox protocol finish <bead-id> --agent {agent}
+  Read the output carefully — it will tell you the review status and exact commands to run.
+  If it fails (exit 1 = command unavailable), fall back to the manual paths below.
+
 Already reviewed and approved (LGTM — reached from unfinished work check step 1):
   maw exec default -- crit reviews mark-merged <review-id> --agent {agent}
   Run MERGE PROTOCOL above for $WS
@@ -635,6 +640,12 @@ If REVIEW is false (regardless of risk):
 After finishing all ready work:
   bus claims release --agent {agent} --all
 
+## 7.5. END-OF-ITERATION CLEANUP
+
+Run cleanup to release orphaned resources before signaling completion:
+  botbox protocol cleanup --agent {agent}
+If it fails (exit 1 = command unavailable), skip — the startup cleanup (step 2.5) will catch it next iteration.
+
 ## 8. RELEASE CHECK (before signaling COMPLETE)
 
 Before outputting COMPLETE, check if a release is needed:
@@ -665,5 +676,53 @@ Key rules:
 - RISK LABELS: Always assess risk during grooming. risk:low (evals, docs, tests, config) skips security review entirely — self-review and merge directly. risk:medium gets standard review (when REVIEW is true). risk:high requires failure-mode checklist. risk:critical requires human approval.{mission_rules}{multi_lead_rules}
 - Output completion signal at end"#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_ctx() -> LoopContext {
+        LoopContext {
+            agent: "test-dev".to_string(),
+            project: "testproject".to_string(),
+            model: "opus".to_string(),
+            worker_model: "haiku".to_string(),
+            review_enabled: true,
+            push_main: false,
+            missions_enabled: true,
+            missions_config: None,
+            multi_lead_enabled: false,
+            multi_lead_config: None,
+        }
+    }
+
+    #[test]
+    fn prompt_contains_all_protocol_commands() {
+        let ctx = test_ctx();
+        let prompt = build(&ctx, None, &[], None);
+
+        // All 5 protocol commands must be referenced in the dev-loop prompt
+        assert!(
+            prompt.contains("botbox protocol resume"),
+            "dev-loop prompt must reference 'botbox protocol resume'"
+        );
+        assert!(
+            prompt.contains("botbox protocol start"),
+            "dev-loop prompt must reference 'botbox protocol start'"
+        );
+        assert!(
+            prompt.contains("botbox protocol review"),
+            "dev-loop prompt must reference 'botbox protocol review'"
+        );
+        assert!(
+            prompt.contains("botbox protocol finish"),
+            "dev-loop prompt must reference 'botbox protocol finish'"
+        );
+        assert!(
+            prompt.contains("botbox protocol cleanup"),
+            "dev-loop prompt must reference 'botbox protocol cleanup'"
+        );
+    }
 }
 
