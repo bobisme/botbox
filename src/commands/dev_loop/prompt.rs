@@ -487,7 +487,7 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
   botty spawn --name "{agent}/<worker-suffix>" \
     --label worker --label "bead:<id>" \
     --env-inherit BOTBUS_CHANNEL,BOTBUS_DATA_DIR \
-    --env "BOTBUS_AGENT={agent}/<worker-suffix>" \
+    --env "AGENT={agent}/<worker-suffix>" \
     --env "BOTBOX_BEAD=<id>" \
     --env "BOTBOX_WORKSPACE=$WS" \
     --env "BOTBUS_CHANNEL={project}" \

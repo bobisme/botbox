@@ -1058,7 +1058,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                         .args(&[
                             "spawn",
                             "--env-inherit", "SSH_AUTH_SOCK",
-                            "--env", &format!("BOTBUS_AGENT={lead_name}"),
+                            "--env", &format!("AGENT={lead_name}"),
                             "--env", &format!("BOTBUS_CHANNEL={}", self.channel),
                             "--name", &lead_name,
                             "--cwd", &cwd,
