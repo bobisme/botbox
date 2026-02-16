@@ -86,18 +86,40 @@ impl ProtocolContext {
 
     /// Correlate a bead claim with its workspace claim.
     ///
-    /// Returns the workspace name if found in held claims, using memo as a hint.
+    /// Tries memo-based correlation first (most precise), then falls back to
+    /// finding any non-default workspace claim from this agent. The fallback
+    /// is needed because `bus claims list --format json` currently omits the
+    /// memo field, making memo-based lookup fail.
     pub fn workspace_for_bead(&self, bead_id: &str) -> Option<&str> {
+        // First pass: memo-based correlation (precise, works when bus includes memo)
         for claim in &self.claims {
             if claim.agent == self.agent {
-                // Check if this claim holds the bead
                 if let Some(memo) = &claim.memo {
                     if memo == bead_id {
-                        // This claim is for our bead. Check if it holds a workspace.
                         for pattern in &claim.patterns {
-                            if let Some(ws_name) = pattern.strip_prefix("workspace://").and_then(|rest| rest.split('/').nth(1)) {
+                            if let Some(ws_name) = pattern
+                                .strip_prefix("workspace://")
+                                .and_then(|rest| rest.split('/').nth(1))
+                            {
                                 return Some(ws_name);
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback: find any non-default workspace claim from this agent.
+        // Workers hold one bead + one workspace, so this is unambiguous.
+        for claim in &self.claims {
+            if claim.agent == self.agent {
+                for pattern in &claim.patterns {
+                    if let Some(ws_name) = pattern
+                        .strip_prefix("workspace://")
+                        .and_then(|rest| rest.split('/').nth(1))
+                    {
+                        if ws_name != "default" {
+                            return Some(ws_name);
                         }
                     }
                 }
@@ -263,10 +285,12 @@ impl std::error::Error for ContextError {}
 mod tests {
     use super::*;
 
-    // Mock responses for testing without subprocess calls
+    // Mock responses for testing without subprocess calls.
+    // Bus creates separate claims per stake call (no memo in JSON output).
     const CLAIMS_JSON: &str = r#"{"claims": [
-        {"agent": "crimson-storm", "patterns": ["bead://botbox/bd-3cqv", "workspace://botbox/frost-forest"], "active": true, "memo": "bd-3cqv"},
-        {"agent": "green-vertex", "patterns": ["bead://botbox/bd-3t1d"], "active": true, "memo": "bd-3t1d"}
+        {"agent": "crimson-storm", "patterns": ["bead://botbox/bd-3cqv"], "active": true},
+        {"agent": "crimson-storm", "patterns": ["workspace://botbox/frost-forest"], "active": true},
+        {"agent": "green-vertex", "patterns": ["bead://botbox/bd-3t1d"], "active": true}
     ]}"#;
 
     const WORKSPACES_JSON: &str = r#"{"workspaces": [
@@ -340,6 +364,48 @@ mod tests {
 
         let ws = ctx.workspace_for_bead("bd-3cqv");
         assert_eq!(ws, Some("frost-forest"));
+    }
+
+    #[test]
+    fn test_workspace_for_bead_fallback_no_memo() {
+        // When bus omits memo from JSON, fallback finds workspace by agent match
+        let json = r#"{"claims": [
+            {"agent": "dev-agent", "patterns": ["bead://proj/bd-abc"], "active": true},
+            {"agent": "dev-agent", "patterns": ["workspace://proj/ember-tower"], "active": true}
+        ]}"#;
+        let claims_resp = adapters::parse_claims(json).unwrap();
+        let workspaces_resp = adapters::parse_workspaces(WORKSPACES_JSON).unwrap();
+
+        let ctx = ProtocolContext {
+            project: "proj".to_string(),
+            agent: "dev-agent".to_string(),
+            claims: claims_resp.claims,
+            workspaces: workspaces_resp.workspaces,
+        };
+
+        let ws = ctx.workspace_for_bead("bd-abc");
+        assert_eq!(ws, Some("ember-tower"));
+    }
+
+    #[test]
+    fn test_workspace_for_bead_skips_default() {
+        // Fallback must not return "default" workspace
+        let json = r#"{"claims": [
+            {"agent": "dev-agent", "patterns": ["bead://proj/bd-abc"], "active": true},
+            {"agent": "dev-agent", "patterns": ["workspace://proj/default"], "active": true}
+        ]}"#;
+        let claims_resp = adapters::parse_claims(json).unwrap();
+        let workspaces_resp = adapters::parse_workspaces(WORKSPACES_JSON).unwrap();
+
+        let ctx = ProtocolContext {
+            project: "proj".to_string(),
+            agent: "dev-agent".to_string(),
+            claims: claims_resp.claims,
+            workspaces: workspaces_resp.workspaces,
+        };
+
+        let ws = ctx.workspace_for_bead("bd-abc");
+        assert_eq!(ws, None); // default is filtered out
     }
 
     #[test]
