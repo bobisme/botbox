@@ -1,7 +1,11 @@
 pub mod adapters;
 pub mod cleanup;
 pub mod context;
+pub mod exit_policy;
+pub mod finish;
 pub mod render;
+pub mod resume;
+pub mod review;
 pub mod review_gate;
 pub mod shell;
 
@@ -120,14 +124,62 @@ impl ProtocolCommand {
                 Self::execute_start(bead_id, *dispatched, args)
             }
             ProtocolCommand::Finish { bead_id, no_merge, force, args } => {
-                let _ = (bead_id, no_merge, force, args);
-                eprintln!("botbox protocol finish: not yet implemented");
-                Ok(())
+                let project_root = match args.project_root.clone() {
+                    Some(p) => p,
+                    None => std::env::current_dir()
+                        .context("could not determine current directory")?,
+                };
+
+                let config = if project_root.join(".botbox.json").exists() {
+                    Config::load(&project_root.join(".botbox.json"))?
+                } else if project_root.join("ws/default/.botbox.json").exists() {
+                    Config::load(&project_root.join("ws/default/.botbox.json"))?
+                } else {
+                    anyhow::bail!(
+                        "No .botbox.json found in {} or {}/ws/default",
+                        project_root.display(),
+                        project_root.display()
+                    );
+                };
+
+                let project = args.resolve_project(&config);
+                let agent = args.resolve_agent(&config);
+                let format = args.resolve_format();
+
+                finish::execute(bead_id, *no_merge, *force, &agent, &project, &config, format)
             }
             ProtocolCommand::Review { bead_id, reviewers, review_id, args } => {
-                let _ = (bead_id, reviewers, review_id, args);
-                eprintln!("botbox protocol review: not yet implemented");
-                Ok(())
+                let project_root = match args.project_root.clone() {
+                    Some(p) => p,
+                    None => std::env::current_dir()
+                        .context("could not determine current directory")?,
+                };
+
+                let config = if project_root.join(".botbox.json").exists() {
+                    Config::load(&project_root.join(".botbox.json"))?
+                } else if project_root.join("ws/default/.botbox.json").exists() {
+                    Config::load(&project_root.join("ws/default/.botbox.json"))?
+                } else {
+                    anyhow::bail!(
+                        "No .botbox.json found in {} or {}/ws/default",
+                        project_root.display(),
+                        project_root.display()
+                    );
+                };
+
+                let agent = args.resolve_agent(&config);
+                let project = args.resolve_project(&config);
+                let format = args.resolve_format();
+
+                review::execute(
+                    bead_id,
+                    reviewers.as_deref(),
+                    review_id.as_deref(),
+                    &agent,
+                    &project,
+                    &config,
+                    format,
+                )
             }
             ProtocolCommand::Cleanup { args } => {
                 let project_root = match args.project_root.clone() {
@@ -150,9 +202,23 @@ impl ProtocolCommand {
                 cleanup::execute(&agent, &project, format)
             }
             ProtocolCommand::Resume { args } => {
-                let _ = args;
-                eprintln!("botbox protocol resume: not yet implemented");
-                Ok(())
+                let project_root = match args.project_root.clone() {
+                    Some(p) => p,
+                    None => std::env::current_dir()
+                        .context("could not determine current directory")?,
+                };
+
+                let config = if project_root.join(".botbox.json").exists() {
+                    crate::config::Config::load(&project_root.join(".botbox.json"))?
+                } else {
+                    let ws_default = project_root.join("ws/default");
+                    crate::config::Config::load(&ws_default.join(".botbox.json"))?
+                };
+
+                let agent = args.resolve_agent(&config);
+                let project = args.resolve_project(&config);
+                let format = args.resolve_format();
+                resume::execute(&agent, &project, &config, format)
             }
         }
     }
@@ -160,6 +226,8 @@ impl ProtocolCommand {
     /// Execute the `botbox protocol start <bead-id>` command.
     ///
     /// Analyzes bead status and outputs shell commands to start work.
+    /// All status outcomes (ready, blocked, resumable) exit 0 with status in stdout.
+    /// Operational failures (config missing, tool unavailable) exit 1 via ProtocolExitError.
     fn execute_start(bead_id: &str, dispatched: bool, args: &ProtocolArgs) -> anyhow::Result<()> {
         // Determine project root and load config
         let project_root = match args.project_root.clone() {
@@ -172,11 +240,14 @@ impl ProtocolCommand {
         } else if project_root.join("ws/default/.botbox.json").exists() {
             Config::load(&project_root.join("ws/default/.botbox.json"))?
         } else {
-            anyhow::bail!(
-                "No .botbox.json found in {} or {}/ws/default",
-                project_root.display(),
-                project_root.display()
-            );
+            return Err(exit_policy::ProtocolExitError::operational(
+                "start",
+                format!(
+                    "no .botbox.json found in {} or {}/ws/default",
+                    project_root.display(),
+                    project_root.display()
+                ),
+            ).into_exit_error().into());
         };
 
         let project = args.resolve_project(&config);
@@ -195,10 +266,7 @@ impl ProtocolCommand {
                     "bead {} not found. Check the ID with: maw exec default -- br show {}",
                     bead_id, bead_id
                 ));
-                let output = render::render(&guidance, format)
-                    .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
-                println!("{}", output);
-                return Ok(());
+                return exit_policy::render_guidance(&guidance, format);
             }
         };
 
@@ -211,10 +279,7 @@ impl ProtocolCommand {
         // Status check: is bead closed?
         if bead_info.status == "closed" {
             guidance.blocked("bead is already closed".to_string());
-            let output = render::render(&guidance, format)
-                .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
-            println!("{}", output);
-            return Ok(());
+            return exit_policy::render_guidance(&guidance, format);
         }
 
         // Check for claim conflicts
@@ -224,20 +289,14 @@ impl ProtocolCommand {
                     "bead already claimed by agent '{}'",
                     other_agent
                 ));
-                guidance.diagnostic(format!(
-                    "Check current claims with: bus claims list --format json"
-                ));
-                let output = render::render(&guidance, format)
-                    .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
-                println!("{}", output);
-                return Ok(());
+                guidance.diagnostic(
+                    "Check current claims with: bus claims list --format json".to_string(),
+                );
+                return exit_policy::render_guidance(&guidance, format);
             }
             Err(e) => {
                 guidance.blocked(format!("failed to check claim conflict: {}", e));
-                let output = render::render(&guidance, format)
-                    .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
-                println!("{}", output);
-                return Ok(());
+                return exit_policy::render_guidance(&guidance, format);
             }
             Ok(None) => {
                 // No conflict, proceed
@@ -255,10 +314,7 @@ impl ProtocolCommand {
                 "Resume work in workspace {} with: botbox protocol resume",
                 ws_name
             ));
-            let output = render::render(&guidance, format)
-                .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
-            println!("{}", output);
-            return Ok(());
+            return exit_policy::render_guidance(&guidance, format);
         }
 
         // READY: generate start commands
@@ -310,10 +366,6 @@ impl ProtocolCommand {
             "Stake bead claim first, then create workspace, stake workspace claim, update bead status, and announce on bus.".to_string()
         );
 
-        let output = render::render(&guidance, format)
-            .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
-        println!("{}", output);
-
-        Ok(())
+        exit_policy::render_guidance(&guidance, format)
     }
 }

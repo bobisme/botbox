@@ -116,6 +116,75 @@ The freshness metadata enables clients to detect and refresh stale guidance:
   - `None` for final states (finish, cleanup)
 - **Client behavior:** Run the command if guidance is stale
 
+## Exit Code Policy
+
+Protocol commands use a three-tier exit-code scheme. The key principle: **agents branch on stdout status fields, NOT on shell exit codes.**
+
+### Exit Codes
+
+| Code | Meaning | Stderr | Stdout |
+|------|---------|--------|--------|
+| **0** | Command succeeded | Empty | Valid guidance (JSON/text/pretty) |
+| **1** | Operational failure | Error message | Empty |
+| **2** | Usage error | Error message | Empty |
+
+### Exit 0: Success (all ProtocolStatus variants)
+
+All guidance states exit 0, including states that indicate the agent cannot proceed:
+
+- **Ready** — commands are ready to run
+- **Blocked** — cannot proceed; diagnostics explain why
+- **Resumable** — work in progress from a previous session
+- **NeedsReview** — awaiting review approval
+- **HasResources** — workspace/claims still held
+- **Clean** — no held resources
+- **HasWork** — ready beads available
+- **Fresh** — starting fresh (no prior state)
+
+The agent reads the `status` field in stdout to decide what to do next. Exit 0 means "I produced valid guidance output."
+
+### Exit 1: Operational Failure
+
+Returned when the protocol command cannot produce valid guidance at all:
+
+- `.botbox.json` config not found
+- Companion tool missing or unavailable (bus, maw, br, crit)
+- Subprocess output cannot be parsed
+- Command not yet implemented
+
+Exit 1 writes a diagnostic to stderr in the format:
+```
+botbox protocol: <command>: <detail>
+```
+
+### Exit 2: Usage Error
+
+Returned for invalid arguments. Typically handled by clap before protocol code runs.
+
+### Stderr Policy
+
+Stderr is reserved exclusively for operational errors (exit 1 and exit 2). Protocol commands MUST NOT write to stderr when producing valid guidance (exit 0).
+
+Specifically:
+- Status information (blocked, needs-review, etc.) goes to **stdout** as part of guidance
+- Diagnostic details about why the agent is blocked go to **stdout** in the `diagnostics` array
+- Warnings about held resources go to **stdout** in the `diagnostics` array
+- Only true failures (config missing, tool crashed, parse error) go to **stderr**
+
+### Client Integration
+
+Agents consuming protocol commands should:
+
+1. **Check exit code first**: non-zero means no guidance was produced
+2. **On exit 0**: parse stdout for guidance, branch on the `status` field
+3. **On exit 1**: read stderr for the error message, retry or escalate
+4. **On exit 2**: fix the invocation (bad arguments)
+5. **Never branch on exit code to determine status**: use `status` field instead
+
+### Implementation
+
+Exit codes are enforced through `ProtocolExitError` (in `exit_policy.rs`), which integrates with the `ExitError` pattern in `main.rs`. All guidance rendering goes through `render_guidance()` which always returns `Ok(())` (exit 0).
+
 ## Diagnostics Reason Codes
 
 The `diagnostics` array may contain reason codes in future versions. Current codes are free-form strings. If codes are introduced, they will be documented here.
@@ -139,6 +208,15 @@ Validate that clients can detect and react to stale guidance:
 - `guidance_stale_window_logic` — timestamp + duration arithmetic works
 - `render_json_includes_freshness` — JSON always includes freshness metadata
 - `render_text_includes_freshness` — text output shows freshness
+
+### Exit Code Policy Tests
+Validate the exit-code contract:
+- `all_statuses_map_to_success` — every ProtocolStatus variant exits 0
+- `exit_code_values` — Success=0, OperationalError=1, UsageError=2
+- `blocked_status_still_exits_zero` — blocked guidance exits 0
+- `needs_review_status_still_exits_zero` — needs-review guidance exits 0
+- `protocol_exit_error_operational` — operational errors produce exit 1
+- `protocol_exit_error_to_exit_error` — integrates with main.rs ExitError
 
 ### Integration Tests
 (Implemented in higher-level beads)

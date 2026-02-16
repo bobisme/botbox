@@ -2,12 +2,19 @@
 //!
 //! Reads agent's active claims (from bus) and stale workspaces (from maw)
 //! to produce cleanup guidance. Skips release commands for active bead claims.
+//!
+//! Exit policy: always exits 0 with status in stdout (clean or has-resources).
+//! Operational failures (bus/maw unavailable) propagate as anyhow errors → exit 1.
 
 use super::context::ProtocolContext;
+use super::exit_policy;
 use super::render::{ProtocolGuidance, ProtocolStatus};
 use crate::commands::doctor::OutputFormat;
 
 /// Execute cleanup protocol: check for held resources and output cleanup guidance.
+///
+/// Returns Ok(()) with guidance on stdout (exit 0) for all status outcomes.
+/// ProtocolContext::collect errors propagate as anyhow::Error → exit 1.
 pub fn execute(
     agent: &str,
     project: &str,
@@ -30,8 +37,7 @@ pub fn execute(
     if bead_claims.is_empty() && workspace_claims.is_empty() {
         guidance.status = ProtocolStatus::Ready;
         guidance.advise("No cleanup needed.".to_string());
-        render_cleanup(&guidance, format)?;
-        return Ok(());
+        return render_cleanup(&guidance, format);
     }
 
     // We have resources held
@@ -76,11 +82,16 @@ pub fn execute(
     );
     guidance.advise(summary);
 
-    render_cleanup(&guidance, format)?;
-    Ok(())
+    render_cleanup(&guidance, format)
 }
 
 /// Render cleanup guidance in the requested format.
+///
+/// For JSON format, delegates to the standard render path (exit_policy::render_guidance).
+/// For text/pretty formats, uses cleanup-specific rendering optimized for
+/// the cleanup use case (tab-delimited status, claim counts, etc.).
+///
+/// All formats exit 0 — status is communicated via stdout content.
 fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::Result<()> {
     match format {
         OutputFormat::Text => {
@@ -109,6 +120,7 @@ fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::
                 println!();
                 println!("No cleanup needed.");
             }
+            Ok(())
         }
         OutputFormat::Pretty => {
             // Pretty format: human-readable with formatting
@@ -141,15 +153,13 @@ fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::
                 println!();
                 println!("Notes: {}", advice);
             }
+            Ok(())
         }
         OutputFormat::Json => {
-            // JSON format: structured envelope
-            let json = serde_json::to_string_pretty(guidance)?;
-            println!("{}", json);
+            // JSON format: use standard render path for consistency
+            exit_policy::render_guidance(guidance, format)
         }
     }
-
-    Ok(())
 }
 
 #[cfg(test)]

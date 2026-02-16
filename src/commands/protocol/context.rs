@@ -112,12 +112,38 @@ impl ProtocolContext {
         Ok(bead)
     }
 
+    /// List reviews in a workspace by calling `maw exec <ws> -- crit reviews list --format json`.
+    ///
+    /// Returns empty list if no reviews exist or crit is not configured.
+    pub fn reviews_in_workspace(&self, workspace: &str) -> Result<Vec<adapters::ReviewSummary>, ContextError> {
+        let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "reviews", "list", "--format", "json"]);
+        match output {
+            Ok(json) => {
+                let resp = adapters::parse_reviews_list(&json)
+                    .map_err(|e| ContextError::ParseFailed(format!("reviews list in {workspace}: {e}")))?;
+                Ok(resp.reviews)
+            }
+            Err(_) => {
+                // crit may not be configured or workspace may not have reviews
+                Ok(Vec::new())
+            }
+        }
+    }
+
     /// Fetch review status by calling `maw exec <ws> -- crit review <id> --format json`.
     pub fn review_status(&self, review_id: &str, workspace: &str) -> Result<ReviewDetail, ContextError> {
         let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "review", review_id, "--format", "json"])?;
         let review_resp: ReviewDetailResponse = serde_json::from_str(&output)
             .map_err(|e| ContextError::ParseFailed(format!("review {review_id}: {e}")))?;
         Ok(review_resp.review)
+    }
+
+    /// List reviews in a workspace by calling `maw exec <ws> -- crit reviews list --format json`.
+    pub fn reviews_in_workspace(&self, workspace: &str) -> Result<Vec<super::adapters::ReviewSummary>, ContextError> {
+        let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "reviews", "list", "--format", "json"])?;
+        let resp = super::adapters::parse_reviews_list(&output)
+            .map_err(|e| ContextError::ParseFailed(format!("reviews in {workspace}: {e}")))?;
+        Ok(resp.reviews)
     }
 
     /// Check for claim conflicts by querying all claims.
