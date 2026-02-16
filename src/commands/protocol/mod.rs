@@ -4,6 +4,7 @@ pub mod context;
 pub mod executor;
 pub mod exit_policy;
 pub mod finish;
+pub mod merge;
 pub mod render;
 pub mod resume;
 pub mod review;
@@ -131,6 +132,19 @@ pub enum ProtocolCommand {
         #[command(flatten)]
         args: ProtocolArgs,
     },
+    /// Check preconditions and output commands to merge a worker's completed workspace
+    Merge {
+        /// Workspace name to merge
+        workspace: String,
+        /// Merge even if bead is not closed or review is not approved
+        #[arg(long)]
+        force: bool,
+        /// Execute merge commands directly instead of outputting them
+        #[arg(long)]
+        execute: bool,
+        #[command(flatten)]
+        args: ProtocolArgs,
+    },
 }
 
 impl ProtocolCommand {
@@ -217,6 +231,31 @@ impl ProtocolCommand {
                 let project = args.resolve_project(&config);
                 let format = args.resolve_format();
                 cleanup::execute(*execute, &agent, &project, format)
+            }
+            ProtocolCommand::Merge { workspace, force, execute, args } => {
+                let project_root = match args.project_root.clone() {
+                    Some(p) => p,
+                    None => std::env::current_dir()
+                        .context("could not determine current directory")?,
+                };
+
+                let config = if project_root.join(".botbox.json").exists() {
+                    Config::load(&project_root.join(".botbox.json"))?
+                } else if project_root.join("ws/default/.botbox.json").exists() {
+                    Config::load(&project_root.join("ws/default/.botbox.json"))?
+                } else {
+                    anyhow::bail!(
+                        "No .botbox.json found in {} or {}/ws/default",
+                        project_root.display(),
+                        project_root.display()
+                    );
+                };
+
+                let project = args.resolve_project(&config);
+                let agent = args.resolve_agent(&config);
+                let format = args.resolve_format();
+
+                merge::execute(workspace, *force, *execute, &agent, &project, &config, format)
             }
             ProtocolCommand::Resume { args } => {
                 let project_root = match args.project_root.clone() {
