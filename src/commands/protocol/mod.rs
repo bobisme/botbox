@@ -112,6 +112,9 @@ pub enum ProtocolCommand {
         /// Reference an existing review ID (skip creation)
         #[arg(long)]
         review_id: Option<String>,
+        /// Execute the review commands instead of just outputting them
+        #[arg(long)]
+        execute: bool,
         #[command(flatten)]
         args: ProtocolArgs,
     },
@@ -161,7 +164,7 @@ impl ProtocolCommand {
 
                 finish::execute(bead_id, *no_merge, *force, *execute, &agent, &project, &config, format)
             }
-            ProtocolCommand::Review { bead_id, reviewers, review_id, args } => {
+            ProtocolCommand::Review { bead_id, reviewers, review_id, execute, args } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
                     None => std::env::current_dir()
@@ -188,6 +191,7 @@ impl ProtocolCommand {
                     bead_id,
                     reviewers.as_deref(),
                     review_id.as_deref(),
+                    *execute,
                     &agent,
                     &project,
                     &config,

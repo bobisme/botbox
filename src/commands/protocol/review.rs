@@ -4,6 +4,7 @@
 //! to produce guidance for creating or following up on a code review.
 
 use super::context::ProtocolContext;
+use super::executor;
 use super::render::{BeadRef, ProtocolGuidance, ProtocolStatus, ReviewRef};
 use super::review_gate::{self, ReviewGateStatus};
 use super::shell;
@@ -15,6 +16,7 @@ pub fn execute(
     bead_id: &str,
     reviewers_override: Option<&str>,
     review_id_flag: Option<&str>,
+    execute: bool,
     agent: &str,
     project: &str,
     config: &Config,
@@ -94,7 +96,7 @@ pub fn execute(
     // If --review-id was provided, check that existing review
     if let Some(rid) = review_id_flag {
         return handle_existing_review(
-            &ctx, &mut guidance, rid, &workspace, &reviewer_names, bead_id, project, format,
+            &ctx, &mut guidance, rid, &workspace, &reviewer_names, bead_id, project, agent, execute, format,
         );
     }
 
@@ -111,6 +113,8 @@ pub fn execute(
                 &reviewer_names,
                 bead_id,
                 project,
+                agent,
+                execute,
                 format,
             );
         }
@@ -131,9 +135,10 @@ pub fn execute(
     let reviewers_str = reviewer_names.join(",");
     let title = format!("{bead_id}: {}", bead_info.title);
 
-    guidance.step(shell::crit_create_cmd(
+    let mut steps = Vec::new();
+    steps.push(shell::crit_create_cmd(
         &workspace,
-        "agent",
+        agent,
         &title,
         &reviewers_str,
     ));
@@ -144,12 +149,24 @@ pub fn execute(
         "Review requested: {bead_id} {}",
         mentions.join(" ")
     );
-    guidance.step(shell::bus_send_cmd(
-        "agent",
+    steps.push(shell::bus_send_cmd(
+        agent,
         project,
         &announce_msg,
         "review-request",
     ));
+
+    if execute {
+        // Execute the steps
+        let report = executor::execute_steps(&steps)?;
+        guidance.executed = true;
+        guidance.execution_report = Some(report);
+    } else {
+        // Just output guidance
+        for step in steps {
+            guidance.step(step);
+        }
+    }
 
     guidance.advise(format!(
         "Create review and announce. Reviewers: {}",
@@ -170,6 +187,8 @@ fn handle_existing_review(
     reviewer_names: &[String],
     bead_id: &str,
     project: &str,
+    agent: &str,
+    execute: bool,
     format: OutputFormat,
 ) -> anyhow::Result<()> {
     let review_detail = match ctx.review_status(review_id, workspace) {
@@ -191,7 +210,7 @@ fn handle_existing_review(
 
     match decision.status {
         ReviewGateStatus::Approved => {
-            // LGTM — advise to proceed to finish
+            // LGTM — advise to proceed to finish (nothing to execute)
             guidance.status = ProtocolStatus::Ready;
             guidance.advise(format!(
                 "Review {} approved by {}. Proceed to finish: botbox protocol finish {}",
@@ -204,16 +223,18 @@ fn handle_existing_review(
             // Blocked — output crit review (read feedback) + re-request commands
             guidance.status = ProtocolStatus::Blocked;
 
+            let mut steps = Vec::new();
+
             // Step 1: Read review feedback
-            guidance.step(shell::crit_show_cmd(workspace, review_id));
+            steps.push(shell::crit_show_cmd(workspace, review_id));
 
             // Step 2: After addressing feedback, re-request review
             let reviewers_str = reviewer_names.join(",");
-            guidance.step(shell::crit_request_cmd(
+            steps.push(shell::crit_request_cmd(
                 workspace,
                 review_id,
                 &reviewers_str,
-                "agent",
+                agent,
             ));
 
             // Step 3: Announce re-request on bus
@@ -222,12 +243,24 @@ fn handle_existing_review(
                 "Review updated: {review_id} — addressed feedback, re-requesting {}",
                 mentions.join(" ")
             );
-            guidance.step(shell::bus_send_cmd(
-                "agent",
+            steps.push(shell::bus_send_cmd(
+                agent,
                 project,
                 &announce_msg,
                 "review-request",
             ));
+
+            if execute {
+                // Execute the steps
+                let report = executor::execute_steps(&steps)?;
+                guidance.executed = true;
+                guidance.execution_report = Some(report);
+            } else {
+                // Just output guidance
+                for step in steps {
+                    guidance.step(step);
+                }
+            }
 
             guidance.diagnostic(format!(
                 "Blocked by: {}. Open threads: {}",
@@ -243,13 +276,15 @@ fn handle_existing_review(
             guidance.status = ProtocolStatus::NeedsReview;
 
             if !decision.missing_approvals.is_empty() {
+                let mut steps = Vec::new();
+
                 // Re-request from missing reviewers
                 let missing_str = decision.missing_approvals.join(",");
-                guidance.step(shell::crit_request_cmd(
+                steps.push(shell::crit_request_cmd(
                     workspace,
                     review_id,
                     &missing_str,
-                    "agent",
+                    agent,
                 ));
 
                 let mentions: Vec<String> =
@@ -258,12 +293,24 @@ fn handle_existing_review(
                     "Review requested: {review_id} {}",
                     mentions.join(" ")
                 );
-                guidance.step(shell::bus_send_cmd(
-                    "agent",
+                steps.push(shell::bus_send_cmd(
+                    agent,
                     project,
                     &announce_msg,
                     "review-request",
                 ));
+
+                if execute {
+                    // Execute the steps
+                    let report = executor::execute_steps(&steps)?;
+                    guidance.executed = true;
+                    guidance.execution_report = Some(report);
+                } else {
+                    // Just output guidance
+                    for step in steps {
+                        guidance.step(step);
+                    }
+                }
             }
 
             guidance.advise(format!(

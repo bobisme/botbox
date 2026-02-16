@@ -3,6 +3,7 @@
 //! Renders protocol guidance with shell-safe commands, validation, and format support.
 
 use crate::commands::doctor::OutputFormat;
+use crate::commands::protocol::executor::ExecutionReport;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -46,6 +47,12 @@ pub struct ProtocolGuidance {
     pub diagnostics: Vec<String>,
     /// Human-readable summary
     pub advice: Option<String>,
+    /// Whether commands were executed (--execute mode)
+    #[serde(default)]
+    pub executed: bool,
+    /// Execution report (if --execute was used)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub execution_report: Option<ExecutionReport>,
 }
 
 impl ProtocolGuidance {
@@ -65,6 +72,8 @@ impl ProtocolGuidance {
             steps: Vec::new(),
             diagnostics: Vec::new(),
             advice: None,
+            executed: false,
+            execution_report: None,
         }
     }
 
@@ -197,7 +206,18 @@ pub fn render_text(guidance: &ProtocolGuidance) -> String {
         }
     }
 
-    if !guidance.steps.is_empty() {
+    // Show execution results if --execute was used
+    if guidance.executed {
+        if let Some(ref report) = guidance.execution_report {
+            writeln!(&mut out).unwrap();
+            writeln!(&mut out, "Execution:").unwrap();
+            let exec_output = super::executor::render_report(report, OutputFormat::Text);
+            for line in exec_output.lines() {
+                writeln!(&mut out, "  {}", line).unwrap();
+            }
+        }
+    } else if !guidance.steps.is_empty() {
+        // Show steps only if not executed
         writeln!(&mut out).unwrap();
         writeln!(&mut out, "Steps:").unwrap();
         for (i, step) in guidance.steps.iter().enumerate() {
@@ -290,7 +310,17 @@ pub fn render_pretty(guidance: &ProtocolGuidance) -> String {
         }
     }
 
-    if !guidance.steps.is_empty() {
+    // Show execution results if --execute was used
+    if guidance.executed {
+        if let Some(ref report) = guidance.execution_report {
+            writeln!(&mut out, "\n{}Execution:{}", bold, reset).unwrap();
+            let exec_output = super::executor::render_report(report, OutputFormat::Pretty);
+            for line in exec_output.lines() {
+                writeln!(&mut out, "  {}", line).unwrap();
+            }
+        }
+    } else if !guidance.steps.is_empty() {
+        // Show steps only if not executed
         writeln!(&mut out, "\n{}Steps:{}", bold, reset).unwrap();
         for (i, step) in guidance.steps.iter().enumerate() {
             writeln!(&mut out, "  {}. {}", i + 1, step).unwrap();

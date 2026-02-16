@@ -3,13 +3,14 @@
 //! Executes shell commands sequentially, captures output, handles failures,
 //! and performs $WS placeholder substitution for workspace names.
 
+use serde::{Deserialize, Serialize};
 use std::process::{Command, Stdio};
 use thiserror::Error;
 
 use crate::commands::doctor::OutputFormat;
 
 /// Result of executing a single step.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StepResult {
     /// The command that was run
     pub command: String,
@@ -22,7 +23,7 @@ pub struct StepResult {
 }
 
 /// Complete execution report with results and remaining steps.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExecutionReport {
     /// Steps that were executed (in order)
     pub results: Vec<StepResult>,
