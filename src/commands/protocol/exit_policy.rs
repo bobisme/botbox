@@ -71,6 +71,7 @@ impl ProtocolExitError {
 ///
 /// Bundles the guidance output with the appropriate exit code.
 /// The caller (main.rs) uses this to print output and set the process exit code.
+#[allow(dead_code)]
 pub struct ProtocolResult {
     pub exit_code: ProtocolExitCode,
     pub guidance: Option<ProtocolGuidance>,
@@ -78,6 +79,7 @@ pub struct ProtocolResult {
 
 impl ProtocolResult {
     /// Command succeeded — guidance is ready to render.
+    #[allow(dead_code)]
     pub fn success(guidance: ProtocolGuidance) -> Self {
         Self {
             exit_code: ProtocolExitCode::Success,
@@ -87,6 +89,7 @@ impl ProtocolResult {
 
     /// Operational error — no guidance produced.
     /// The error message will be written to stderr by the caller.
+    #[allow(dead_code)]
     pub fn operational_error() -> Self {
         Self {
             exit_code: ProtocolExitCode::OperationalError,
@@ -100,6 +103,7 @@ impl ProtocolResult {
 /// This is the key design decision: blocked, needs-review, etc. are all
 /// valid guidance states, not errors. The agent reads the status field
 /// in stdout to decide what to do next.
+#[allow(dead_code)]
 pub fn exit_code_for_status(_status: ProtocolStatus) -> ProtocolExitCode {
     // Every status is a successful guidance output.
     // Agents branch on the status field, not the exit code.
@@ -110,6 +114,7 @@ pub fn exit_code_for_status(_status: ProtocolStatus) -> ProtocolExitCode {
 ///
 /// Only call this for exit code 1 (operational failures).
 /// Never use stderr for status information like "blocked" or "clean".
+#[allow(dead_code)]
 pub fn write_stderr_diagnostic(context: &str, detail: &str) {
     eprintln!("botbox protocol: {context}: {detail}");
 }
@@ -119,6 +124,7 @@ pub fn write_stderr_diagnostic(context: &str, detail: &str) {
 /// This is the single exit path for all protocol commands that produce
 /// valid guidance. The exit code is always 0 (Success) because the
 /// guidance itself contains the status information.
+#[allow(dead_code)]
 pub fn render_and_exit(
     guidance: &ProtocolGuidance,
     format: OutputFormat,

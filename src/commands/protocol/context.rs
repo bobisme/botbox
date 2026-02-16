@@ -14,6 +14,7 @@ use super::adapters::{self, BeadInfo, Claim, ReviewDetail, ReviewDetailResponse,
 /// plus lazy on-demand methods for bead/review status.
 #[derive(Debug, Clone)]
 pub struct ProtocolContext {
+    #[allow(dead_code)]
     project: String,
     agent: String,
     claims: Vec<Claim>,
@@ -78,6 +79,7 @@ impl ProtocolContext {
     }
 
     /// Find a workspace by name.
+    #[allow(dead_code)]
     pub fn find_workspace(&self, name: &str) -> Option<&Workspace> {
         self.workspaces.iter().find(|ws| ws.name == name)
     }
@@ -216,18 +218,22 @@ impl ProtocolContext {
             .map_err(|e| ContextError::SubprocessFailed(format!("invalid UTF-8 from {}: {e}", args[0])))?)
     }
 
+    #[allow(dead_code)]
     pub fn project(&self) -> &str {
         &self.project
     }
 
+    #[allow(dead_code)]
     pub fn agent(&self) -> &str {
         &self.agent
     }
 
+    #[allow(dead_code)]
     pub fn claims(&self) -> &[Claim] {
         &self.claims
     }
 
+    #[allow(dead_code)]
     pub fn workspaces(&self) -> &[Workspace] {
         &self.workspaces
     }

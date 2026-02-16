@@ -15,6 +15,7 @@ use crate::config::Config;
 struct BeadResume {
     bead_id: String,
     title: String,
+    #[allow(dead_code)]
     status: String,
     workspace: Option<String>,
     review: Option<ReviewState>,

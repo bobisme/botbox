@@ -15,6 +15,7 @@ pub struct ReviewGateDecision {
     /// Reviewers who haven't voted yet
     pub missing_approvals: Vec<String>,
     /// Reviewers who blocked after previously approving
+    #[allow(dead_code)]
     pub newer_block_after_lgtm: Vec<String>,
     /// Total required reviewers
     pub total_required: usize,

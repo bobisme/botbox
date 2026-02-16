@@ -231,6 +231,7 @@ pub fn claims_stake_cmd(agent_var: &str, uri: &str, memo: &str) -> String {
 }
 
 /// Build: `bus claims release --agent $AGENT "<uri>"`
+#[allow(dead_code)]
 pub fn claims_release_cmd(agent_var: &str, uri: &str) -> String {
     validate_agent_var(agent_var);
     format!(
@@ -285,6 +286,7 @@ pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) 
 }
 
 /// Build: `maw exec default -- br update --actor $AGENT <id> --status=<status> [--owner=$AGENT]`
+#[allow(dead_code)]
 pub fn br_update_cmd(
     agent_var: &str,
     bead_id: &str,
@@ -318,6 +320,7 @@ pub fn br_update_cmd(
 }
 
 /// Build: `maw exec default -- br comments add --actor $AGENT --author $AGENT <id> '<message>'`
+#[allow(dead_code)]
 pub fn br_comment_cmd(agent_var: &str, bead_id: &str, message: &str) -> String {
     validate_agent_var(agent_var);
     // Validate bead_id before use

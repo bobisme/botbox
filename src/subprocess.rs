@@ -59,6 +59,7 @@ impl Tool {
     }
 
     /// Set a timeout for the subprocess.
+    #[allow(dead_code)]
     pub fn timeout(mut self, duration: Duration) -> Self {
         self.timeout = Some(duration);
         self
