@@ -1,4 +1,5 @@
 pub mod adapters;
+pub mod cleanup;
 pub mod context;
 pub mod render;
 pub mod shell;
@@ -128,9 +129,24 @@ impl ProtocolCommand {
                 Ok(())
             }
             ProtocolCommand::Cleanup { args } => {
-                let _ = args;
-                eprintln!("botbox protocol cleanup: not yet implemented");
-                Ok(())
+                let project_root = match args.project_root.clone() {
+                    Some(p) => p,
+                    None => std::env::current_dir()
+                        .context("could not determine current directory")?,
+                };
+
+                // Try .botbox.json at root, then ws/default/ (maw v2 bare repo)
+                let config = if project_root.join(".botbox.json").exists() {
+                    crate::config::Config::load(&project_root.join(".botbox.json"))?
+                } else {
+                    let ws_default = project_root.join("ws/default");
+                    crate::config::Config::load(&ws_default.join(".botbox.json"))?
+                };
+
+                let agent = args.resolve_agent(&config);
+                let project = args.resolve_project(&config);
+                let format = args.resolve_format();
+                cleanup::execute(&agent, &project, format)
             }
             ProtocolCommand::Resume { args } => {
                 let _ = args;
