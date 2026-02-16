@@ -724,5 +724,43 @@ mod tests {
             "dev-loop prompt must reference 'botbox protocol cleanup'"
         );
     }
+
+    #[test]
+    fn prompt_contains_protocol_fallback_wording() {
+        let ctx = test_ctx();
+        let prompt = build(&ctx, None, &[], None);
+
+        // Verify fallback wording is present for protocol transitions
+        // This prevents silent regressions where protocol fallback guidance is removed
+        assert!(
+            prompt.contains("If it fails (exit 1 = command unavailable), fall back"),
+            "dev-loop prompt must contain protocol fallback wording for unavailable commands"
+        );
+
+        // Verify transition hooks are explicitly documented
+        assert!(
+            prompt.contains("Try protocol command:"),
+            "dev-loop prompt must guide agents to try protocol commands first"
+        );
+
+        // Verify at least one complete fallback example path is present
+        // (e.g., for resume, cleanup, start, review, finish transitions)
+        let fallback_patterns = [
+            ("protocol resume", "resume check"),
+            ("protocol cleanup", "cleanup"),
+            ("protocol start", "start"),
+            ("protocol review", "review request"),
+            ("protocol finish", "finish"),
+        ];
+
+        for (protocol_cmd, step_name) in fallback_patterns.iter() {
+            assert!(
+                prompt.contains(protocol_cmd),
+                "dev-loop prompt must reference '{}' in {} step",
+                protocol_cmd,
+                step_name
+            );
+        }
+    }
 }
 

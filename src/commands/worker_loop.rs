@@ -810,4 +810,62 @@ mod tests {
         assert!(prompt.contains("Skip code review"));
         assert!(prompt.contains("REVIEW=false"));
     }
+
+    #[test]
+    fn build_prompt_contains_protocol_fallback_wording() {
+        unsafe {
+            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_WORKSPACE", "");
+        }
+
+        let worker = WorkerLoop {
+            project_root: PathBuf::from("/test"),
+            agent: "test-worker".to_string(),
+            project: "testproject".to_string(),
+            model: "haiku".to_string(),
+            timeout: 600,
+            review_enabled: true,
+            critical_approvers: vec![],
+            dispatched_bead: None,
+            dispatched_workspace: None,
+            dispatched_mission: None,
+            dispatched_siblings: None,
+            dispatched_mission_outcome: None,
+            dispatched_file_hints: None,
+        };
+
+        let prompt = worker.build_prompt();
+
+        // Verify fallback wording is present for protocol transitions
+        // This prevents silent regressions where protocol fallback guidance is removed
+        assert!(
+            prompt.contains("If it fails (exit 1 = command unavailable), fall back"),
+            "worker prompt must contain protocol fallback wording for unavailable commands"
+        );
+
+        // Verify transition hooks are explicitly documented
+        assert!(
+            prompt.contains("Try protocol command:"),
+            "worker prompt must guide agents to try protocol commands first"
+        );
+
+        // Verify at least one complete fallback example path is present
+        // (e.g., for resume, start, review, finish, cleanup transitions)
+        let fallback_patterns = [
+            ("protocol resume", "resume check"),
+            ("protocol start", "start"),
+            ("protocol review", "review request"),
+            ("protocol finish", "finish"),
+            ("protocol cleanup", "cleanup"),
+        ];
+
+        for (protocol_cmd, step_name) in fallback_patterns.iter() {
+            assert!(
+                prompt.contains(protocol_cmd),
+                "worker prompt must reference '{}' in {} step",
+                protocol_cmd,
+                step_name
+            );
+        }
+    }
 }
