@@ -1,0 +1,490 @@
+//! JSON adapters for companion tool output.
+//!
+//! Tolerant parsing for bus claims, maw workspaces, br show, and crit review.
+//! Each adapter handles optional/new fields gracefully and produces clear
+//! parse errors. ProtocolContext consumes these instead of ad-hoc parsing.
+
+use serde::Deserialize;
+
+// --- Bus Claims ---
+
+/// Parsed output from `bus claims list --format json`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ClaimsResponse {
+    #[serde(default)]
+    pub claims: Vec<Claim>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Claim {
+    #[serde(default)]
+    pub agent: String,
+    #[serde(default)]
+    pub patterns: Vec<String>,
+    #[serde(default)]
+    pub active: bool,
+    #[serde(default)]
+    pub memo: Option<String>,
+    #[serde(default)]
+    pub expires_at: Option<String>,
+}
+
+impl Claim {
+    /// Extract bead IDs from `bead://project/bd-xxx` patterns.
+    pub fn bead_ids(&self) -> Vec<&str> {
+        self.patterns
+            .iter()
+            .filter_map(|p| {
+                p.strip_prefix("bead://")
+                    .and_then(|rest| rest.split('/').nth(1))
+            })
+            .collect()
+    }
+
+    /// Extract workspace names from `workspace://project/ws-name` patterns.
+    pub fn workspace_names(&self) -> Vec<&str> {
+        self.patterns
+            .iter()
+            .filter_map(|p| {
+                p.strip_prefix("workspace://")
+                    .and_then(|rest| rest.split('/').nth(1))
+            })
+            .collect()
+    }
+}
+
+// --- Maw Workspaces ---
+
+/// Parsed output from `maw ws list --format json`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspacesResponse {
+    #[serde(default)]
+    pub workspaces: Vec<Workspace>,
+    #[serde(default)]
+    pub advice: Vec<WorkspaceAdvice>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct Workspace {
+    pub name: String,
+    #[serde(default)]
+    pub is_default: bool,
+    #[serde(default)]
+    pub is_current: bool,
+    #[serde(default)]
+    pub change_id: Option<String>,
+    #[serde(default)]
+    pub commit_id: Option<String>,
+    #[serde(default)]
+    pub description: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct WorkspaceAdvice {
+    #[serde(default)]
+    pub level: String,
+    #[serde(default)]
+    pub message: String,
+    #[serde(default)]
+    pub details: Option<String>,
+}
+
+// --- Beads (br show) ---
+
+/// Parsed output from `br show <id> --format json`.
+///
+/// br show returns an array of matching beads (usually 1).
+#[derive(Debug, Clone, Deserialize)]
+pub struct BeadInfo {
+    pub id: String,
+    #[serde(default)]
+    pub title: String,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub owner: Option<String>,
+    #[serde(default)]
+    pub labels: Vec<String>,
+    #[serde(rename = "type", default)]
+    pub bead_type: Option<String>,
+    #[serde(default)]
+    pub priority: Option<u8>,
+}
+
+/// Parse `br show --format json` output. Returns the first matching bead.
+pub fn parse_bead_show(json: &str) -> Result<BeadInfo, AdapterError> {
+    // br show returns an array
+    let beads: Vec<BeadInfo> =
+        serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+            tool: "br show",
+            detail: e.to_string(),
+        })?;
+    beads.into_iter().next().ok_or(AdapterError::NotFound {
+        tool: "br show",
+        detail: "no beads in response".to_string(),
+    })
+}
+
+// --- Botcrit Reviews ---
+
+/// Parsed output from `crit reviews list --format json`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewsListResponse {
+    #[serde(default)]
+    pub reviews: Vec<ReviewSummary>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewSummary {
+    pub review_id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub change_id: Option<String>,
+    #[serde(default)]
+    pub author: Option<String>,
+}
+
+/// Parsed output from `crit review <id> --format json`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewDetailResponse {
+    pub review: ReviewDetail,
+    #[serde(default)]
+    pub threads: Vec<ReviewThread>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewDetail {
+    pub review_id: String,
+    #[serde(default)]
+    pub title: Option<String>,
+    #[serde(default)]
+    pub status: String,
+    #[serde(default)]
+    pub change_id: Option<String>,
+    #[serde(default)]
+    pub votes: Vec<ReviewVote>,
+    #[serde(default)]
+    pub open_thread_count: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewVote {
+    pub reviewer: String,
+    pub vote: String,
+    #[serde(default)]
+    pub voted_at: Option<String>,
+}
+
+impl ReviewVote {
+    pub fn is_lgtm(&self) -> bool {
+        self.vote == "lgtm"
+    }
+
+    pub fn is_block(&self) -> bool {
+        self.vote == "block"
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewThread {
+    pub thread_id: String,
+    #[serde(default)]
+    pub file: Option<String>,
+    #[serde(default)]
+    pub line: Option<u32>,
+    #[serde(default)]
+    pub resolved: bool,
+    #[serde(default)]
+    pub comments: Vec<ReviewComment>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewComment {
+    #[serde(default)]
+    pub author: String,
+    #[serde(default)]
+    pub body: String,
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+// --- Adapter Errors ---
+
+#[derive(Debug, Clone)]
+pub enum AdapterError {
+    ParseFailed {
+        tool: &'static str,
+        detail: String,
+    },
+    NotFound {
+        tool: &'static str,
+        detail: String,
+    },
+}
+
+impl std::fmt::Display for AdapterError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AdapterError::ParseFailed { tool, detail } => {
+                write!(f, "failed to parse {tool} output: {detail}")
+            }
+            AdapterError::NotFound { tool, detail } => {
+                write!(f, "{tool}: {detail}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for AdapterError {}
+
+// --- Convenience parsers ---
+
+/// Parse `bus claims list --format json`.
+pub fn parse_claims(json: &str) -> Result<ClaimsResponse, AdapterError> {
+    serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+        tool: "bus claims list",
+        detail: e.to_string(),
+    })
+}
+
+/// Parse `maw ws list --format json`.
+pub fn parse_workspaces(json: &str) -> Result<WorkspacesResponse, AdapterError> {
+    serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+        tool: "maw ws list",
+        detail: e.to_string(),
+    })
+}
+
+/// Parse `crit reviews list --format json`.
+pub fn parse_reviews_list(json: &str) -> Result<ReviewsListResponse, AdapterError> {
+    serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+        tool: "crit reviews list",
+        detail: e.to_string(),
+    })
+}
+
+/// Parse `crit review <id> --format json`.
+pub fn parse_review_detail(json: &str) -> Result<ReviewDetailResponse, AdapterError> {
+    serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+        tool: "crit review",
+        detail: e.to_string(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Claims parsing ---
+
+    #[test]
+    fn parse_claims_basic() {
+        let json = r#"{"claims": [
+            {"agent": "myapp-dev", "patterns": ["bead://myapp/bd-abc"], "active": true, "memo": "bd-abc"},
+            {"agent": "myapp-dev", "patterns": ["workspace://myapp/frost-castle"], "active": true}
+        ]}"#;
+        let resp = parse_claims(json).unwrap();
+        assert_eq!(resp.claims.len(), 2);
+        assert_eq!(resp.claims[0].agent, "myapp-dev");
+        assert_eq!(resp.claims[0].bead_ids(), vec!["bd-abc"]);
+        assert_eq!(resp.claims[1].workspace_names(), vec!["frost-castle"]);
+    }
+
+    #[test]
+    fn parse_claims_empty() {
+        let json = r#"{"claims": []}"#;
+        let resp = parse_claims(json).unwrap();
+        assert!(resp.claims.is_empty());
+    }
+
+    #[test]
+    fn parse_claims_missing_optional_fields() {
+        let json = r#"{"claims": [{"agent": "dev", "patterns": ["bead://p/bd-x"]}]}"#;
+        let resp = parse_claims(json).unwrap();
+        assert!(!resp.claims[0].active); // defaults to false
+        assert!(resp.claims[0].memo.is_none());
+        assert!(resp.claims[0].expires_at.is_none());
+    }
+
+    #[test]
+    fn parse_claims_extra_fields_tolerated() {
+        let json = r#"{"claims": [{"agent": "dev", "patterns": [], "some_new_field": 42}]}"#;
+        let resp = parse_claims(json).unwrap();
+        assert_eq!(resp.claims.len(), 1);
+    }
+
+    #[test]
+    fn parse_claims_invalid_json() {
+        let result = parse_claims("not json");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("bus claims list"));
+    }
+
+    // --- Workspace parsing ---
+
+    #[test]
+    fn parse_workspaces_basic() {
+        let json = r#"{"workspaces": [
+            {"name": "default", "is_default": true, "is_current": false, "change_id": "abc123"},
+            {"name": "frost-castle", "is_default": false, "is_current": true, "change_id": "def456"}
+        ], "advice": []}"#;
+        let resp = parse_workspaces(json).unwrap();
+        assert_eq!(resp.workspaces.len(), 2);
+        assert!(resp.workspaces[0].is_default);
+        assert_eq!(resp.workspaces[1].name, "frost-castle");
+    }
+
+    #[test]
+    fn parse_workspaces_with_advice() {
+        let json = r#"{"workspaces": [], "advice": [
+            {"level": "warn", "message": "stale workspace detected", "details": "frost-castle"}
+        ]}"#;
+        let resp = parse_workspaces(json).unwrap();
+        assert_eq!(resp.advice.len(), 1);
+        assert!(resp.advice[0].message.contains("stale"));
+    }
+
+    #[test]
+    fn parse_workspaces_missing_advice() {
+        let json = r#"{"workspaces": [{"name": "default", "is_default": true}]}"#;
+        let resp = parse_workspaces(json).unwrap();
+        assert!(resp.advice.is_empty());
+    }
+
+    // --- Bead parsing ---
+
+    #[test]
+    fn parse_bead_show_basic() {
+        let json = r#"[{"id": "bd-abc", "title": "Fix login", "status": "in_progress", "owner": "myapp-dev", "labels": ["bug"]}]"#;
+        let bead = parse_bead_show(json).unwrap();
+        assert_eq!(bead.id, "bd-abc");
+        assert_eq!(bead.title, "Fix login");
+        assert_eq!(bead.status, "in_progress");
+        assert_eq!(bead.owner.as_deref(), Some("myapp-dev"));
+        assert_eq!(bead.labels, vec!["bug"]);
+    }
+
+    #[test]
+    fn parse_bead_show_minimal() {
+        let json = r#"[{"id": "bd-abc"}]"#;
+        let bead = parse_bead_show(json).unwrap();
+        assert_eq!(bead.id, "bd-abc");
+        assert_eq!(bead.title, "");
+        assert_eq!(bead.status, "");
+        assert!(bead.owner.is_none());
+        assert!(bead.labels.is_empty());
+    }
+
+    #[test]
+    fn parse_bead_show_empty_array() {
+        let result = parse_bead_show("[]");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no beads"));
+    }
+
+    #[test]
+    fn parse_bead_show_extra_fields() {
+        let json = r#"[{"id": "bd-x", "title": "t", "status": "open", "some_future_field": true}]"#;
+        let bead = parse_bead_show(json).unwrap();
+        assert_eq!(bead.id, "bd-x");
+    }
+
+    // --- Review parsing ---
+
+    #[test]
+    fn parse_reviews_list_basic() {
+        let json = r#"{"reviews": [
+            {"review_id": "cr-abc", "title": "feat: login", "status": "open", "change_id": "xyz"}
+        ]}"#;
+        let resp = parse_reviews_list(json).unwrap();
+        assert_eq!(resp.reviews.len(), 1);
+        assert_eq!(resp.reviews[0].review_id, "cr-abc");
+    }
+
+    #[test]
+    fn parse_reviews_list_empty() {
+        let json = r#"{"reviews": []}"#;
+        let resp = parse_reviews_list(json).unwrap();
+        assert!(resp.reviews.is_empty());
+    }
+
+    #[test]
+    fn parse_review_detail_with_votes() {
+        let json = r#"{
+            "review": {
+                "review_id": "cr-abc",
+                "status": "reviewed",
+                "votes": [
+                    {"reviewer": "myapp-security", "vote": "lgtm", "voted_at": "2026-02-16T10:00:00Z"},
+                    {"reviewer": "myapp-perf", "vote": "block", "voted_at": "2026-02-16T11:00:00Z"}
+                ],
+                "open_thread_count": 2
+            },
+            "threads": [
+                {"thread_id": "th-1", "file": "src/main.rs", "line": 42, "resolved": false, "comments": [
+                    {"author": "myapp-security", "body": "Missing validation", "created_at": "2026-02-16T10:00:00Z"}
+                ]}
+            ]
+        }"#;
+        let resp = parse_review_detail(json).unwrap();
+        assert_eq!(resp.review.review_id, "cr-abc");
+        assert_eq!(resp.review.votes.len(), 2);
+        assert!(resp.review.votes[0].is_lgtm());
+        assert!(resp.review.votes[1].is_block());
+        assert_eq!(resp.review.open_thread_count, 2);
+        assert_eq!(resp.threads.len(), 1);
+        assert_eq!(resp.threads[0].comments.len(), 1);
+    }
+
+    #[test]
+    fn parse_review_detail_minimal() {
+        let json = r#"{"review": {"review_id": "cr-x", "status": "open"}, "threads": []}"#;
+        let resp = parse_review_detail(json).unwrap();
+        assert_eq!(resp.review.review_id, "cr-x");
+        assert!(resp.review.votes.is_empty());
+        assert_eq!(resp.review.open_thread_count, 0);
+    }
+
+    #[test]
+    fn parse_review_detail_extra_fields() {
+        let json = r#"{"review": {"review_id": "cr-x", "status": "open", "new_field": "val"}, "threads": []}"#;
+        let resp = parse_review_detail(json).unwrap();
+        assert_eq!(resp.review.review_id, "cr-x");
+    }
+
+    // --- Claim helper tests ---
+
+    #[test]
+    fn claim_bead_id_extraction() {
+        let claim = Claim {
+            agent: "dev".into(),
+            patterns: vec![
+                "bead://myapp/bd-abc".into(),
+                "workspace://myapp/ws".into(),
+                "agent://myapp-dev".into(),
+            ],
+            active: true,
+            memo: None,
+            expires_at: None,
+        };
+        assert_eq!(claim.bead_ids(), vec!["bd-abc"]);
+        assert_eq!(claim.workspace_names(), vec!["ws"]);
+    }
+
+    #[test]
+    fn claim_no_matching_patterns() {
+        let claim = Claim {
+            agent: "dev".into(),
+            patterns: vec!["agent://myapp-dev".into()],
+            active: true,
+            memo: None,
+            expires_at: None,
+        };
+        assert!(claim.bead_ids().is_empty());
+        assert!(claim.workspace_names().is_empty());
+    }
+}

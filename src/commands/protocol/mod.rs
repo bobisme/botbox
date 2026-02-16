@@ -1,5 +1,7 @@
+pub mod adapters;
 pub mod context;
 pub mod render;
+pub mod shell;
 
 use std::io::IsTerminal;
 use std::path::PathBuf;
