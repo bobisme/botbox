@@ -21,7 +21,7 @@ use crate::config::Config;
 /// Shared flags for all protocol subcommands.
 #[derive(Debug, clap::Args)]
 pub struct ProtocolArgs {
-    /// Agent name (default: $BOTBUS_AGENT or config defaultAgent)
+    /// Agent name (default: $AGENT or config defaultAgent)
     #[arg(long)]
     pub agent: Option<String>,
     /// Project name (default: from .botbox.json)
@@ -40,6 +40,9 @@ impl ProtocolArgs {
     pub fn resolve_agent(&self, config: &crate::config::Config) -> String {
         if let Some(ref agent) = self.agent {
             return agent.clone();
+        }
+        if let Ok(agent) = std::env::var("AGENT") {
+            return agent;
         }
         if let Ok(agent) = std::env::var("BOTBUS_AGENT") {
             return agent;

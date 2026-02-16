@@ -446,8 +446,8 @@ impl Responder {
             .unwrap_or(3);
 
         // Resolve agent name: CLI flag > config default
-        // Note: we intentionally ignore BOTBUS_AGENT here because in hook context
-        // it's set to the message *sender*, not the responder's identity.
+        // Note: we intentionally ignore AGENT/BOTBUS_AGENT here because in hook context
+        // they're set to the message *sender*, not the responder's identity.
         let agent = agent.unwrap_or(default_agent);
 
         // Resolve channel from env (set by hook) — required

@@ -172,9 +172,11 @@ fn is_emoji(c: char) -> bool {
     )
 }
 
-/// Get the agent name from BOTBUS_AGENT env var, falling back to "$AGENT"
+/// Get the agent name from AGENT env var, falling back to BOTBUS_AGENT, then "$AGENT"
 fn agent_name() -> String {
-    std::env::var("BOTBUS_AGENT").unwrap_or_else(|_| "$AGENT".to_string())
+    std::env::var("AGENT")
+        .or_else(|_| std::env::var("BOTBUS_AGENT"))
+        .unwrap_or_else(|_| "$AGENT".to_string())
 }
 
 /// Run triage: wraps `maw exec default -- bv --robot-triage` and formats output

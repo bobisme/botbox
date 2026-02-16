@@ -9,9 +9,10 @@ use crate::subprocess::run_command;
 pub fn run_init_agent(project_root: &Path) -> Result<()> {
     let config_path = project_root.join(".botbox.json");
 
-    // Prefer BOTBUS_AGENT env var (set by --env-inherit when spawned by hooks),
-    // then fall back to config defaultAgent, then bus whoami
-    let agent = std::env::var("BOTBUS_AGENT")
+    // Prefer AGENT env var (set by --env-inherit when spawned by hooks),
+    // then fall back to BOTBUS_AGENT (backwards compat), then config defaultAgent, then bus whoami
+    let agent = std::env::var("AGENT")
+        .or_else(|_| std::env::var("BOTBUS_AGENT"))
         .ok()
         .filter(|a| validate_agent_name(a));
 
@@ -88,7 +89,8 @@ pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Re
     };
 
     // Get agent identity, validated
-    let agent = std::env::var("BOTBUS_AGENT")
+    let agent = std::env::var("AGENT")
+        .or_else(|_| std::env::var("BOTBUS_AGENT"))
         .ok()
         .filter(|a| validate_agent_name(a))
         .or_else(|| {
@@ -163,9 +165,11 @@ pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Re
 
 /// Run the claim-agent hook: stake/refresh/release agent claim
 pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<()> {
-    let agent = match std::env::var("BOTBUS_AGENT") {
+    let agent = match std::env::var("AGENT")
+        .or_else(|_| std::env::var("BOTBUS_AGENT"))
+    {
         Ok(a) if validate_agent_name(&a) => a,
-        _ => return Ok(()), // Silent exit if BOTBUS_AGENT not set or invalid
+        _ => return Ok(()), // Silent exit if AGENT/BOTBUS_AGENT not set or invalid
     };
 
     let claim_uri = format!("agent://{agent}");
