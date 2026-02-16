@@ -1,6 +1,7 @@
 pub mod adapters;
 pub mod cleanup;
 pub mod context;
+pub mod executor;
 pub mod exit_policy;
 pub mod finish;
 pub mod render;
