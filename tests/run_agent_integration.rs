@@ -3,7 +3,7 @@ use predicates::prelude::*;
 
 #[test]
 fn run_agent_requires_prompt() {
-    let mut cmd = cargo::cargo_bin_cmd!("botbox");
+    let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run").arg("agent").arg("claude");
     cmd.assert()
         .failure()
@@ -12,7 +12,7 @@ fn run_agent_requires_prompt() {
 
 #[test]
 fn run_agent_rejects_unknown_agent_type() {
-    let mut cmd = cargo::cargo_bin_cmd!("botbox");
+    let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run")
         .arg("agent")
         .arg("unknown-agent")
@@ -27,7 +27,7 @@ fn run_agent_rejects_unknown_agent_type() {
 fn run_agent_handles_claude_not_found() {
     // This test assumes 'claude' is not in PATH
     // If claude IS installed, this test will fail, which is acceptable
-    let mut cmd = cargo::cargo_bin_cmd!("botbox");
+    let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run")
         .arg("agent")
         .arg("claude")
