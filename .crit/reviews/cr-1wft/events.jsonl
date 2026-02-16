@@ -2,3 +2,4 @@
 {"ts":"2026-02-16T05:04:12.829035544Z","author":"scarlet-lion","event":"ReviewersRequested","data":{"review_id":"cr-1wft","reviewers":["botbox-security"]}}
 {"ts":"2026-02-16T05:09:43.117035534Z","author":"botbox-dev","event":"ReviewerVoted","data":{"review_id":"cr-1wft","vote":"lgtm","reason":"Resume command looks good"}}
 {"ts":"2026-02-16T05:09:43.134074504Z","author":"botbox-dev","event":"ReviewApproved","data":{"review_id":"cr-1wft"}}
+{"ts":"2026-02-16T05:12:05.747366843Z","author":"botbox-dev","event":"ReviewMerged","data":{"review_id":"cr-1wft","final_commit":"ae53e88e872162c7b8d1a3cefcf7a518e0b5f44d"}}

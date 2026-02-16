@@ -138,14 +138,6 @@ impl ProtocolContext {
         Ok(review_resp.review)
     }
 
-    /// List reviews in a workspace by calling `maw exec <ws> -- crit reviews list --format json`.
-    pub fn reviews_in_workspace(&self, workspace: &str) -> Result<Vec<super::adapters::ReviewSummary>, ContextError> {
-        let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "reviews", "list", "--format", "json"])?;
-        let resp = super::adapters::parse_reviews_list(&output)
-            .map_err(|e| ContextError::ParseFailed(format!("reviews in {workspace}: {e}")))?;
-        Ok(resp.reviews)
-    }
-
     /// Check for claim conflicts by querying all claims.
     ///
     /// Returns the conflicting claim if another agent holds the bead.

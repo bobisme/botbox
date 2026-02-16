@@ -2,3 +2,4 @@
 {"ts":"2026-02-16T05:02:01.270019524Z","author":"void-castle","event":"ReviewersRequested","data":{"review_id":"cr-s921","reviewers":["botbox-security"]}}
 {"ts":"2026-02-16T05:09:41.594328045Z","author":"botbox-dev","event":"ReviewerVoted","data":{"review_id":"cr-s921","vote":"lgtm","reason":"Finish command looks good"}}
 {"ts":"2026-02-16T05:09:41.612711125Z","author":"botbox-dev","event":"ReviewApproved","data":{"review_id":"cr-s921"}}
+{"ts":"2026-02-16T05:12:05.585524008Z","author":"botbox-dev","event":"ReviewMerged","data":{"review_id":"cr-s921","final_commit":"a0a6d4e1dd3cce0323bf3c85858438b8d0b440b1"}}
