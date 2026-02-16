@@ -80,6 +80,9 @@ pub enum ProtocolCommand {
         /// Omit bus send announcement (for dispatched workers)
         #[arg(long)]
         dispatched: bool,
+        /// Execute the steps immediately instead of outputting guidance
+        #[arg(long)]
+        execute: bool,
         #[command(flatten)]
         args: ProtocolArgs,
     },
@@ -124,8 +127,8 @@ pub enum ProtocolCommand {
 impl ProtocolCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
-            ProtocolCommand::Start { bead_id, dispatched, args } => {
-                Self::execute_start(bead_id, *dispatched, args)
+            ProtocolCommand::Start { bead_id, dispatched, execute, args } => {
+                Self::execute_start(bead_id, *dispatched, *execute, args)
             }
             ProtocolCommand::Finish { bead_id, no_merge, force, args } => {
                 let project_root = match args.project_root.clone() {
@@ -232,7 +235,9 @@ impl ProtocolCommand {
     /// Analyzes bead status and outputs shell commands to start work.
     /// All status outcomes (ready, blocked, resumable) exit 0 with status in stdout.
     /// Operational failures (config missing, tool unavailable) exit 1 via ProtocolExitError.
-    fn execute_start(bead_id: &str, dispatched: bool, args: &ProtocolArgs) -> anyhow::Result<()> {
+    ///
+    /// If `execute` is true and status is Ready, runs the steps directly via the executor.
+    fn execute_start(bead_id: &str, dispatched: bool, execute: bool, args: &ProtocolArgs) -> anyhow::Result<()> {
         // Determine project root and load config
         let project_root = match args.project_root.clone() {
             Some(p) => p,
@@ -368,6 +373,28 @@ impl ProtocolCommand {
             "Stake bead claim first, then create workspace, stake workspace claim, update bead status, and announce on bus.".to_string()
         );
 
-        exit_policy::render_guidance(&guidance, format)
+        // If --execute is set and status is Ready, execute the steps
+        if execute && guidance.status == render::ProtocolStatus::Ready {
+            let report = executor::execute_steps(&guidance.steps)
+                .map_err(|e| anyhow::anyhow!("step execution failed: {}", e))?;
+
+            let output = executor::render_report(&report, format);
+            println!("{}", output);
+
+            // Return error if any step failed
+            if !report.remaining.is_empty() || report.results.iter().any(|r| !r.success) {
+                return Err(exit_policy::ProtocolExitError::operational(
+                    "start",
+                    "one or more steps failed during execution".to_string(),
+                )
+                .into_exit_error()
+                .into());
+            }
+
+            Ok(())
+        } else {
+            // Otherwise, render guidance as usual
+            exit_policy::render_guidance(&guidance, format)
+        }
     }
 }

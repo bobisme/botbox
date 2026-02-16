@@ -117,7 +117,14 @@ fn extract_workspace_name(stdout: &str) -> Option<String> {
         let after = &stdout[start + 20..];
         if let Some(end) = after.find('\'') {
             let ws_name = &after[..end];
-            if !ws_name.is_empty() {
+            // Validate: must be non-empty, alphanumeric+hyphens, start with alphanumeric
+            // This prevents command injection if maw output were ever malformed
+            if !ws_name.is_empty()
+                && ws_name
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '-')
+                && ws_name.chars().next().unwrap().is_ascii_alphanumeric()
+            {
                 return Some(ws_name.to_string());
             }
         }
@@ -309,6 +316,19 @@ mod tests {
     #[test]
     fn extract_workspace_name_no_match() {
         let stdout = "Error: workspace creation failed\n";
+        assert_eq!(extract_workspace_name(stdout), None);
+    }
+
+    #[test]
+    fn extract_workspace_name_rejects_shell_metacharacters() {
+        // Defense-in-depth: quoted path 1 must validate alphanumeric+hyphens
+        let stdout = "Creating workspace 'foo; rm -rf /'\n";
+        assert_eq!(extract_workspace_name(stdout), None);
+    }
+
+    #[test]
+    fn extract_workspace_name_rejects_spaces_in_quoted() {
+        let stdout = "Creating workspace 'foo bar'\n";
         assert_eq!(extract_workspace_name(stdout), None);
     }
 
