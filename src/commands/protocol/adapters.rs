@@ -86,7 +86,7 @@ pub struct WorkspaceAdvice {
     #[serde(default)]
     pub message: String,
     #[serde(default)]
-    pub details: Option<String>,
+    pub details: Option<serde_json::Value>,
 }
 
 // --- Beads (br show) ---

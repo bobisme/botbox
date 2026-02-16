@@ -6,9 +6,11 @@ pub mod shell;
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
+use anyhow::Context;
 use clap::Subcommand;
 
 use super::doctor::OutputFormat;
+use crate::config::Config;
 
 /// Shared flags for all protocol subcommands.
 #[derive(Debug, clap::Args)]
@@ -113,9 +115,7 @@ impl ProtocolCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
             ProtocolCommand::Start { bead_id, dispatched, args } => {
-                let _ = (bead_id, dispatched, args);
-                eprintln!("botbox protocol start: not yet implemented");
-                Ok(())
+                Self::execute_start(bead_id, *dispatched, args)
             }
             ProtocolCommand::Finish { bead_id, no_merge, force, args } => {
                 let _ = (bead_id, no_merge, force, args);
@@ -138,5 +138,165 @@ impl ProtocolCommand {
                 Ok(())
             }
         }
+    }
+
+    /// Execute the `botbox protocol start <bead-id>` command.
+    ///
+    /// Analyzes bead status and outputs shell commands to start work.
+    fn execute_start(bead_id: &str, dispatched: bool, args: &ProtocolArgs) -> anyhow::Result<()> {
+        // Determine project root and load config
+        let project_root = match args.project_root.clone() {
+            Some(p) => p,
+            None => std::env::current_dir().context("could not determine current directory")?,
+        };
+
+        let config = if project_root.join(".botbox.json").exists() {
+            Config::load(&project_root.join(".botbox.json"))?
+        } else if project_root.join("ws/default/.botbox.json").exists() {
+            Config::load(&project_root.join("ws/default/.botbox.json"))?
+        } else {
+            anyhow::bail!(
+                "No .botbox.json found in {} or {}/ws/default",
+                project_root.display(),
+                project_root.display()
+            );
+        };
+
+        let project = args.resolve_project(&config);
+        let agent = args.resolve_agent(&config);
+        let format = args.resolve_format();
+
+        // Collect state from bus and maw
+        let ctx = context::ProtocolContext::collect(&project, &agent)?;
+
+        // Check if bead exists and get its status
+        let bead_info = match ctx.bead_status(bead_id) {
+            Ok(bead) => bead,
+            Err(_) => {
+                let mut guidance = render::ProtocolGuidance::new("start");
+                guidance.blocked(format!(
+                    "bead {} not found. Check the ID with: maw exec default -- br show {}",
+                    bead_id, bead_id
+                ));
+                let output = render::render(&guidance, format)
+                    .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
+                println!("{}", output);
+                return Ok(());
+            }
+        };
+
+        let mut guidance = render::ProtocolGuidance::new("start");
+        guidance.bead = Some(render::BeadRef {
+            id: bead_id.to_string(),
+            title: bead_info.title.clone(),
+        });
+
+        // Status check: is bead closed?
+        if bead_info.status == "closed" {
+            guidance.blocked("bead is already closed".to_string());
+            let output = render::render(&guidance, format)
+                .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
+            println!("{}", output);
+            return Ok(());
+        }
+
+        // Check for claim conflicts
+        match ctx.check_bead_claim_conflict(bead_id) {
+            Ok(Some(other_agent)) => {
+                guidance.blocked(format!(
+                    "bead already claimed by agent '{}'",
+                    other_agent
+                ));
+                guidance.diagnostic(format!(
+                    "Check current claims with: bus claims list --format json"
+                ));
+                let output = render::render(&guidance, format)
+                    .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
+                println!("{}", output);
+                return Ok(());
+            }
+            Err(e) => {
+                guidance.blocked(format!("failed to check claim conflict: {}", e));
+                let output = render::render(&guidance, format)
+                    .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
+                println!("{}", output);
+                return Ok(());
+            }
+            Ok(None) => {
+                // No conflict, proceed
+            }
+        }
+
+        // Check if agent already holds a bead claim for this ID
+        let held_workspace = ctx.workspace_for_bead(bead_id);
+
+        if let Some(ws_name) = held_workspace {
+            // RESUMABLE: agent already has this bead and workspace
+            guidance.status = render::ProtocolStatus::Resumable;
+            guidance.workspace = Some(ws_name.to_string());
+            guidance.advise(format!(
+                "Resume work in workspace {} with: botbox protocol resume",
+                ws_name
+            ));
+            let output = render::render(&guidance, format)
+                .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
+            println!("{}", output);
+            return Ok(());
+        }
+
+        // READY: generate start commands
+        guidance.status = render::ProtocolStatus::Ready;
+
+        // Build command steps: claim, create workspace, announce
+        let mut steps = Vec::new();
+
+        // 1. Stake bead claim
+        steps.push(format!(
+            "bus claims stake --agent $AGENT \"bead://{}/{}\" -m \"{}\"",
+            project, bead_id, bead_id
+        ));
+
+        // 2. Create workspace
+        steps.push("maw ws create --random".to_string());
+
+        // 3. Capture workspace name (comment for human)
+        steps.push("# Capture workspace name from output above, then stake workspace claim:".to_string());
+
+        // 4. Stake workspace claim (template with $WS placeholder)
+        steps.push(format!(
+            "bus claims stake --agent $AGENT \"workspace://{}/$WS\" -m \"{}\"",
+            project, bead_id
+        ));
+
+        // 5. Update bead status
+        steps.push(format!(
+            "maw exec default -- br update --actor $AGENT {} --status=in_progress --owner=$AGENT",
+            bead_id
+        ));
+
+        // 6. Comment bead with workspace info
+        steps.push(format!(
+            "maw exec default -- br comments add --actor $AGENT --author $AGENT {} \"Started in workspace $WS\"",
+            bead_id
+        ));
+
+        // 7. Announce on bus (unless --dispatched)
+        if !dispatched {
+            steps.push(format!(
+                "bus send --agent $AGENT {} \"Working on {}: {}\" -L task-claim",
+                project, bead_id, shell::shell_escape(&bead_info.title)
+            ));
+        }
+
+        guidance.steps(steps);
+        guidance.advise(
+            "Stake bead claim first, then create workspace, stake workspace claim, update bead status, and announce on bus.".to_string()
+        );
+
+        let output = render::render(&guidance, format)
+            .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
+        println!("{}", output);
+
+        Ok(())
     }
 }
