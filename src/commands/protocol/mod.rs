@@ -96,6 +96,9 @@ pub enum ProtocolCommand {
         /// Output finish commands even without review approval
         #[arg(long)]
         force: bool,
+        /// Execute finish commands directly instead of outputting them
+        #[arg(long)]
+        execute: bool,
         #[command(flatten)]
         args: ProtocolArgs,
     },
@@ -130,7 +133,7 @@ impl ProtocolCommand {
             ProtocolCommand::Start { bead_id, dispatched, execute, args } => {
                 Self::execute_start(bead_id, *dispatched, *execute, args)
             }
-            ProtocolCommand::Finish { bead_id, no_merge, force, args } => {
+            ProtocolCommand::Finish { bead_id, no_merge, force, execute, args } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
                     None => std::env::current_dir()
@@ -153,7 +156,7 @@ impl ProtocolCommand {
                 let agent = args.resolve_agent(&config);
                 let format = args.resolve_format();
 
-                finish::execute(bead_id, *no_merge, *force, &agent, &project, &config, format)
+                finish::execute(bead_id, *no_merge, *force, *execute, &agent, &project, &config, format)
             }
             ProtocolCommand::Review { bead_id, reviewers, review_id, args } => {
                 let project_root = match args.project_root.clone() {

@@ -5,6 +5,7 @@
 //! the review is approved, blocked, or needs review.
 
 use super::context::ProtocolContext;
+use super::executor;
 use super::render::{self, BeadRef, ProtocolGuidance, ProtocolStatus, ReviewRef};
 use super::review_gate::{self, ReviewGateStatus};
 use super::shell;
@@ -16,6 +17,7 @@ pub fn execute(
     bead_id: &str,
     no_merge: bool,
     force: bool,
+    execute: bool,
     agent: &str,
     project: &str,
     config: &Config,
@@ -126,6 +128,12 @@ pub fn execute(
                             Some(&review_id),
                             no_merge,
                         );
+
+                        // Execute if --execute flag is set
+                        if execute {
+                            return execute_and_render(&guidance, format);
+                        }
+
                         guidance.advise(format!(
                             "Review {} approved. Run these commands to finish bead {}.",
                             review_id, bead_id
@@ -257,6 +265,11 @@ pub fn execute(
             no_merge,
         );
 
+        // Execute if --execute flag is set
+        if execute {
+            return execute_and_render(&guidance, format);
+        }
+
         if force && review_enabled {
             guidance.advise(format!(
                 "Force-finishing bead {} without review approval. Run these commands to finish.",
@@ -362,6 +375,24 @@ fn find_review_for_workspace(
     }
 
     None
+}
+
+/// Execute finish steps and render the execution report.
+fn execute_and_render(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::Result<()> {
+    // Execute the steps
+    let report = executor::execute_steps(&guidance.steps)
+        .map_err(|e| anyhow::anyhow!("execution failed: {}", e))?;
+
+    // Render the execution report
+    let output = executor::render_report(&report, format);
+    println!("{}", output);
+
+    // Exit with non-zero if any step failed
+    if !report.remaining.is_empty() || report.results.iter().any(|r| !r.success) {
+        std::process::exit(1);
+    }
+
+    Ok(())
 }
 
 /// Render and print guidance.
