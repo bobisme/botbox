@@ -195,14 +195,17 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
 
    RISK:MEDIUM PATH — Standard review (current default):
      Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
-     CHECK for existing review first:
-       - Run: maw exec default -- br comments <id> | grep "Review created:"
-       - If found, extract <review-id> and skip to requesting review (don't create duplicate)
-     Create review with reviewer assignment (only if none exists):
-       - maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
-       - IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace $WS"
-     bus statuses set --agent {agent} "Review: <review-id>".
-     Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
+     Try protocol command: botbox protocol review <bead-id> --agent {agent}
+     Read the output carefully. If status is Ready, run the suggested commands.
+     If it fails (exit 1 = command unavailable), fall back to manual review request:
+       CHECK for existing review first:
+         - Run: maw exec default -- br comments <id> | grep "Review created:"
+         - If found, extract <review-id> and skip to requesting review (don't create duplicate)
+       Create review with reviewer assignment (only if none exists):
+         - maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
+         - IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace $WS"
+       bus statuses set --agent {agent} "Review: <review-id>".
+       Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
      Do NOT close the bead. Do NOT merge. Do NOT release claims.
      Output: <promise>COMPLETE</promise>
      STOP this iteration.
@@ -239,12 +242,15 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
         let finish_step_7 = if self.dispatched_bead.is_some() {
             format!(
                 r#"7. FINISH (dispatched worker — lead handles merge):
-   Describe commit: maw exec $WS -- jj describe -m "<id>: <summary>"
-   Close bead: maw exec default -- br close --actor {agent} <id> --reason="Completed"
-   Announce: bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
-   Release bead claim: bus claims release --agent {agent} "bead://{project}/<id>"
-   Do NOT merge the workspace — the lead dev will handle merging via the merge protocol.
-   Do NOT run the release check — the lead handles releases.
+   Try protocol command: botbox protocol finish <bead-id> --agent {agent} --no-merge
+   Read the output carefully. If status is Ready, run the suggested commands.
+   If it fails (exit 1 = command unavailable), fall back to manual finish:
+     Describe commit: maw exec $WS -- jj describe -m "<id>: <summary>"
+     Close bead: maw exec default -- br close --actor {agent} <id> --reason="Completed"
+     Announce: bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+     Release bead claim: bus claims release --agent {agent} "bead://{project}/<id>"
+     Do NOT merge the workspace — the lead dev will handle merging via the merge protocol.
+     Do NOT run the release check — the lead handles releases.
    Output: <promise>COMPLETE</promise>"#,
                 agent = self.agent,
                 project = self.project,
@@ -252,17 +258,20 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
         } else {
             format!(
                 r#"7. FINISH (only reached after LGTM from step 0, or after step 6 when REVIEW is false):
-   If a review was conducted:
-     maw exec default -- crit reviews mark-merged <review-id> --agent {agent}.
-   RISK:CRITICAL CHECK — Before merging a risk:critical bead:
-     Verify human approval exists: bus history {project} -n 50 -L review-request | look for approval message referencing this bead/review from an authorized approver.
-     If no approval found, do NOT merge. Post: bus send --agent {agent} {project} "Waiting for human approval on risk:critical <id>" -L review-request. STOP.
-     If approval found, record it: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Human approval: <approver> via bus message <msg-id>"
-   maw exec default -- br comments add --actor {agent} --author {agent} <id> "Completed by {agent}".
-   maw exec default -- br close --actor {agent} <id> --reason="Completed" --suggest-next.
-   bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done.
-   bus claims release --agent {agent} "bead://{project}/<id>".
-   Keep workspace claim — the lead will merge it.
+   Try protocol command: botbox protocol finish <bead-id> --agent {agent}
+   Read the output carefully. If status is Ready, run the suggested commands.
+   If it fails (exit 1 = command unavailable), fall back to manual finish:
+     If a review was conducted:
+       maw exec default -- crit reviews mark-merged <review-id> --agent {agent}.
+     RISK:CRITICAL CHECK — Before merging a risk:critical bead:
+       Verify human approval exists: bus history {project} -n 50 -L review-request | look for approval message referencing this bead/review from an authorized approver.
+       If no approval found, do NOT merge. Post: bus send --agent {agent} {project} "Waiting for human approval on risk:critical <id>" -L review-request. STOP.
+       If approval found, record it: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Human approval: <approver> via bus message <msg-id>"
+     maw exec default -- br comments add --actor {agent} --author {agent} <id> "Completed by {agent}".
+     maw exec default -- br close --actor {agent} <id> --reason="Completed" --suggest-next.
+     bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done.
+     bus claims release --agent {agent} "bead://{project}/<id>".
+     Keep workspace claim — the lead will merge it.
    STOP — do not proceed to RELEASE CHECK (only leads check for releases after merging)."#,
                 agent = self.agent,
                 project = self.project,
@@ -296,32 +305,34 @@ At the end of your work, output exactly one of these completion signals:
 - <promise>BLOCKED</promise> if you are stuck and cannot proceed
 
 0. RESUME CHECK (do this FIRST):
-   Run: bus claims list --agent {agent} --mine
-   If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
-   - Run: maw exec default -- br comments <bead-id> to understand what was done before and what remains.
-   - Look for workspace info in comments (workspace name and path).
-   - If a "Review created: <review-id>" comment exists:
-     * Find the review: maw exec $WS -- crit review <review-id>
-     * Check review status: maw exec $WS -- crit review <review-id>
-     * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
-     * If BLOCKED (changes requested): fix the issues, then re-request review:
-       1. Read threads: maw exec $WS -- crit review <review-id> (threads show inline with comments)
-       2. For each unresolved thread with reviewer feedback:
-          - Fix the code in the workspace (use absolute WS_PATH for file edits)
-          - Reply: maw exec $WS -- crit reply <thread-id> --agent {agent} "Fixed: <what you did>"
-          - Resolve: maw exec $WS -- crit threads resolve <thread-id> --agent {agent}
-       3. Update commit: maw exec $WS -- jj describe -m "<id>: <summary> (addressed review feedback)"
-       4. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers {project}-security --agent {agent}
-       5. Announce: bus send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
-       STOP this iteration — wait for re-review.
-     * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
-     * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
-   - If no review comment (work was in progress when session ended):
-     * Read the workspace code to see what's already done.
-     * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
-     * After completing: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Resumed and completed: <what you finished>".
-     * Then proceed to step 6 (REVIEW REQUEST) or step 7 (FINISH).
-   If no active claims: proceed to step 1 (INBOX).
+   Try protocol command: botbox protocol resume --agent {agent}
+   If it fails (exit 1 = command unavailable), fall back to manual resume check:
+     Run: bus claims list --agent {agent} --mine
+     If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
+     - Run: maw exec default -- br comments <bead-id> to understand what was done before and what remains.
+     - Look for workspace info in comments (workspace name and path).
+     - If a "Review created: <review-id>" comment exists:
+       * Find the review: maw exec $WS -- crit review <review-id>
+       * Check review status: maw exec $WS -- crit review <review-id>
+       * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
+       * If BLOCKED (changes requested): fix the issues, then re-request review:
+         1. Read threads: maw exec $WS -- crit review <review-id> (threads show inline with comments)
+         2. For each unresolved thread with reviewer feedback:
+            - Fix the code in the workspace (use absolute WS_PATH for file edits)
+            - Reply: maw exec $WS -- crit reply <thread-id> --agent {agent} "Fixed: <what you did>"
+            - Resolve: maw exec $WS -- crit threads resolve <thread-id> --agent {agent}
+         3. Update commit: maw exec $WS -- jj describe -m "<id>: <summary> (addressed review feedback)"
+         4. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers {project}-security --agent {agent}
+         5. Announce: bus send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
+         STOP this iteration — wait for re-review.
+       * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
+       * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
+     - If no review comment (work was in progress when session ended):
+       * Read the workspace code to see what's already done.
+       * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
+       * After completing: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Resumed and completed: <what you finished>".
+       * Then proceed to step 6 (REVIEW REQUEST) or step 7 (FINISH).
+     If no active claims: proceed to step 1 (INBOX).
 
 1. INBOX (do this before triaging):
    Run: bus inbox --agent {agent} --channels {project} --mark-read
@@ -370,18 +381,21 @@ At the end of your work, output exactly one of these completion signals:
    - coord:blocker — You need something from a sibling: bus send --agent {agent} {project} "Blocked by <sibling-bead>: <reason>" -L coord:blocker -L "mission:<mission-id>"
    - task-done — Signal completion: bus send --agent {agent} {project} "Completed <id>" -L task-done -L "mission:<mission-id>"
 
-3. START: maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}.
-   bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>".
-   Create workspace: run maw ws create --random. Note the workspace name AND absolute path
-   from the output (e.g., name "frost-castle", path "/abs/path/ws/frost-castle").
-   Store the name as WS and the absolute path as WS_PATH.
-   IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
-   For commands in the workspace: maw exec $WS -- <command>.
-   Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
-   bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>".
-   maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)".
-   bus statuses set --agent {agent} "Working: <id>" --ttl 30m.
-   Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim.
+3. START: Try protocol command: botbox protocol start <bead-id> --agent {agent}
+   Read the output carefully. If status is Ready, run the suggested commands.
+   If it fails (exit 1 = command unavailable), fall back to manual start:
+     maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}.
+     bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>".
+     Create workspace: run maw ws create --random. Note the workspace name AND absolute path
+     from the output (e.g., name "frost-castle", path "/abs/path/ws/frost-castle").
+     Store the name as WS and the absolute path as WS_PATH.
+     IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
+     For commands in the workspace: maw exec $WS -- <command>.
+     Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
+     bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>".
+     maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)".
+     bus statuses set --agent {agent} "Working: <id>" --ttl 30m.
+     Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim.
 
 4. WORK: maw exec default -- br show <id>, then implement the task in the workspace.
    If this bead is part of a mission, check bus for sibling updates BEFORE starting implementation:

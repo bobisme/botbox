@@ -320,31 +320,37 @@ After handling all unfinished beads, proceed to step 2 (RESUME CHECK).
 
 ## 2. RESUME CHECK (check for active claims)
 
-Check CURRENT STATUS above for ACTIVE CLAIMS. If none listed, skip to step 3.
+Try protocol command: botbox protocol resume --agent {agent}
+Read the output carefully. If status is Resumable or HasResources, follow the suggested commands.
+If it fails (exit 1 = command unavailable), fall back to manual resume check:
+  Check CURRENT STATUS above for ACTIVE CLAIMS. If none listed, skip to step 3.
 
-If you hold any claims not covered by unfinished beads in step 1:
-- bead:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.
-- bead:// claim without review: Complete the work, then review or finish.
-- workspace:// claims: These are dispatched workers. Skip to step 7 (MONITOR).
+  If you hold any claims not covered by unfinished beads in step 1:
+  - bead:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.
+  - bead:// claim without review: Complete the work, then review or finish.
+  - workspace:// claims: These are dispatched workers. Skip to step 7 (MONITOR).
 
-If no additional claims: proceed to step 2.5 (ORPHAN CLEANUP).
+  If no additional claims: proceed to step 2.5 (ORPHAN CLEANUP).
 
 ## 2.5. ORPHAN CLEANUP (detect and release stale claims)
 
-Check for orphaned claims from completed or failed work:
-1. List all your claims: bus claims list --agent {agent} --mine --format json
-2. For each bead:// claim:
-   - Extract bead ID from the URI (e.g., "bead://{project}/bd-abc" → "bd-abc")
-   - Check bead status: maw exec default -- br show <id> --json
-   - If bead is CLOSED or BLOCKED: the claim is orphaned
-   - Release it: bus claims release --agent {agent} "bead://{project}/<id>"
-   - If there's a matching workspace:// claim, release that too:
-     bus claims release --agent {agent} "workspace://{project}/<ws>"
-3. For each workspace:// claim without a matching bead:// claim:
-   - Extract workspace name from the URI
-   - Check if workspace exists: maw ws list --format json
-   - If workspace doesn't exist: release the claim
-     bus claims release --agent {agent} "workspace://{project}/<ws>"
+Try protocol command: botbox protocol cleanup --agent {agent}
+Read the output carefully. If status is HasResources, run the suggested cleanup commands.
+If it fails (exit 1 = command unavailable), fall back to manual cleanup:
+  Check for orphaned claims from completed or failed work:
+  1. List all your claims: bus claims list --agent {agent} --mine --format json
+  2. For each bead:// claim:
+     - Extract bead ID from the URI (e.g., "bead://{project}/bd-abc" → "bd-abc")
+     - Check bead status: maw exec default -- br show <id> --json
+     - If bead is CLOSED or BLOCKED: the claim is orphaned
+     - Release it: bus claims release --agent {agent} "bead://{project}/<id>"
+     - If there's a matching workspace:// claim, release that too:
+       bus claims release --agent {agent} "workspace://{project}/<ws>"
+  3. For each workspace:// claim without a matching bead:// claim:
+     - Extract workspace name from the URI
+     - Check if workspace exists: maw ws list --format json
+     - If workspace doesn't exist: release the claim
+       bus claims release --agent {agent} "workspace://{project}/<ws>"
 
 This cleanup prevents orphaned claims from blocking other agents.
 
@@ -398,48 +404,55 @@ Assess bead count:
 
 ## 5a. SEQUENTIAL (1 bead — do it yourself)
 
-Same as the standard worker loop:
-1. maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}
-2. bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>"
-3. maw ws create --random — note workspace NAME and absolute PATH
-4. bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>"
-5. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)"
-6. bus statuses set --agent {agent} "Working: <id>" --ttl 30m
-7. Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim
+START: Try protocol command: botbox protocol start <bead-id> --agent {agent}
+Read the output carefully. If status is Ready, run the suggested commands.
+If it fails (exit 1 = command unavailable), fall back to manual start:
+  1. maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}
+  2. bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>"
+  3. maw ws create --random — note workspace NAME and absolute PATH
+  4. bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>"
+  5. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)"
+  6. bus statuses set --agent {agent} "Working: <id>" --ttl 30m
+  7. Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim
+
+WORK:
 8. Implement the task. All file operations use absolute WS_PATH.
    For commands in workspace: maw exec $WS -- <command>. Do NOT cd into workspace and stay there.
 9. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Progress: ..."
 10. Describe: maw exec $WS -- jj describe -m "<id>: <summary>"
 
-11. REVIEW (risk-aware):
-  Check the bead's risk label (maw exec default -- br show <id>). No risk label = risk:medium.
+REVIEW (risk-aware):
+Check the bead's risk label (maw exec default -- br show <id>). No risk label = risk:medium.
 
-  RISK:LOW (evals, docs, tests, config) — Self-review and merge directly:
-    No security review needed regardless of REVIEW setting.
-    Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
-    Proceed directly to merge/finish below.
+RISK:LOW (evals, docs, tests, config) — Self-review and merge directly:
+  No security review needed regardless of REVIEW setting.
+  Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+  Proceed directly to merge/finish below.
 
-  RISK:MEDIUM — Standard review (if REVIEW is true):
+RISK:MEDIUM — Standard review (if REVIEW is true):
+  Try protocol command: botbox protocol review <bead-id> --agent {agent}
+  Read the output carefully. If status is Ready, run the suggested commands.
+  If it fails (exit 1 = command unavailable), fall back to manual review:
     CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
     Create review with reviewer (if none exists): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
     IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace $WS"
     Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-    STOP this iteration — wait for reviewer.
+  STOP this iteration — wait for reviewer.
 
-  RISK:HIGH — Security review + failure-mode checklist:
-    Same as risk:medium, but add to review description: "risk:high — failure-mode checklist required."
-    MUST request security reviewer. STOP.
+RISK:HIGH — Security review + failure-mode checklist:
+  Same as risk:medium, but add to review description: "risk:high — failure-mode checklist required."
+  MUST request security reviewer. STOP.
 
-  RISK:CRITICAL — Security review + human approval:
-    Same as risk:high, but also post: bus send --agent {agent} {project} "risk:critical review for <id>: requires human approval before merge" -L review-request
-    STOP.
+RISK:CRITICAL — Security review + human approval:
+  Same as risk:high, but also post: bus send --agent {agent} {project} "risk:critical review for <id>: requires human approval before merge" -L review-request
+  STOP.
 
-  If REVIEW is false:
-    Merge: maw ws merge $WS --destroy (produces linear squashed history and auto-moves main)
-    maw exec default -- br close --actor {agent} <id> --reason="Completed"
-    bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
-    bus claims release --agent {agent} --all
-    maw exec default -- br sync --flush-only{push_main_step}
+If REVIEW is false:
+  Merge: maw ws merge $WS --destroy (produces linear squashed history and auto-moves main)
+  maw exec default -- br close --actor {agent} <id> --reason="Completed"
+  bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+  bus claims release --agent {agent} --all
+  maw exec default -- br sync --flush-only{push_main_step}
 
 ## 5b. PARALLEL DISPATCH (2+ beads)
 
