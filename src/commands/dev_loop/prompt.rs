@@ -259,6 +259,11 @@ When all children are closed:
     // Worker dispatch command (built into botbox binary)
     let worker_cmd = "botbox run worker-loop";
 
+    let check_command = ctx
+        .check_command
+        .as_deref()
+        .unwrap_or("just check");
+
     format!(
         r#"You are lead dev agent "{agent}" for project "{project}".
 
@@ -577,7 +582,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
 
   d3. POST-MERGE CHECK:
       After merging, verify compilation in the default workspace:
-        maw exec default -- <project-build-command>  (e.g., cargo check, bun test, npm run build)
+        maw exec default -- {check_command}
       If it fails, the merge introduced a semantic conflict — two workers' code compiles alone but
       not together (e.g., disagreeing type signatures, duplicate symbol names, missing imports).
       Fix it immediately:
@@ -690,6 +695,7 @@ mod tests {
             worker_model: "haiku".to_string(),
             review_enabled: true,
             push_main: false,
+            check_command: Some("cargo clippy && cargo test".to_string()),
             missions_enabled: true,
             missions_config: None,
             multi_lead_enabled: false,

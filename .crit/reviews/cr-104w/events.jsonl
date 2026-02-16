@@ -14,3 +14,5 @@
 {"ts":"2026-02-16T20:09:13.747415811Z","author":"botbox-dev","event":"CommentAdded","data":{"comment_id":"th-2sco.2","thread_id":"th-2sco","body":"Fixed: Replaced std::process::exit(1) with ProtocolExitError::operational(), which follows the project convention of throwing ExitError."}}
 {"ts":"2026-02-16T20:09:13.813759698Z","author":"botbox-dev","event":"ThreadResolved","data":{"thread_id":"th-2sco"}}
 {"ts":"2026-02-16T20:09:21.162840617Z","author":"botbox-dev","event":"ReviewersRequested","data":{"review_id":"cr-104w","reviewers":["botbox-security"]}}
+{"ts":"2026-02-16T20:22:13.484686941Z","author":"botbox-security","event":"ReviewerVoted","data":{"review_id":"cr-104w","vote":"lgtm","reason":"Security fixes verified: (1) path 1 now validates alphanumeric+hyphens identically to path 2 — shell metacharacter injection blocked; (2) $WS substitution safe since both extraction paths enforce the same character set; (3) process::exit replaced with ProtocolExitError. Tests for rejection cases added."}}
+{"ts":"2026-02-16T20:22:13.495411812Z","author":"botbox-security","event":"ReviewApproved","data":{"review_id":"cr-104w"}}

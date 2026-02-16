@@ -21,6 +21,8 @@ pub struct TemplateContext {
     pub review: ReviewConfig,
     /// Install command (optional)
     pub install_command: Option<String>,
+    /// Check command run before merging (optional)
+    pub check_command: Option<String>,
     /// Workflow docs with descriptions
     pub workflow_docs: Vec<DocEntry>,
     /// Design docs with descriptions (filtered by project type)
@@ -57,6 +59,7 @@ impl TemplateContext {
             tools: config.tools.clone(),
             review: config.review.clone(),
             install_command: config.project.install_command.clone(),
+            check_command: config.project.check_command.clone(),
             workflow_docs,
             design_docs,
         }

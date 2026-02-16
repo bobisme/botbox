@@ -21,10 +21,11 @@ All steps below are required — they clean up resources, prevent workspace leak
    - **risk:medium** (default, no label): Standard path — review should already be LGTM before reaching finish.
    - **risk:high**: Verify the security reviewer completed the failure-mode checklist (5 questions answered in review comments) before merge. Check: `maw exec $WS -- crit review <review-id>` and confirm comments address failure modes, edge cases, rollback, monitoring, and validation.
    - **risk:critical**: Verify human approval exists. Check bus history for an approval message referencing the bead/review from a listed approver (`.botbox.json` → `project.criticalApprovers`): `bus history $BOTBOX_PROJECT -n 50`. If found, record the approval message ID in a bead comment: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Human approval received: bus message <msg-id>"`. If no approval found, do NOT merge — instead post: `bus send --agent $AGENT $BOTBOX_PROJECT "risk:critical bead <bead-id> awaiting human approval before merge" -L review-request` and STOP.
-6. **Run quality checks before merge**: Execute the configured check command (from `.botbox.json` → `project.checkCommand`, defaults to `true` if not set):
-   - Run in the workspace: `maw exec $WS -- <checkCommand>`
-   - If checks fail, fix issues and re-test before proceeding to merge
-   - This ensures code quality gates pass before changes reach main
+6. **Run checks before merging**: Run the project's check command in your workspace to verify changes compile and pass tests:
+   - Check `.botbox.json` → `project.checkCommand` for the configured command
+   - Run in the workspace: `maw exec $WS -- <checkCommand>` (e.g., `cargo clippy && cargo test`, `npm test`)
+   - If checks fail, fix the issues before proceeding. Do NOT merge broken code.
+   - If no `checkCommand` is configured, at minimum verify compilation succeeds.
 7. **Merge and destroy the workspace**: `maw ws merge $WS --destroy` (where `$WS` is the workspace name from the start step — **never `default`**)
    - The `--destroy` flag is required — it cleans up the workspace after merging
    - **Never merge or destroy the default workspace.** Default is where other workspaces merge into.

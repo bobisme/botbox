@@ -251,6 +251,7 @@ mod tests {
                 "type": ["cli"],
                 "channel": "myapp",
                 "installCommand": "just install",
+                "checkCommand": "cargo clippy && cargo test",
                 "defaultAgent": "myapp-dev"
             },
             "tools": { "beads": true, "maw": true, "crit": true, "botbus": true, "botty": true },
@@ -272,6 +273,10 @@ mod tests {
         assert!(config.review.enabled);
         assert_eq!(config.review.reviewers, vec!["security"]);
         assert!(!config.push_main);
+        assert_eq!(
+            config.project.check_command,
+            Some("cargo clippy && cargo test".to_string())
+        );
 
         let dev = config.agents.dev.unwrap();
         assert_eq!(dev.model, "opus");

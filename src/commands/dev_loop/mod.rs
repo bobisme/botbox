@@ -56,6 +56,8 @@ pub fn run(
         .as_ref()
         .is_some_and(|m| m.enabled);
 
+    let check_command = config.project.check_command.clone();
+
     let ctx = LoopContext {
         agent: agent.clone(),
         project: project.clone(),
@@ -63,6 +65,7 @@ pub fn run(
         worker_model,
         review_enabled,
         push_main,
+        check_command,
         missions_enabled,
         missions_config,
         multi_lead_enabled,
@@ -278,6 +281,7 @@ pub struct LoopContext {
     pub worker_model: String,
     pub review_enabled: bool,
     pub push_main: bool,
+    pub check_command: Option<String>,
     pub missions_enabled: bool,
     pub missions_config: Option<crate::config::MissionsConfig>,
     pub multi_lead_enabled: bool,

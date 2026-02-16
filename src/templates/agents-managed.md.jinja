@@ -91,6 +91,7 @@ All commands support JSON output with `--format json` for parsing. If a command 
 
 - Create a bead before starting work. Update status: `open` → `in_progress` → `closed`.
 - Post progress comments during work for crash recovery.
+- **Run checks before requesting review**: {% if check_command %}`{{ check_command }}`{% else %}`just check` (or your project's build/test command){% endif %}. Fix any failures before proceeding.
 - After finishing a bead, follow [finish.md](.agents/botbox/finish.md). **Workers: do NOT push** — the lead handles merges and pushes.
 {% if install_command %}- **Install locally** after releasing: `{{ install_command }}`
 {% endif %}

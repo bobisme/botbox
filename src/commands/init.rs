@@ -57,6 +57,9 @@ pub struct InitArgs {
     /// Install command (e.g., "just install")
     #[arg(long)]
     pub install_command: Option<String>,
+    /// Check command run before merging (e.g., "just check", "cargo check")
+    #[arg(long)]
+    pub check_command: Option<String>,
     /// Non-interactive mode
     #[arg(long)]
     pub no_interactive: bool,
@@ -337,6 +340,10 @@ impl InitArgs {
             args.push("--install-command".into());
             args.push(cmd.clone());
         }
+        if let Some(ref cmd) = self.check_command {
+            args.push("--check-command".into());
+            args.push(cmd.clone());
+        }
         if self.force {
             args.push("--force".into());
         }
@@ -524,27 +531,17 @@ impl InitArgs {
             None
         };
 
-        // Check command
-        let check_command = if interactive {
-            let default = match types.first().map(|s| s.as_str()) {
-                Some("cli") | Some("api") | Some("library") => {
-                    if types.iter().any(|t| t == "rust") {
-                        Some("cargo test && cargo clippy -- -D warnings")
-                    } else if types.iter().any(|t| t == "node") {
-                        Some("npm test")
-                    } else {
-                        Some("true")
-                    }
-                }
-                _ => Some("true"),
-            };
-            if prompt_confirm("Run quality checks before merge?", true)? {
-                Some(prompt_input("Check command", default)?)
-            } else {
-                Some("true".to_string())
-            }
+        // Check command (auto-detect from language, allow override)
+        let check_command = if let Some(ref cmd) = self.check_command {
+            Some(cmd.clone())
         } else {
-            None
+            let auto = detect_check_command(&languages);
+            if interactive {
+                let default = auto.as_deref().unwrap_or("just check");
+                Some(prompt_input("Build/check command (run before merging)", Some(default))?)
+            } else {
+                auto
+            }
         };
 
         Ok(InitChoices {
@@ -636,6 +633,23 @@ fn detect_from_agents_md(content: &str) -> DetectedConfig {
     }
 
     config
+}
+
+// --- Language detection ---
+
+/// Auto-detect the appropriate check command from the selected languages.
+fn detect_check_command(languages: &[String]) -> Option<String> {
+    for lang in languages {
+        match lang.as_str() {
+            "rust" => return Some("cargo clippy && cargo test".to_string()),
+            "typescript" | "node" => return Some("npm run build && npm test".to_string()),
+            "python" => return Some("python -m pytest".to_string()),
+            "go" => return Some("go vet ./... && go test ./...".to_string()),
+            "java" => return Some("mvn verify".to_string()),
+            _ => {}
+        }
+    }
+    None
 }
 
 // --- Config building ---
