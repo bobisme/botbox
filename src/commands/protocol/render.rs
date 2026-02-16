@@ -12,6 +12,14 @@ use std::fmt::Write;
 ///
 /// Provides a snapshot of agent state (beads, workspaces, reviews) with
 /// next steps as shell commands agents can execute.
+///
+/// Freshness Semantics:
+/// - `snapshot_at`: UTC timestamp when this guidance was generated
+/// - `valid_for_sec`: How long this guidance remains fresh (in seconds)
+/// - `revalidate_cmd`: If present, run this command to refresh guidance
+///
+/// Agents receiving stale guidance (snapshot_at + valid_for_sec < now) should
+/// re-run the revalidate_cmd to get fresh state before executing steps.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProtocolGuidance {
     /// Schema version for machine parsing
@@ -22,6 +30,10 @@ pub struct ProtocolGuidance {
     pub status: ProtocolStatus,
     /// UTC ISO 8601 snapshot timestamp
     pub snapshot_at: String,
+    /// Validity duration in seconds (how long this guidance is fresh)
+    pub valid_for_sec: u32,
+    /// Command to re-fetch fresh guidance if stale (e.g., "botbox protocol start")
+    pub revalidate_cmd: Option<String>,
     /// Bead context (if applicable)
     pub bead: Option<BeadRef>,
     /// Workspace name (if applicable)
@@ -38,12 +50,15 @@ pub struct ProtocolGuidance {
 
 impl ProtocolGuidance {
     /// Create a new guidance with ready status.
+    /// Default freshness: 300 seconds (5 minutes)
     pub fn new(command: &'static str) -> Self {
         Self {
             schema: "protocol-guidance.v1",
             command,
             status: ProtocolStatus::Ready,
             snapshot_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            valid_for_sec: 300, // 5 minutes default
+            revalidate_cmd: None,
             bead: None,
             workspace: None,
             review: None,
@@ -51,6 +66,13 @@ impl ProtocolGuidance {
             diagnostics: Vec::new(),
             advice: None,
         }
+    }
+
+    /// Set the validity duration and optional revalidate command.
+    /// Use this to control how long guidance remains fresh.
+    pub fn set_freshness(&mut self, valid_for_sec: u32, revalidate_cmd: Option<String>) {
+        self.valid_for_sec = valid_for_sec;
+        self.revalidate_cmd = revalidate_cmd;
     }
 
     /// Add a step command.
@@ -151,6 +173,7 @@ pub fn render_text(guidance: &ProtocolGuidance) -> String {
     // Header
     writeln!(&mut out, "Command: {}", guidance.command).unwrap();
     writeln!(&mut out, "Status: {}", format_status(guidance.status)).unwrap();
+    writeln!(&mut out, "Snapshot: {} (valid for {}s)", guidance.snapshot_at, guidance.valid_for_sec).unwrap();
 
     if let Some(ref bead) = guidance.bead {
         writeln!(&mut out, "Bead: {} ({})", bead.id, bead.title).unwrap();
@@ -160,6 +183,10 @@ pub fn render_text(guidance: &ProtocolGuidance) -> String {
     }
     if let Some(ref review) = guidance.review {
         writeln!(&mut out, "Review: {} ({})", review.review_id, review.status).unwrap();
+    }
+
+    if let Some(ref cmd) = guidance.revalidate_cmd {
+        writeln!(&mut out, "Revalidate: {}", cmd).unwrap();
     }
 
     if !guidance.diagnostics.is_empty() {
@@ -225,6 +252,13 @@ pub fn render_pretty(guidance: &ProtocolGuidance) -> String {
     )
     .unwrap();
 
+    writeln!(
+        &mut out,
+        "{}Snapshot:{} {} (valid for {}s)",
+        bold, reset, guidance.snapshot_at, guidance.valid_for_sec
+    )
+    .unwrap();
+
     if let Some(ref bead) = guidance.bead {
         writeln!(
             &mut out,
@@ -243,6 +277,10 @@ pub fn render_pretty(guidance: &ProtocolGuidance) -> String {
             bold, reset, review.review_id, review.status
         )
         .unwrap();
+    }
+
+    if let Some(ref cmd) = guidance.revalidate_cmd {
+        writeln!(&mut out, "{}Revalidate:{} {}", bold, reset, cmd).unwrap();
     }
 
     if !guidance.diagnostics.is_empty() {
@@ -616,5 +654,194 @@ mod tests {
         // Should be ISO 8601 / RFC 3339 format
         assert!(g.snapshot_at.contains("T"));
         assert!(g.snapshot_at.contains("Z") || g.snapshot_at.contains("+"));
+    }
+
+    // --- Freshness Semantics Tests ---
+
+    #[test]
+    fn guidance_default_freshness() {
+        let g = ProtocolGuidance::new("start");
+        assert_eq!(g.valid_for_sec, 300); // 5 minutes default
+        assert!(g.revalidate_cmd.is_none());
+    }
+
+    #[test]
+    fn guidance_set_freshness() {
+        let mut g = ProtocolGuidance::new("start");
+        g.set_freshness(600, Some("botbox protocol start".to_string()));
+        assert_eq!(g.valid_for_sec, 600);
+        assert_eq!(g.revalidate_cmd, Some("botbox protocol start".to_string()));
+    }
+
+    #[test]
+    fn render_text_includes_freshness() {
+        let mut g = ProtocolGuidance::new("start");
+        g.set_freshness(300, Some("botbox protocol start".to_string()));
+        let text = render_text(&g);
+        assert!(text.contains("Snapshot:"));
+        assert!(text.contains("valid for 300s"));
+        assert!(text.contains("Revalidate: botbox protocol start"));
+    }
+
+    #[test]
+    fn render_json_includes_freshness() {
+        let mut g = ProtocolGuidance::new("start");
+        g.set_freshness(600, Some("botbox protocol start".to_string()));
+        let json = render_json(&g).unwrap();
+        assert!(json.contains("valid_for_sec"));
+        assert!(json.contains("600"));
+        assert!(json.contains("revalidate_cmd"));
+    }
+
+    #[test]
+    fn guidance_stale_window_logic() {
+        // This test demonstrates how clients should detect stale guidance.
+        let mut g = ProtocolGuidance::new("start");
+        g.set_freshness(1, Some("botbox protocol start".to_string())); // 1 second fresh
+
+        let guidance_json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&guidance_json).unwrap();
+
+        let snapshot_str = parsed["snapshot_at"].as_str().unwrap();
+        let valid_for_sec = parsed["valid_for_sec"].as_u64().unwrap();
+        let revalidate_cmd = parsed["revalidate_cmd"].as_str();
+
+        assert!(!snapshot_str.is_empty());
+        assert_eq!(valid_for_sec, 1);
+        assert!(revalidate_cmd.is_some());
+    }
+
+    // --- Golden Schema Tests: Contract Stability ---
+
+    #[test]
+    fn golden_schema_version_is_stable() {
+        let g = ProtocolGuidance::new("start");
+        assert_eq!(g.schema, "protocol-guidance.v1");
+    }
+
+    #[test]
+    fn golden_status_variants_are_complete() {
+        let _statuses = vec![
+            ProtocolStatus::Ready,
+            ProtocolStatus::Blocked,
+            ProtocolStatus::Resumable,
+            ProtocolStatus::NeedsReview,
+            ProtocolStatus::HasResources,
+            ProtocolStatus::Clean,
+            ProtocolStatus::HasWork,
+            ProtocolStatus::Fresh,
+        ];
+        assert_eq!(_statuses.len(), 8);
+    }
+
+    #[test]
+    fn golden_guidance_json_structure() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "test".to_string(),
+        });
+        g.workspace = Some("test-ws".to_string());
+        g.step("echo test".to_string());
+        g.diagnostic("info".to_string());
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed.get("schema").is_some(), "schema field missing");
+        assert!(parsed.get("command").is_some(), "command field missing");
+        assert!(parsed.get("status").is_some(), "status field missing");
+        assert!(parsed.get("snapshot_at").is_some(), "snapshot_at field missing");
+        assert!(parsed.get("valid_for_sec").is_some(), "valid_for_sec field missing");
+        assert!(parsed.get("steps").is_some(), "steps field missing");
+        assert!(parsed.get("diagnostics").is_some(), "diagnostics field missing");
+    }
+
+    #[test]
+    fn golden_minimal_guidance_json() {
+        let g = ProtocolGuidance::new("cleanup");
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["schema"].as_str(), Some("protocol-guidance.v1"));
+        assert_eq!(parsed["command"].as_str(), Some("cleanup"));
+        assert_eq!(parsed["status"].as_str(), Some("Ready"));
+        assert!(parsed["snapshot_at"].is_string());
+        assert_eq!(parsed["valid_for_sec"].as_u64(), Some(300));
+        assert!(parsed["steps"].is_array());
+        assert!(parsed["diagnostics"].is_array());
+    }
+
+    #[test]
+    fn golden_full_guidance_json() {
+        let mut g = ProtocolGuidance::new("review");
+        g.bead = Some(BeadRef {
+            id: "bd-abc".to_string(),
+            title: "Feature X".to_string(),
+        });
+        g.workspace = Some("worker-1".to_string());
+        g.review = Some(ReviewRef {
+            review_id: "cr-123".to_string(),
+            status: "open".to_string(),
+        });
+        g.set_freshness(600, Some("botbox protocol review".to_string()));
+        g.step("maw exec worker-1 -- crit reviews request cr-123 --reviewers botbox-security --agent $AGENT".to_string());
+        g.diagnostic("awaiting review approval".to_string());
+        g.advise("Review is pending.".to_string());
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert!(parsed["bead"]["id"].as_str().is_some());
+        assert!(parsed["workspace"].as_str().is_some());
+        assert!(parsed["review"]["review_id"].as_str().is_some());
+        assert_eq!(parsed["valid_for_sec"].as_u64(), Some(600));
+        assert!(parsed["revalidate_cmd"].as_str().is_some());
+        assert!(!parsed["steps"].as_array().unwrap().is_empty());
+        assert!(!parsed["diagnostics"].as_array().unwrap().is_empty());
+        assert!(parsed["advice"].is_string());
+    }
+
+    #[test]
+    fn golden_text_render_includes_all_fields() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "protocol: renderer".to_string(),
+        });
+        g.workspace = Some("work-1".to_string());
+        g.set_freshness(300, Some("botbox protocol start".to_string()));
+        g.step("maw ws create work-1".to_string());
+        g.advise("Start implementation".to_string());
+
+        let text = render_text(&g);
+
+        assert!(text.contains("Command:"), "Command field missing");
+        assert!(text.contains("Status:"), "Status field missing");
+        assert!(text.contains("Snapshot:"), "Snapshot field missing");
+        assert!(text.contains("Bead:"), "Bead field missing");
+        assert!(text.contains("Workspace:"), "Workspace field missing");
+        assert!(text.contains("Revalidate:"), "Revalidate field missing");
+        assert!(text.contains("Steps:"), "Steps field missing");
+        assert!(text.contains("Advice:"), "Advice field missing");
+    }
+
+    #[test]
+    fn golden_compatibility_additive_only() {
+        let g = ProtocolGuidance::new("start");
+
+        let _schema = g.schema;
+        let _command = g.command;
+        let _status = g.status;
+        let _snapshot_at = g.snapshot_at;
+        let _valid_for_sec = g.valid_for_sec;
+        let _steps = g.steps;
+        let _diagnostics = g.diagnostics;
+
+        assert!(g.bead.is_none());
+        assert!(g.workspace.is_none());
+        assert!(g.review.is_none());
+        assert!(g.revalidate_cmd.is_none());
+        assert!(g.advice.is_none());
     }
 }
