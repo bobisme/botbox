@@ -2,7 +2,7 @@
 
 ![botbox utopia](images/botbox-utopia.webp)
 
-Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps projects and keeps workflow docs in sync.
+Setup, sync, and runtime for multi-agent workflows. Bootstraps projects, keeps workflow docs in sync, and runs agent loops with built-in protocol guidance.
 
 ## Eval Results
 
@@ -27,8 +27,9 @@ Setup and sync tool for multi-agent workflows. NOT a runtime — bootstraps proj
 2. **Syncs workflow docs** from a canonical source to `.agents/botbox/`
 3. **Validates health** via `doctor` command
 4. **Runs agent loops** as built-in subcommands (`dev-loop`, `worker-loop`, `reviewer-loop`, `responder`)
+5. **Provides protocol commands** that guide agents through state transitions (`protocol start`, `merge`, `finish`, etc.)
 
-It glues together 5 companion tools (bus, maw, br/bv, crit, botty) into a cohesive workflow.
+It glues together 5 companion tools (bus, maw, br/bv, crit, botty) into a cohesive workflow and provides the runtime that drives agent behavior.
 
 ## Install
 
@@ -55,6 +56,16 @@ botbox sync --check
 
 # Validate toolchain and project setup
 botbox doctor
+
+# Run agent loops (typically invoked by botty spawn, not manually)
+botbox run dev-loop --agent myproject-dev
+botbox run worker-loop --agent myproject-dev/worker-1
+botbox run reviewer-loop --agent myproject-security
+
+# Protocol commands — check state and get guidance at transitions
+botbox protocol start <bead-id> --agent $AGENT
+botbox protocol merge <workspace> --agent $AGENT
+botbox protocol finish <bead-id> --agent $AGENT
 ```
 
 ## What gets created?
@@ -137,7 +148,7 @@ Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https:
 4. **crit** enables code review: agents request reviews, reviewers comment, and changes merge after approval
 5. **botty** spawns and manages agent processes, handling crashes and lifecycle
 
-**botbox** doesn't run these tools—it configures projects to use them and keeps workflow docs synchronized.
+**botbox** configures projects to use these tools, keeps workflow docs synchronized, and runs the agent loops (`botbox run dev-loop`, `botbox run worker-loop`, etc.) that drive the entire workflow.
 
 ## Cross-project feedback
 
