@@ -1,2 +1,620 @@
-// Shell-safe command renderer and protocol guidance types.
-// Implementation in bd-3t1d.
+//! Shell-safe command renderer and protocol guidance types.
+//!
+//! Renders protocol guidance with shell-safe commands, validation, and format support.
+
+use crate::commands::doctor::OutputFormat;
+use serde::{Deserialize, Serialize};
+use std::fmt::Write;
+
+// --- Core Types ---
+
+/// A rendered protocol guidance output.
+///
+/// Provides a snapshot of agent state (beads, workspaces, reviews) with
+/// next steps as shell commands agents can execute.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ProtocolGuidance {
+    /// Schema version for machine parsing
+    pub schema: &'static str,
+    /// Command type: "start", "finish", "review", "cleanup", "resume"
+    pub command: &'static str,
+    /// Status indicating readiness or blocker
+    pub status: ProtocolStatus,
+    /// UTC ISO 8601 snapshot timestamp
+    pub snapshot_at: String,
+    /// Bead context (if applicable)
+    pub bead: Option<BeadRef>,
+    /// Workspace name (if applicable)
+    pub workspace: Option<String>,
+    /// Review context (if applicable)
+    pub review: Option<ReviewRef>,
+    /// Rendered shell commands (ready to copy-paste)
+    pub steps: Vec<String>,
+    /// Diagnostic messages if blocked or errored
+    pub diagnostics: Vec<String>,
+    /// Human-readable summary
+    pub advice: Option<String>,
+}
+
+impl ProtocolGuidance {
+    /// Create a new guidance with ready status.
+    pub fn new(command: &'static str) -> Self {
+        Self {
+            schema: "protocol-guidance.v1",
+            command,
+            status: ProtocolStatus::Ready,
+            snapshot_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
+            bead: None,
+            workspace: None,
+            review: None,
+            steps: Vec::new(),
+            diagnostics: Vec::new(),
+            advice: None,
+        }
+    }
+
+    /// Add a step command.
+    pub fn step(&mut self, cmd: String) {
+        self.steps.push(cmd);
+    }
+
+    /// Add multiple steps.
+    pub fn steps(&mut self, cmds: Vec<String>) {
+        self.steps.extend(cmds);
+    }
+
+    /// Add a diagnostic message (e.g., reason for blocked status).
+    pub fn diagnostic(&mut self, msg: String) {
+        self.diagnostics.push(msg);
+    }
+
+    /// Set status and add corresponding diagnostics.
+    pub fn blocked(&mut self, reason: String) {
+        self.status = ProtocolStatus::Blocked;
+        self.diagnostic(reason);
+    }
+
+    /// Set advice message (human-readable summary).
+    pub fn advise(&mut self, msg: String) {
+        self.advice = Some(msg);
+    }
+}
+
+/// Protocol status indicating readiness, blockers, or next action.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+pub enum ProtocolStatus {
+    Ready,        // Commands are ready to run
+    Blocked,      // Cannot proceed; diagnostics explain why
+    Resumable,    // Work in progress; resume from previous state
+    NeedsReview,  // Awaiting review approval
+    HasResources, // Workspace/claims held
+    Clean,        // No held resources
+    HasWork,      // Ready beads available
+    Fresh,        // Starting fresh (no prior state)
+}
+
+/// Bead reference in protocol output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeadRef {
+    pub id: String,
+    pub title: String,
+}
+
+/// Review reference in protocol output.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReviewRef {
+    pub review_id: String,
+    pub status: String,
+}
+
+// --- Validation (from shell module) ---
+
+use super::shell::{
+    validate_bead_id, validate_review_id, validate_workspace_name, ValidationError,
+};
+
+/// Validate all dynamic values in a guidance before rendering.
+pub fn validate_guidance(guidance: &ProtocolGuidance) -> Result<(), ValidationError> {
+    if let Some(ref bead) = guidance.bead {
+        validate_bead_id(&bead.id)?;
+    }
+    if let Some(ref ws) = guidance.workspace {
+        validate_workspace_name(ws)?;
+    }
+    if let Some(ref review) = guidance.review {
+        validate_review_id(&review.review_id)?;
+    }
+    Ok(())
+}
+
+// --- Rendering ---
+
+/// Render guidance as human/agent-readable text.
+///
+/// Format:
+/// ```text
+/// Command: start
+/// Status: Ready
+/// Bead: bd-3t1d (protocol: shell-safe command renderer)
+/// Workspace: brave-tiger
+///
+/// Steps:
+/// 1. bus send --agent $AGENT botbox 'Working...' -L task-claim
+/// 2. maw ws create --random
+///
+/// Advice: Create workspace and stake claims before starting implementation.
+/// ```
+pub fn render_text(guidance: &ProtocolGuidance) -> String {
+    let mut out = String::new();
+
+    // Header
+    writeln!(&mut out, "Command: {}", guidance.command).unwrap();
+    writeln!(&mut out, "Status: {}", format_status(guidance.status)).unwrap();
+
+    if let Some(ref bead) = guidance.bead {
+        writeln!(&mut out, "Bead: {} ({})", bead.id, bead.title).unwrap();
+    }
+    if let Some(ref ws) = guidance.workspace {
+        writeln!(&mut out, "Workspace: {}", ws).unwrap();
+    }
+    if let Some(ref review) = guidance.review {
+        writeln!(&mut out, "Review: {} ({})", review.review_id, review.status).unwrap();
+    }
+
+    if !guidance.diagnostics.is_empty() {
+        writeln!(&mut out).unwrap();
+        writeln!(&mut out, "Diagnostics:").unwrap();
+        for (i, diag) in guidance.diagnostics.iter().enumerate() {
+            writeln!(&mut out, "  {}. {}", i + 1, diag).unwrap();
+        }
+    }
+
+    if !guidance.steps.is_empty() {
+        writeln!(&mut out).unwrap();
+        writeln!(&mut out, "Steps:").unwrap();
+        for (i, step) in guidance.steps.iter().enumerate() {
+            writeln!(&mut out, "  {}. {}", i + 1, step).unwrap();
+        }
+    }
+
+    if let Some(ref advice) = guidance.advice {
+        writeln!(&mut out).unwrap();
+        writeln!(&mut out, "Advice: {}", advice).unwrap();
+    }
+
+    out
+}
+
+/// Render guidance as JSON with schema version and structured data.
+pub fn render_json(guidance: &ProtocolGuidance) -> Result<String, serde_json::Error> {
+    let json = serde_json::to_string_pretty(guidance)?;
+    Ok(json)
+}
+
+/// Render guidance as colored TTY output (for humans).
+///
+/// Uses ANSI color codes for status, headers, and command highlighting.
+pub fn render_pretty(guidance: &ProtocolGuidance) -> String {
+    let mut out = String::new();
+
+    // Color codes
+    let reset = "\x1b[0m";
+    let bold = "\x1b[1m";
+    let green = "\x1b[32m";
+    let yellow = "\x1b[33m";
+    let red = "\x1b[31m";
+
+    // Status color
+    let status_color = match guidance.status {
+        ProtocolStatus::Ready | ProtocolStatus::Clean | ProtocolStatus::Fresh => green,
+        ProtocolStatus::Blocked | ProtocolStatus::HasWork => red,
+        _ => yellow,
+    };
+
+    // Header
+    writeln!(&mut out, "{}Command:{} {}", bold, reset, guidance.command).unwrap();
+    writeln!(
+        &mut out,
+        "{}Status:{} {}{}{}\n",
+        bold,
+        reset,
+        status_color,
+        format_status(guidance.status),
+        reset
+    )
+    .unwrap();
+
+    if let Some(ref bead) = guidance.bead {
+        writeln!(
+            &mut out,
+            "{}Bead:{} {} ({})",
+            bold, reset, bead.id, bead.title
+        )
+        .unwrap();
+    }
+    if let Some(ref ws) = guidance.workspace {
+        writeln!(&mut out, "{}Workspace:{} {}", bold, reset, ws).unwrap();
+    }
+    if let Some(ref review) = guidance.review {
+        writeln!(
+            &mut out,
+            "{}Review:{} {} ({})",
+            bold, reset, review.review_id, review.status
+        )
+        .unwrap();
+    }
+
+    if !guidance.diagnostics.is_empty() {
+        writeln!(&mut out, "\n{}Diagnostics:{}", bold, reset).unwrap();
+        for diag in &guidance.diagnostics {
+            writeln!(&mut out, "  {}{}{}", red, diag, reset).unwrap();
+        }
+    }
+
+    if !guidance.steps.is_empty() {
+        writeln!(&mut out, "\n{}Steps:{}", bold, reset).unwrap();
+        for (i, step) in guidance.steps.iter().enumerate() {
+            writeln!(&mut out, "  {}. {}", i + 1, step).unwrap();
+        }
+    }
+
+    if let Some(ref advice) = guidance.advice {
+        writeln!(&mut out, "\n{}Advice:{} {}", bold, reset, advice).unwrap();
+    }
+
+    out
+}
+
+/// Format status as human-readable string.
+fn format_status(status: ProtocolStatus) -> &'static str {
+    match status {
+        ProtocolStatus::Ready => "Ready",
+        ProtocolStatus::Blocked => "Blocked",
+        ProtocolStatus::Resumable => "Resumable",
+        ProtocolStatus::NeedsReview => "Needs Review",
+        ProtocolStatus::HasResources => "Has Resources",
+        ProtocolStatus::Clean => "Clean",
+        ProtocolStatus::HasWork => "Has Work",
+        ProtocolStatus::Fresh => "Fresh",
+    }
+}
+
+/// Render guidance using the specified format.
+pub fn render(guidance: &ProtocolGuidance, format: OutputFormat) -> Result<String, String> {
+    // Validate before rendering
+    validate_guidance(guidance).map_err(|e| e.to_string())?;
+
+    Ok(match format {
+        OutputFormat::Json => {
+            render_json(guidance).map_err(|e| e.to_string())?
+        }
+        OutputFormat::Pretty => render_pretty(guidance),
+        OutputFormat::Text => render_text(guidance),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- ProtocolGuidance builder tests ---
+
+    #[test]
+    fn guidance_new_start() {
+        let g = ProtocolGuidance::new("start");
+        assert_eq!(g.command, "start");
+        assert_eq!(g.status, ProtocolStatus::Ready);
+        assert_eq!(g.steps.len(), 0);
+    }
+
+    #[test]
+    fn guidance_add_step() {
+        let mut g = ProtocolGuidance::new("start");
+        g.step("echo hello".to_string());
+        assert_eq!(g.steps.len(), 1);
+        assert_eq!(g.steps[0], "echo hello");
+    }
+
+    #[test]
+    fn guidance_add_multiple_steps() {
+        let mut g = ProtocolGuidance::new("finish");
+        g.steps(vec![
+            "cmd1".to_string(),
+            "cmd2".to_string(),
+            "cmd3".to_string(),
+        ]);
+        assert_eq!(g.steps.len(), 3);
+    }
+
+    #[test]
+    fn guidance_blocked() {
+        let mut g = ProtocolGuidance::new("start");
+        g.blocked("workspace not found".to_string());
+        assert_eq!(g.status, ProtocolStatus::Blocked);
+        assert_eq!(g.diagnostics.len(), 1);
+        assert!(g.diagnostics[0].contains("workspace"));
+    }
+
+    #[test]
+    fn guidance_with_bead_and_workspace() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "protocol: shell-safe command renderer".to_string(),
+        });
+        g.workspace = Some("brave-tiger".to_string());
+        assert!(g.bead.is_some());
+        assert!(g.workspace.is_some());
+    }
+
+    #[test]
+    fn guidance_with_review() {
+        let mut g = ProtocolGuidance::new("review");
+        g.review = Some(ReviewRef {
+            review_id: "cr-abc1".to_string(),
+            status: "open".to_string(),
+        });
+        assert!(g.review.is_some());
+    }
+
+    #[test]
+    fn guidance_with_advice() {
+        let mut g = ProtocolGuidance::new("start");
+        g.advise("Create workspace and stake claims first.".to_string());
+        assert!(g.advice.is_some());
+        assert!(g.advice.as_ref().unwrap().contains("workspace"));
+    }
+
+    // --- Validation tests ---
+
+    #[test]
+    fn validate_guidance_valid() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "test".to_string(),
+        });
+        g.workspace = Some("brave-tiger".to_string());
+        assert!(validate_guidance(&g).is_ok());
+    }
+
+    #[test]
+    fn validate_guidance_invalid_bead_id() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "invalid-id".to_string(),
+            title: "test".to_string(),
+        });
+        assert!(validate_guidance(&g).is_err());
+    }
+
+    #[test]
+    fn validate_guidance_invalid_workspace_name() {
+        let mut g = ProtocolGuidance::new("start");
+        g.workspace = Some("invalid name".to_string());
+        assert!(validate_guidance(&g).is_err());
+    }
+
+    // --- Rendering tests ---
+
+    #[test]
+    fn render_text_minimal() {
+        let g = ProtocolGuidance::new("start");
+        let text = render_text(&g);
+        assert!(text.contains("Command: start"));
+        assert!(text.contains("Status: Ready"));
+    }
+
+    #[test]
+    fn render_text_with_bead_and_steps() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-abc".to_string(),
+            title: "Test feature".to_string(),
+        });
+        g.step("echo step 1".to_string());
+        g.step("echo step 2".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Bead: bd-abc (Test feature)"));
+        assert!(text.contains("Steps:"));
+        assert!(text.contains("echo step 1"));
+        assert!(text.contains("echo step 2"));
+    }
+
+    #[test]
+    fn render_text_with_diagnostics() {
+        let mut g = ProtocolGuidance::new("finish");
+        g.blocked("review not approved".to_string());
+        g.diagnostic("waiting for LGTM".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Blocked"));
+        assert!(text.contains("Diagnostics:"));
+        assert!(text.contains("review not approved"));
+        assert!(text.contains("waiting for LGTM"));
+    }
+
+    #[test]
+    fn render_text_with_advice() {
+        let mut g = ProtocolGuidance::new("cleanup");
+        g.advise("Run the cleanup steps to release held resources.".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Advice:"));
+        assert!(text.contains("cleanup steps"));
+    }
+
+    #[test]
+    fn render_json_valid() {
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-xyz".to_string(),
+            title: "Feature".to_string(),
+        });
+        g.step("echo test".to_string());
+
+        let json = render_json(&g).unwrap();
+        assert!(json.contains("schema"));
+        assert!(json.contains("protocol-guidance.v1"));
+        assert!(json.contains("\"command\": \"start\"") || json.contains("\"command\":\"start\""));
+        assert!(json.contains("bd-xyz"));
+        assert!(json.contains("steps"));
+        assert!(json.contains("echo test"));
+    }
+
+    #[test]
+    fn render_pretty_has_colors() {
+        let g = ProtocolGuidance::new("start");
+        let pretty = render_pretty(&g);
+        // Should have ANSI color codes
+        assert!(pretty.contains("\x1b["));
+    }
+
+    #[test]
+    fn render_pretty_ready_status_is_green() {
+        let g = ProtocolGuidance::new("start");
+        let pretty = render_pretty(&g);
+        // Green code appears before Ready
+        assert!(pretty.contains("\x1b[32m")); // green
+    }
+
+    #[test]
+    fn render_pretty_blocked_status_is_red() {
+        let mut g = ProtocolGuidance::new("start");
+        g.blocked("error".to_string());
+        let pretty = render_pretty(&g);
+        // Red code appears in output
+        assert!(pretty.contains("\x1b[31m")); // red
+    }
+
+    // --- Integration tests (golden-style) ---
+
+    #[test]
+    fn golden_start_workflow() {
+        // Typical start workflow
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "protocol: shell-safe command renderer".to_string(),
+        });
+        g.workspace = Some("brave-tiger".to_string());
+        g.steps(vec![
+            "maw exec default -- br update --actor $AGENT bd-3t1d --status=in_progress --owner=$AGENT".to_string(),
+            "bus claims stake --agent $AGENT 'bead://botbox/bd-3t1d' -m 'bd-3t1d'".to_string(),
+            "maw ws create --random".to_string(),
+            "bus claims stake --agent $AGENT 'workspace://botbox/brave-tiger' -m 'bd-3t1d'".to_string(),
+        ]);
+        g.advise("Workspace created. Implement render.rs with ProtocolGuidance, ProtocolStatus, and rendering functions.".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Command: start"));
+        assert!(text.contains("brave-tiger"));
+        assert!(text.contains("3. maw ws create --random"));
+        assert!(text.contains("Advice:"));
+    }
+
+    #[test]
+    fn golden_blocked_workflow() {
+        // Blocked due to claim conflict
+        let mut g = ProtocolGuidance::new("start");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "protocol: shell-safe command renderer".to_string(),
+        });
+        g.blocked("bead already claimed by another agent".to_string());
+        g.diagnostic("Check: bus claims list --format json".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Blocked"));
+        assert!(text.contains("already claimed"));
+        assert!(text.contains("bus claims list"));
+    }
+
+    #[test]
+    fn golden_review_workflow() {
+        // Review requested and pending approval
+        let mut g = ProtocolGuidance::new("review");
+        g.bead = Some(BeadRef {
+            id: "bd-3t1d".to_string(),
+            title: "protocol: shell-safe command renderer".to_string(),
+        });
+        g.workspace = Some("brave-tiger".to_string());
+        g.review = Some(ReviewRef {
+            review_id: "cr-123".to_string(),
+            status: "open".to_string(),
+        });
+        g.status = ProtocolStatus::NeedsReview;
+        g.steps(vec![
+            "maw exec brave-tiger -- crit reviews request cr-123 --reviewers botbox-security --agent $AGENT".to_string(),
+            "bus send --agent $AGENT botbox 'Review requested: cr-123 @botbox-security' -L review-request".to_string(),
+        ]);
+        g.advise("Review is open. Awaiting approval from botbox-security.".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Needs Review"));
+        assert!(text.contains("cr-123"));
+        assert!(text.contains("botbox-security"));
+    }
+
+    #[test]
+    fn golden_cleanup_workflow() {
+        // Release all held claims
+        let mut g = ProtocolGuidance::new("cleanup");
+        g.status = ProtocolStatus::Clean;
+        g.steps(vec![
+            "bus claims list --agent $AGENT --mine --format json".to_string(),
+            "bus claims release --agent $AGENT --all".to_string(),
+        ]);
+        g.advise("All held resources released.".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Command: cleanup"));
+        assert!(text.contains("bus claims release") && text.contains("--all"));
+        assert!(text.contains("Clean"));
+    }
+
+    #[test]
+    fn status_serialization() {
+        // Statuses should serialize to PascalCase
+        let json = serde_json::to_string(&ProtocolStatus::Ready).unwrap();
+        assert_eq!(json, "\"Ready\"");
+
+        let json = serde_json::to_string(&ProtocolStatus::NeedsReview).unwrap();
+        assert_eq!(json, "\"NeedsReview\"");
+
+        let json = serde_json::to_string(&ProtocolStatus::HasWork).unwrap();
+        assert_eq!(json, "\"HasWork\"");
+    }
+
+    #[test]
+    fn guidance_json_roundtrip() {
+        let mut original = ProtocolGuidance::new("start");
+        original.bead = Some(BeadRef {
+            id: "bd-abc".to_string(),
+            title: "test".to_string(),
+        });
+        original.steps = vec!["echo hello".to_string()];
+
+        // Serialize and verify JSON contains expected fields
+        let json = render_json(&original).unwrap();
+        assert!(json.contains("command"));
+        assert!(json.contains("start"));
+        assert!(json.contains("bd-abc"));
+        assert!(json.contains("echo hello"));
+
+        // Verify it's valid JSON that can be parsed
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["command"].as_str(), Some("start"));
+        assert_eq!(parsed["status"].as_str(), Some("Ready"));
+    }
+
+    #[test]
+    fn snapshot_at_is_rfc3339() {
+        let g = ProtocolGuidance::new("start");
+        // Should be ISO 8601 / RFC 3339 format
+        assert!(g.snapshot_at.contains("T"));
+        assert!(g.snapshot_at.contains("Z") || g.snapshot_at.contains("+"));
+    }
+}

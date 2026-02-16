@@ -165,9 +165,45 @@ impl std::fmt::Display for ValidationError {
 
 impl std::error::Error for ValidationError {}
 
+/// Validate a review ID (e.g., `cr-2rnh`).
+pub fn validate_review_id(id: &str) -> Result<(), ValidationError> {
+    if id.is_empty() {
+        return Err(ValidationError::Empty("review ID"));
+    }
+    let valid = id.starts_with("cr-")
+        && id.len() > 3
+        && id[3..].chars().all(|c| c.is_ascii_alphanumeric());
+    if !valid {
+        return Err(ValidationError::InvalidFormat {
+            field: "review ID",
+            value: id.to_string(),
+            expected: "cr-[a-z0-9]+",
+        });
+    }
+    Ok(())
+}
+
+/// Ensure a structural value is safe for direct shell interpolation.
+///
+/// Structural values (bead IDs, workspace names, project names, statuses, labels)
+/// are expected to be pre-validated identifiers. As defense-in-depth, if a value
+/// contains shell metacharacters, it is escaped rather than interpolated raw.
+fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
+    if !value.is_empty()
+        && value
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | ':'))
+    {
+        std::borrow::Cow::Borrowed(value)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(value))
+    }
+}
+
 // --- Command builders ---
 // These produce shell-safe command strings. All dynamic values are validated
-// or escaped before inclusion.
+// or escaped before inclusion. Structural identifiers pass through safe_ident()
+// for defense-in-depth against unvalidated callers.
 
 /// Build: `bus claims stake --agent $AGENT "bead://<project>/<id>" -m "<memo>"`
 pub fn claims_stake_cmd(agent_var: &str, uri: &str, memo: &str) -> String {
@@ -197,12 +233,13 @@ pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) 
     let mut cmd = String::new();
     write!(
         cmd,
-        "bus send --agent ${agent_var} {project} {}",
+        "bus send --agent ${agent_var} {} {}",
+        safe_ident(project),
         shell_escape(message)
     )
     .unwrap();
     if !label.is_empty() {
-        write!(cmd, " -L {label}").unwrap();
+        write!(cmd, " -L {}", safe_ident(label)).unwrap();
     }
     cmd
 }
@@ -215,7 +252,9 @@ pub fn br_update_cmd(
     set_owner: bool,
 ) -> String {
     let mut cmd = format!(
-        "maw exec default -- br update --actor ${agent_var} {bead_id} --status={status}"
+        "maw exec default -- br update --actor ${agent_var} {} --status={}",
+        safe_ident(bead_id),
+        safe_ident(status)
     );
     if set_owner {
         write!(cmd, " --owner=${agent_var}").unwrap();
@@ -226,7 +265,8 @@ pub fn br_update_cmd(
 /// Build: `maw exec default -- br comments add --actor $AGENT --author $AGENT <id> '<message>'`
 pub fn br_comment_cmd(agent_var: &str, bead_id: &str, message: &str) -> String {
     format!(
-        "maw exec default -- br comments add --actor ${agent_var} --author ${agent_var} {bead_id} {}",
+        "maw exec default -- br comments add --actor ${agent_var} --author ${agent_var} {} {}",
+        safe_ident(bead_id),
         shell_escape(message)
     )
 }
@@ -234,7 +274,8 @@ pub fn br_comment_cmd(agent_var: &str, bead_id: &str, message: &str) -> String {
 /// Build: `maw exec default -- br close --actor $AGENT <id> --reason='<reason>'`
 pub fn br_close_cmd(agent_var: &str, bead_id: &str, reason: &str) -> String {
     format!(
-        "maw exec default -- br close --actor ${agent_var} {bead_id} --reason={}",
+        "maw exec default -- br close --actor ${agent_var} {} --reason={}",
+        safe_ident(bead_id),
         shell_escape(reason)
     )
 }
@@ -246,7 +287,7 @@ pub fn ws_create_cmd() -> String {
 
 /// Build: `maw ws merge <ws> --destroy`
 pub fn ws_merge_cmd(workspace: &str) -> String {
-    format!("maw ws merge {workspace} --destroy")
+    format!("maw ws merge {} --destroy", safe_ident(workspace))
 }
 
 /// Build: `maw exec default -- br sync --flush-only`
@@ -262,8 +303,10 @@ pub fn crit_create_cmd(
     reviewers: &str,
 ) -> String {
     format!(
-        "maw exec {workspace} -- crit reviews create --agent ${agent_var} --title {} --reviewers {reviewers}",
-        shell_escape(title)
+        "maw exec {} -- crit reviews create --agent ${agent_var} --title {} --reviewers {}",
+        safe_ident(workspace),
+        shell_escape(title),
+        safe_ident(reviewers)
     )
 }
 
@@ -275,13 +318,20 @@ pub fn crit_request_cmd(
     agent_var: &str,
 ) -> String {
     format!(
-        "maw exec {workspace} -- crit reviews request {review_id} --reviewers {reviewers} --agent ${agent_var}"
+        "maw exec {} -- crit reviews request {} --reviewers {} --agent ${agent_var}",
+        safe_ident(workspace),
+        safe_ident(review_id),
+        safe_ident(reviewers)
     )
 }
 
 /// Build: `maw exec <ws> -- crit review <id>`
 pub fn crit_show_cmd(workspace: &str, review_id: &str) -> String {
-    format!("maw exec {workspace} -- crit review {review_id}")
+    format!(
+        "maw exec {} -- crit review {}",
+        safe_ident(workspace),
+        safe_ident(review_id)
+    )
 }
 
 /// Build: `bus statuses clear --agent $AGENT`
@@ -383,6 +433,52 @@ mod tests {
         assert!(validate_bead_id("bd-abc-def").is_err());
         assert!(validate_bead_id("bd-abc def").is_err());
         assert!(validate_bead_id("bd-").is_err());
+    }
+
+    // --- validate_review_id tests ---
+
+    #[test]
+    fn valid_review_id() {
+        assert!(validate_review_id("cr-2rnh").is_ok());
+        assert!(validate_review_id("cr-abc123").is_ok());
+        assert!(validate_review_id("cr-a").is_ok());
+    }
+
+    #[test]
+    fn invalid_review_id_empty() {
+        assert!(validate_review_id("").is_err());
+    }
+
+    #[test]
+    fn invalid_review_id_no_prefix() {
+        assert!(validate_review_id("2rnh").is_err());
+        assert!(validate_review_id("bd-3cqv").is_err());
+    }
+
+    #[test]
+    fn invalid_review_id_special_chars() {
+        assert!(validate_review_id("cr-abc-def").is_err());
+        assert!(validate_review_id("cr-").is_err());
+    }
+
+    // --- safe_ident tests ---
+
+    #[test]
+    fn safe_ident_passes_clean_values() {
+        assert_eq!(safe_ident("bd-3cqv").as_ref(), "bd-3cqv");
+        assert_eq!(safe_ident("frost-castle").as_ref(), "frost-castle");
+        assert_eq!(safe_ident("in_progress").as_ref(), "in_progress");
+        assert_eq!(safe_ident("botbox-dev").as_ref(), "botbox-dev");
+    }
+
+    #[test]
+    fn safe_ident_escapes_unsafe_values() {
+        // Spaces get escaped
+        assert_eq!(safe_ident("bad name").as_ref(), "'bad name'");
+        // Shell metacharacters get escaped
+        assert_eq!(safe_ident("$(rm -rf)").as_ref(), "'$(rm -rf)'");
+        // Empty gets escaped
+        assert_eq!(safe_ident("").as_ref(), "''");
     }
 
     // --- validate_workspace_name tests ---
