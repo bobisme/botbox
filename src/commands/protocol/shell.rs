@@ -200,62 +200,56 @@ fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-/// Validate that an agent variable name is a safe shell variable reference.
-///
-/// Agent var names must match `[A-Z_][A-Z0-9_]*` to be safe for `${var}` interpolation.
-/// Panics on invalid input since this indicates a programming error (callers should
-/// always pass compile-time string literals).
-fn validate_agent_var(var: &str) {
-    assert!(
-        !var.is_empty()
-            && var.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
-            && var.chars().next().is_some_and(|c| c.is_ascii_uppercase() || c == '_'),
-        "agent_var must be a valid shell variable name ([A-Z_][A-Z0-9_]*), got: {var:?}"
-    );
-}
 
 // --- Command builders ---
 // These produce shell-safe command strings. All dynamic values are validated
 // or escaped before inclusion. Structural identifiers pass through safe_ident()
 // for defense-in-depth against unvalidated callers.
 
-/// Build: `bus claims stake --agent $AGENT "bead://<project>/<id>" -m "<memo>"`
-pub fn claims_stake_cmd(agent_var: &str, uri: &str, memo: &str) -> String {
-    validate_agent_var(agent_var);
+/// Build: `bus claims stake --agent <agent> "bead://<project>/<id>" -m "<memo>"`
+pub fn claims_stake_cmd(agent: &str, uri: &str, memo: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
     let mut cmd = String::new();
-    write!(cmd, "bus claims stake --agent ${agent_var} {}", shell_escape(uri)).unwrap();
+    write!(cmd, "bus claims stake --agent {} {}", agent_safe, shell_escape(uri)).unwrap();
     if !memo.is_empty() {
         write!(cmd, " -m {}", shell_escape(memo)).unwrap();
     }
     cmd
 }
 
-/// Build: `bus claims release --agent $AGENT "<uri>"`
+/// Build: `bus claims release --agent <agent> "<uri>"`
 #[allow(dead_code)]
-pub fn claims_release_cmd(agent_var: &str, uri: &str) -> String {
-    validate_agent_var(agent_var);
+pub fn claims_release_cmd(agent: &str, uri: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
     format!(
-        "bus claims release --agent ${agent_var} {}",
+        "bus claims release --agent {} {}",
+        agent_safe,
         shell_escape(uri)
     )
 }
 
-/// Build: `bus claims release --agent $AGENT --all`
-pub fn claims_release_all_cmd(agent_var: &str) -> String {
-    validate_agent_var(agent_var);
-    format!("bus claims release --agent ${agent_var} --all")
+/// Build: `bus claims release --agent <agent> --all`
+pub fn claims_release_all_cmd(agent: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+    format!("bus claims release --agent {} --all", agent_safe)
 }
 
-/// Build: `bus send --agent $AGENT <project> '<message>' -L <label>`
-pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) -> String {
-    validate_agent_var(agent_var);
+/// Build: `bus send --agent <agent> <project> '<message>' -L <label>`
+pub fn bus_send_cmd(agent: &str, project: &str, message: &str, label: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+
     // Validate project name before use
     if let Err(_) = validate_identifier("project", project) {
         // If validation fails, force escaping instead of raw interpolation
         let mut cmd = String::new();
         write!(
             cmd,
-            "bus send --agent ${agent_var} {} {}",
+            "bus send --agent {} {} {}",
+            agent_safe,
             shell_escape(project),
             shell_escape(message)
         )
@@ -269,7 +263,8 @@ pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) 
     let mut cmd = String::new();
     write!(
         cmd,
-        "bus send --agent ${agent_var} {} {}",
+        "bus send --agent {} {} {}",
+        agent_safe,
         safe_ident(project),
         shell_escape(message)
     )
@@ -285,15 +280,17 @@ pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) 
     cmd
 }
 
-/// Build: `maw exec default -- br update --actor $AGENT <id> --status=<status> [--owner=$AGENT]`
+/// Build: `maw exec default -- br update --actor <agent> <id> --status=<status> [--owner=<agent>]`
 #[allow(dead_code)]
 pub fn br_update_cmd(
-    agent_var: &str,
+    agent: &str,
     bead_id: &str,
     status: &str,
     set_owner: bool,
 ) -> String {
-    validate_agent_var(agent_var);
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+
     // Validate bead_id before use - escape if validation fails
     let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
         safe_ident(bead_id)
@@ -309,20 +306,23 @@ pub fn br_update_cmd(
     };
 
     let mut cmd = format!(
-        "maw exec default -- br update --actor ${agent_var} {} --status={}",
+        "maw exec default -- br update --actor {} {} --status={}",
+        agent_safe,
         bead_id_safe,
         status_safe
     );
     if set_owner {
-        write!(cmd, " --owner=${agent_var}").unwrap();
+        write!(cmd, " --owner={}", agent_safe).unwrap();
     }
     cmd
 }
 
-/// Build: `maw exec default -- br comments add --actor $AGENT --author $AGENT <id> '<message>'`
+/// Build: `maw exec default -- br comments add --actor <agent> --author <agent> <id> '<message>'`
 #[allow(dead_code)]
-pub fn br_comment_cmd(agent_var: &str, bead_id: &str, message: &str) -> String {
-    validate_agent_var(agent_var);
+pub fn br_comment_cmd(agent: &str, bead_id: &str, message: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+
     // Validate bead_id before use
     let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
         safe_ident(bead_id)
@@ -331,15 +331,19 @@ pub fn br_comment_cmd(agent_var: &str, bead_id: &str, message: &str) -> String {
     };
 
     format!(
-        "maw exec default -- br comments add --actor ${agent_var} --author ${agent_var} {} {}",
+        "maw exec default -- br comments add --actor {} --author {} {} {}",
+        agent_safe,
+        agent_safe,
         bead_id_safe,
         shell_escape(message)
     )
 }
 
-/// Build: `maw exec default -- br close --actor $AGENT <id> --reason='<reason>'`
-pub fn br_close_cmd(agent_var: &str, bead_id: &str, reason: &str) -> String {
-    validate_agent_var(agent_var);
+/// Build: `maw exec default -- br close --actor <agent> <id> --reason='<reason>'`
+pub fn br_close_cmd(agent: &str, bead_id: &str, reason: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+
     // Validate bead_id before use
     let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
         safe_ident(bead_id)
@@ -348,7 +352,8 @@ pub fn br_close_cmd(agent_var: &str, bead_id: &str, reason: &str) -> String {
     };
 
     format!(
-        "maw exec default -- br close --actor ${agent_var} {} --reason={}",
+        "maw exec default -- br close --actor {} {} --reason={}",
+        agent_safe,
         bead_id_safe,
         shell_escape(reason)
     )
@@ -376,14 +381,16 @@ pub fn br_sync_cmd() -> String {
     "maw exec default -- br sync --flush-only".to_string()
 }
 
-/// Build: `maw exec <ws> -- crit reviews create --agent $AGENT --title '<title>' --reviewers <reviewers>`
+/// Build: `maw exec <ws> -- crit reviews create --agent <agent> --title '<title>' --reviewers <reviewers>`
 pub fn crit_create_cmd(
     workspace: &str,
-    agent_var: &str,
+    agent: &str,
     title: &str,
     reviewers: &str,
 ) -> String {
-    validate_agent_var(agent_var);
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+
     // Validate workspace and reviewers before use
     let workspace_safe = if validate_workspace_name(workspace).is_ok() {
         safe_ident(workspace)
@@ -398,21 +405,24 @@ pub fn crit_create_cmd(
     };
 
     format!(
-        "maw exec {} -- crit reviews create --agent ${agent_var} --title {} --reviewers {}",
+        "maw exec {} -- crit reviews create --agent {} --title {} --reviewers {}",
         workspace_safe,
+        agent_safe,
         shell_escape(title),
         reviewers_safe
     )
 }
 
-/// Build: `maw exec <ws> -- crit reviews request <id> --reviewers <reviewers> --agent $AGENT`
+/// Build: `maw exec <ws> -- crit reviews request <id> --reviewers <reviewers> --agent <agent>`
 pub fn crit_request_cmd(
     workspace: &str,
     review_id: &str,
     reviewers: &str,
-    agent_var: &str,
+    agent: &str,
 ) -> String {
-    validate_agent_var(agent_var);
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+
     // Validate all identifiers before use
     let workspace_safe = if validate_workspace_name(workspace).is_ok() {
         safe_ident(workspace)
@@ -433,10 +443,11 @@ pub fn crit_request_cmd(
     };
 
     format!(
-        "maw exec {} -- crit reviews request {} --reviewers {} --agent ${agent_var}",
+        "maw exec {} -- crit reviews request {} --reviewers {} --agent {}",
         workspace_safe,
         review_id_safe,
-        reviewers_safe
+        reviewers_safe,
+        agent_safe
     )
 }
 
@@ -462,10 +473,11 @@ pub fn crit_show_cmd(workspace: &str, review_id: &str) -> String {
     )
 }
 
-/// Build: `bus statuses clear --agent $AGENT`
-pub fn bus_statuses_clear_cmd(agent_var: &str) -> String {
-    validate_agent_var(agent_var);
-    format!("bus statuses clear --agent ${agent_var}")
+/// Build: `bus statuses clear --agent <agent>`
+pub fn bus_statuses_clear_cmd(agent: &str) -> String {
+    validate_identifier("agent", agent).expect("invalid agent name");
+    let agent_safe = safe_ident(agent);
+    format!("bus statuses clear --agent {}", agent_safe)
 }
 
 #[cfg(test)]
@@ -679,94 +691,94 @@ mod tests {
 
     #[test]
     fn claims_stake_basic() {
-        let cmd = claims_stake_cmd("AGENT", "bead://myproject/bd-abc", "bd-abc");
+        let cmd = claims_stake_cmd("crimson-storm", "bead://myproject/bd-abc", "bd-abc");
         assert_eq!(
             cmd,
-            "bus claims stake --agent $AGENT 'bead://myproject/bd-abc' -m 'bd-abc'"
+            "bus claims stake --agent crimson-storm 'bead://myproject/bd-abc' -m 'bd-abc'"
         );
     }
 
     #[test]
     fn claims_stake_no_memo() {
-        let cmd = claims_stake_cmd("AGENT", "bead://myproject/bd-abc", "");
+        let cmd = claims_stake_cmd("crimson-storm", "bead://myproject/bd-abc", "");
         assert_eq!(
             cmd,
-            "bus claims stake --agent $AGENT 'bead://myproject/bd-abc'"
+            "bus claims stake --agent crimson-storm 'bead://myproject/bd-abc'"
         );
     }
 
     #[test]
     fn claims_release_basic() {
-        let cmd = claims_release_cmd("AGENT", "bead://myproject/bd-abc");
+        let cmd = claims_release_cmd("crimson-storm", "bead://myproject/bd-abc");
         assert_eq!(
             cmd,
-            "bus claims release --agent $AGENT 'bead://myproject/bd-abc'"
+            "bus claims release --agent crimson-storm 'bead://myproject/bd-abc'"
         );
     }
 
     #[test]
     fn claims_release_all() {
-        let cmd = claims_release_all_cmd("AGENT");
-        assert_eq!(cmd, "bus claims release --agent $AGENT --all");
+        let cmd = claims_release_all_cmd("crimson-storm");
+        assert_eq!(cmd, "bus claims release --agent crimson-storm --all");
     }
 
     #[test]
     fn bus_send_basic() {
-        let cmd = bus_send_cmd("AGENT", "myproject", "Task claimed: bd-abc", "task-claim");
+        let cmd = bus_send_cmd("crimson-storm", "myproject", "Task claimed: bd-abc", "task-claim");
         assert_eq!(
             cmd,
-            "bus send --agent $AGENT myproject 'Task claimed: bd-abc' -L task-claim"
+            "bus send --agent crimson-storm myproject 'Task claimed: bd-abc' -L task-claim"
         );
     }
 
     #[test]
     fn bus_send_with_quotes_in_message() {
-        let cmd = bus_send_cmd("AGENT", "myproject", "it's done", "task-done");
+        let cmd = bus_send_cmd("crimson-storm", "myproject", "it's done", "task-done");
         assert_eq!(
             cmd,
-            "bus send --agent $AGENT myproject 'it'\\''s done' -L task-done"
+            "bus send --agent crimson-storm myproject 'it'\\''s done' -L task-done"
         );
     }
 
     #[test]
     fn bus_send_no_label() {
-        let cmd = bus_send_cmd("AGENT", "myproject", "hello", "");
-        assert_eq!(cmd, "bus send --agent $AGENT myproject 'hello'");
+        let cmd = bus_send_cmd("crimson-storm", "myproject", "hello", "");
+        assert_eq!(cmd, "bus send --agent crimson-storm myproject 'hello'");
     }
 
     #[test]
     fn br_update_with_owner() {
-        let cmd = br_update_cmd("AGENT", "bd-abc", "in_progress", true);
+        let cmd = br_update_cmd("crimson-storm", "bd-abc", "in_progress", true);
         assert_eq!(
             cmd,
-            "maw exec default -- br update --actor $AGENT bd-abc --status=in_progress --owner=$AGENT"
+            "maw exec default -- br update --actor crimson-storm bd-abc --status=in_progress --owner=crimson-storm"
         );
     }
 
     #[test]
     fn br_update_without_owner() {
-        let cmd = br_update_cmd("AGENT", "bd-abc", "in_progress", false);
+        let cmd = br_update_cmd("crimson-storm", "bd-abc", "in_progress", false);
         assert_eq!(
             cmd,
-            "maw exec default -- br update --actor $AGENT bd-abc --status=in_progress"
+            "maw exec default -- br update --actor crimson-storm bd-abc --status=in_progress"
         );
     }
 
     #[test]
     fn br_comment_with_escaping() {
-        let cmd = br_comment_cmd("AGENT", "bd-abc", "Started work in ws/frost-castle/");
+        let cmd = br_comment_cmd("crimson-storm", "bd-abc", "Started work in ws/frost-castle/");
         assert_eq!(
             cmd,
-            "maw exec default -- br comments add --actor $AGENT --author $AGENT bd-abc 'Started work in ws/frost-castle/'"
+            "maw exec default -- br comments add --actor crimson-storm --author crimson-storm bd-abc 'Started work in ws/frost-castle/'"
         );
     }
 
     #[test]
     fn br_close_basic() {
-        let cmd = br_close_cmd("AGENT", "bd-abc", "Completed");
+        let cmd = br_close_cmd("crimson-storm", "bd-abc", "Completed");
         assert_eq!(
             cmd,
-            "maw exec default -- br close --actor $AGENT bd-abc --reason='Completed'"
+            "maw exec default -- br close --actor crimson-storm bd-abc --reason='Completed'"
         );
     }
 
@@ -778,19 +790,19 @@ mod tests {
 
     #[test]
     fn crit_create_with_escaping() {
-        let cmd = crit_create_cmd("frost-castle", "AGENT", "feat: add login", "myproject-security");
+        let cmd = crit_create_cmd("frost-castle", "crimson-storm", "feat: add login", "myproject-security");
         assert_eq!(
             cmd,
-            "maw exec frost-castle -- crit reviews create --agent $AGENT --title 'feat: add login' --reviewers myproject-security"
+            "maw exec frost-castle -- crit reviews create --agent crimson-storm --title 'feat: add login' --reviewers myproject-security"
         );
     }
 
     #[test]
     fn crit_request_basic() {
-        let cmd = crit_request_cmd("frost-castle", "cr-123", "myproject-security", "AGENT");
+        let cmd = crit_request_cmd("frost-castle", "cr-123", "myproject-security", "crimson-storm");
         assert_eq!(
             cmd,
-            "maw exec frost-castle -- crit reviews request cr-123 --reviewers myproject-security --agent $AGENT"
+            "maw exec frost-castle -- crit reviews request cr-123 --reviewers myproject-security --agent crimson-storm"
         );
     }
 
@@ -805,8 +817,8 @@ mod tests {
     #[test]
     fn command_builders_are_deterministic() {
         // Same inputs always produce same output
-        let cmd1 = bus_send_cmd("AGENT", "proj", "msg", "label");
-        let cmd2 = bus_send_cmd("AGENT", "proj", "msg", "label");
+        let cmd1 = bus_send_cmd("crimson-storm", "proj", "msg", "label");
+        let cmd2 = bus_send_cmd("crimson-storm", "proj", "msg", "label");
         assert_eq!(cmd1, cmd2);
     }
 
@@ -823,7 +835,7 @@ mod tests {
         // Embedded single quotes are broken out with \'
         assert!(escaped.contains("\\'"));
         // When used in a command, the entire escaped value appears as one arg
-        let cmd = br_comment_cmd("AGENT", "bd-abc", malicious);
+        let cmd = br_comment_cmd("crimson-storm", "bd-abc", malicious);
         assert!(cmd.contains(&escaped));
         // Roundtrip: the escaped form should decode back to the original
         // (verified by the start/end quotes and \' escaping pattern)

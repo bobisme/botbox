@@ -539,10 +539,10 @@ mod tests {
         });
         g.workspace = Some("brave-tiger".to_string());
         g.steps(vec![
-            "maw exec default -- br update --actor $AGENT bd-3t1d --status=in_progress --owner=$AGENT".to_string(),
-            "bus claims stake --agent $AGENT 'bead://botbox/bd-3t1d' -m 'bd-3t1d'".to_string(),
+            "maw exec default -- br update --actor crimson-storm bd-3t1d --status=in_progress --owner=crimson-storm".to_string(),
+            "bus claims stake --agent crimson-storm 'bead://botbox/bd-3t1d' -m 'bd-3t1d'".to_string(),
             "maw ws create --random".to_string(),
-            "bus claims stake --agent $AGENT 'workspace://botbox/brave-tiger' -m 'bd-3t1d'".to_string(),
+            "bus claims stake --agent crimson-storm 'workspace://botbox/brave-tiger' -m 'bd-3t1d'".to_string(),
         ]);
         g.advise("Workspace created. Implement render.rs with ProtocolGuidance, ProtocolStatus, and rendering functions.".to_string());
 
@@ -585,8 +585,8 @@ mod tests {
         });
         g.status = ProtocolStatus::NeedsReview;
         g.steps(vec![
-            "maw exec brave-tiger -- crit reviews request cr-123 --reviewers botbox-security --agent $AGENT".to_string(),
-            "bus send --agent $AGENT botbox 'Review requested: cr-123 @botbox-security' -L review-request".to_string(),
+            "maw exec brave-tiger -- crit reviews request cr-123 --reviewers botbox-security --agent crimson-storm".to_string(),
+            "bus send --agent crimson-storm botbox 'Review requested: cr-123 @botbox-security' -L review-request".to_string(),
         ]);
         g.advise("Review is open. Awaiting approval from botbox-security.".to_string());
 
@@ -602,8 +602,8 @@ mod tests {
         let mut g = ProtocolGuidance::new("cleanup");
         g.status = ProtocolStatus::Clean;
         g.steps(vec![
-            "bus claims list --agent $AGENT --mine --format json".to_string(),
-            "bus claims release --agent $AGENT --all".to_string(),
+            "bus claims list --agent crimson-storm --mine --format json".to_string(),
+            "bus claims release --agent crimson-storm --all".to_string(),
         ]);
         g.advise("All held resources released.".to_string());
 
@@ -785,7 +785,7 @@ mod tests {
             status: "open".to_string(),
         });
         g.set_freshness(600, Some("botbox protocol review".to_string()));
-        g.step("maw exec worker-1 -- crit reviews request cr-123 --reviewers botbox-security --agent $AGENT".to_string());
+        g.step("maw exec worker-1 -- crit reviews request cr-123 --reviewers botbox-security --agent crimson-storm".to_string());
         g.diagnostic("awaiting review approval".to_string());
         g.advise("Review is pending.".to_string());
 

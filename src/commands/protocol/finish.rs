@@ -153,10 +153,10 @@ pub fn execute(
                             &workspace,
                             &review_id,
                             &required_reviewers.join(","),
-                            "AGENT",
+                            "agent",
                         ));
                         steps.push(shell::bus_send_cmd(
-                            "AGENT",
+                            "agent",
                             project,
                             &format!("Review re-requested: {} @{}", review_id, required_reviewers.join(" @")),
                             "review-request",
@@ -186,7 +186,7 @@ pub fn execute(
                                 &workspace,
                                 &review_id,
                                 &decision.missing_approvals.join(","),
-                                "AGENT",
+                                "agent",
                             ));
                             let mentions: Vec<String> = decision
                                 .missing_approvals
@@ -194,7 +194,7 @@ pub fn execute(
                                 .map(|r| format!("@{}", r))
                                 .collect();
                             steps.push(shell::bus_send_cmd(
-                                "AGENT",
+                                "agent",
                                 project,
                                 &format!("Review pending: {} {}", review_id, mentions.join(" ")),
                                 "review-request",
@@ -216,7 +216,7 @@ pub fn execute(
                 let mut steps = Vec::new();
                 steps.push(shell::crit_create_cmd(
                     &workspace,
-                    "AGENT",
+                    "agent",
                     &bead_info.title,
                     &required_reviewers.join(","),
                 ));
@@ -225,7 +225,7 @@ pub fn execute(
                     .map(|r| format!("@{}", r))
                     .collect();
                 steps.push(shell::bus_send_cmd(
-                    "AGENT",
+                    "agent",
                     project,
                     &format!("Review requested: <review-id> {}", mentions.join(" ")),
                     "review-request",
@@ -311,21 +311,21 @@ fn build_finish_steps(
 
     // 4. Close the bead
     steps.push(shell::br_close_cmd(
-        "AGENT",
+        "agent",
         bead_id,
         &format!("Completed in workspace {}", workspace),
     ));
 
     // 5. Announce completion on bus
     steps.push(shell::bus_send_cmd(
-        "AGENT",
+        "agent",
         project,
         &format!("Finished {}: {}", bead_id, bead_title),
         "task-done",
     ));
 
     // 6. Release all claims
-    steps.push(shell::claims_release_all_cmd("AGENT"));
+    steps.push(shell::claims_release_all_cmd("agent"));
 
     // 7. Sync beads
     steps.push(shell::br_sync_cmd());

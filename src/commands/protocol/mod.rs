@@ -328,40 +328,38 @@ impl ProtocolCommand {
         let mut steps = Vec::new();
 
         // 1. Stake bead claim
-        steps.push(format!(
-            "bus claims stake --agent $AGENT \"bead://{}/{}\" -m \"{}\"",
-            project, bead_id, bead_id
+        steps.push(shell::claims_stake_cmd(
+            &agent,
+            &format!("bead://{}/{}", project, bead_id),
+            bead_id,
         ));
 
         // 2. Create workspace
-        steps.push("maw ws create --random".to_string());
+        steps.push(shell::ws_create_cmd());
 
         // 3. Capture workspace name (comment for human)
         steps.push("# Capture workspace name from output above, then stake workspace claim:".to_string());
 
-        // 4. Stake workspace claim (template with $WS placeholder)
-        steps.push(format!(
-            "bus claims stake --agent $AGENT \"workspace://{}/$WS\" -m \"{}\"",
-            project, bead_id
+        // 4. Stake workspace claim (template with $WS placeholder - $WS is runtime-resolved)
+        steps.push(shell::claims_stake_cmd(
+            &agent,
+            &format!("workspace://{}/$WS", project),
+            bead_id,
         ));
 
         // 5. Update bead status
-        steps.push(format!(
-            "maw exec default -- br update --actor $AGENT {} --status=in_progress --owner=$AGENT",
-            bead_id
-        ));
+        steps.push(shell::br_update_cmd(&agent, bead_id, "in_progress", true));
 
         // 6. Comment bead with workspace info
-        steps.push(format!(
-            "maw exec default -- br comments add --actor $AGENT --author $AGENT {} \"Started in workspace $WS\"",
-            bead_id
-        ));
+        steps.push(shell::br_comment_cmd(&agent, bead_id, "Started in workspace $WS"));
 
         // 7. Announce on bus (unless --dispatched)
         if !dispatched {
-            steps.push(format!(
-                "bus send --agent $AGENT {} \"Working on {}: {}\" -L task-claim",
-                project, bead_id, shell::shell_escape(&bead_info.title)
+            steps.push(shell::bus_send_cmd(
+                &agent,
+                &project,
+                &format!("Working on {}: {}", bead_id, &bead_info.title),
+                "task-claim",
             ));
         }
 

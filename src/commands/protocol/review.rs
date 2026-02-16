@@ -56,7 +56,7 @@ pub fn execute(
             "agent {agent} does not hold claim for bead {bead_id}. \
              Stake a claim first with: {}",
             shell::claims_stake_cmd(
-                "AGENT",
+                "agent",
                 &format!("bead://{project}/{bead_id}"),
                 bead_id,
             )
@@ -133,7 +133,7 @@ pub fn execute(
 
     guidance.step(shell::crit_create_cmd(
         &workspace,
-        "AGENT",
+        "agent",
         &title,
         &reviewers_str,
     ));
@@ -145,7 +145,7 @@ pub fn execute(
         mentions.join(" ")
     );
     guidance.step(shell::bus_send_cmd(
-        "AGENT",
+        "agent",
         project,
         &announce_msg,
         "review-request",
@@ -213,7 +213,7 @@ fn handle_existing_review(
                 workspace,
                 review_id,
                 &reviewers_str,
-                "AGENT",
+                "agent",
             ));
 
             // Step 3: Announce re-request on bus
@@ -223,7 +223,7 @@ fn handle_existing_review(
                 mentions.join(" ")
             );
             guidance.step(shell::bus_send_cmd(
-                "AGENT",
+                "agent",
                 project,
                 &announce_msg,
                 "review-request",
@@ -249,7 +249,7 @@ fn handle_existing_review(
                     workspace,
                     review_id,
                     &missing_str,
-                    "AGENT",
+                    "agent",
                 ));
 
                 let mentions: Vec<String> =
@@ -259,7 +259,7 @@ fn handle_existing_review(
                     mentions.join(" ")
                 );
                 guidance.step(shell::bus_send_cmd(
-                    "AGENT",
+                    "agent",
                     project,
                     &announce_msg,
                     "review-request",

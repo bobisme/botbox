@@ -48,10 +48,10 @@ pub fn execute(
     let mut steps = Vec::new();
 
     // Step 1: Post agent idle message
-    steps.push(shell::bus_send_cmd("AGENT", project, "Agent idle", "agent-idle"));
+    steps.push(shell::bus_send_cmd("agent", project, "Agent idle", "agent-idle"));
 
     // Step 2: Clear statuses
-    steps.push(shell::bus_statuses_clear_cmd("AGENT"));
+    steps.push(shell::bus_statuses_clear_cmd("agent"));
 
     // Step 3: Release claims (but warn if bead claims are active)
     if !bead_claims.is_empty() {
@@ -66,7 +66,7 @@ pub fn execute(
             bead_list
         ));
     }
-    steps.push(shell::claims_release_all_cmd("AGENT"));
+    steps.push(shell::claims_release_all_cmd("agent"));
 
     // Step 4: Flush bead changes
     steps.push(shell::br_sync_cmd());

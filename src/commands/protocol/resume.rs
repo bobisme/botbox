@@ -241,7 +241,7 @@ fn build_bead_guidance(
                 ws_name,
                 &review.review_id,
                 &format!("{project}-security"),
-                "AGENT",
+                "agent",
             ));
         }
 
@@ -274,7 +274,7 @@ fn build_bead_guidance(
                 "# Stake workspace claim after creation:"
             ));
             guidance.step(shell::claims_stake_cmd(
-                "AGENT",
+                "agent",
                 &format!("workspace://{project}/$WS"),
                 bead_id,
             ));
@@ -287,7 +287,7 @@ fn build_bead_guidance(
                 bead_id, review.review_id
             ));
             guidance.diagnostic(format!(
-                "Bead {} has review {} but no associated workspace claim. Check claims with: bus claims list --agent $AGENT --format json",
+                "Bead {} has review {} but no associated workspace claim. Check claims with: bus claims list --agent $agent --format json",
                 bead_id, review.review_id
             ));
         }
