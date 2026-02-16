@@ -9,17 +9,7 @@ All steps below are required — they clean up resources, prevent workspace leak
 - `$AGENT` = agent identity (required)
 - `<bead-id>` = bead to close out (required)
 
-## Recommended: Use Protocol Command
-
-After your review is approved (LGTM), check state and get the exact commands to run:
-
-```bash
-botbox protocol finish <bead-id> --agent $AGENT
-```
-
-Read the output carefully — it will tell you the merge and cleanup commands to run. If the protocol command is unavailable or fails with exit code 1, fall back to the manual steps below.
-
-## Manual Steps (Fallback)
+## Steps
 
 1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user. Run `bus whoami --agent $AGENT` first to confirm; if it returns a name, use it.
 2. Verify you posted at least one progress comment (`maw exec default -- br comments <bead-id>`). If not, add one now: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Progress: <what was done>"`

@@ -562,6 +562,20 @@ jj abandon <change-id>/0   # keep one, abandon the divergent copy
 
 **Always pass `-m`**: Commands like `jj commit`, `jj squash`, and `jj describe` open an editor by default. Agents cannot interact with editors, so always pass `-m "message"` explicitly.
 
+### Protocol Quick Reference
+
+Use these commands at protocol transitions to check state and get exact guidance. Each command outputs instructions for the next steps.
+
+| Step | Command | Purpose |
+|------|---------|---------|
+| Resume | `botbox protocol resume --agent $AGENT` | Detect in-progress work from previous session |
+| Start | `botbox protocol start <bead-id> --agent $AGENT` | Verify bead is ready, get start commands |
+| Review | `botbox protocol review <bead-id> --agent $AGENT` | Verify work is complete, get review commands |
+| Finish | `botbox protocol finish <bead-id> --agent $AGENT` | Verify review approved, get merge/cleanup commands |
+| Cleanup | `botbox protocol cleanup --agent $AGENT` | Check for held resources to release |
+
+All commands support JSON output with `--format json` for parsing. If a command is unavailable or fails (exit code 1), fall back to manual steps documented in [start](./agents/botbox/start.md), [review-request](./agents/botbox/review-request.md), and [finish](./agents/botbox/finish.md).
+
 ### Beads Conventions
 
 - Create a bead before starting work. Update status: `open` → `in_progress` → `closed`.

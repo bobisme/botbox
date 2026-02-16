@@ -7,17 +7,7 @@ Start a bead using the standard botbox flow: claim the work, set up a workspace,
 - `$AGENT` = agent identity (required)
 - `<bead-id>` = bead to start (required)
 
-## Recommended: Use Protocol Command
-
-First, check state and get the exact commands to run:
-
-```bash
-botbox protocol start <bead-id> --agent $AGENT
-```
-
-Read the output carefully — it will tell you whether the bead is ready to start and provide the exact commands to run. If the protocol command is unavailable or fails with exit code 1, fall back to the manual steps below.
-
-## Manual Steps (Fallback)
+## Steps
 
 1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user. Run `bus whoami --agent $AGENT` first to confirm; if it returns a name, use it.
 2. `maw exec default -- br update --actor $AGENT <bead-id> --status=in_progress --owner=$AGENT`
