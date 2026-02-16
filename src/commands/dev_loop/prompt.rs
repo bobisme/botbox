@@ -544,7 +544,20 @@ For each dispatched bead where the worker is NOT in botty list but the bead is s
 
 ## 7. FINISH (merge completed work)
 
-For each completed bead with a workspace, check the bead's risk label first:
+For each completed bead with a workspace, ALWAYS try protocol merge first:
+
+  botbox protocol merge <workspace> --agent {agent}
+
+This checks bead status, review gate, and conflicts in one step. Read the output:
+  - Ready → proceed with Merge Protocol below, then follow the post-merge steps from the output
+    (mark review merged, sync beads, announce).
+  - NeedsReview → review required before merging (see NeedsReview handling below).
+  - Blocked → read diagnostics for recovery steps (conflicts, bead not closed, review blocked).
+  - Unavailable (exit 1) → fall back to manual merge paths at the bottom of this section.
+
+After protocol merge reports Ready, close the bead:
+  maw exec default -- br close --actor {agent} <id> --reason="Completed"
+  bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
 ### Merge Protocol (used by all paths that call "maw ws merge")
 
@@ -603,44 +616,45 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
   g. RELEASE MUTEX (always, even on failure — use try/finally):
      bus claims release --agent {agent} "workspace://{project}/default"
 
-### Merge paths by review status:
+### NeedsReview handling (protocol merge returned NeedsReview):
 
-For each completed bead, try protocol command first:
-  botbox protocol finish <bead-id> --agent {agent}
-  Read the output carefully — it will tell you the review status and exact commands to run.
+  CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+  Create review (if none): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
+  Record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace <ws-name>"
+  Announce: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
+  STOP — wait for reviewer
+  For risk:high add failure-mode checklist to review description, for risk:critical add human approval request.
+
+### Manual fallback (only if protocol merge is unavailable):
+
+  Try protocol command: botbox protocol finish <bead-id> --agent {agent}
+  It will tell you the review status and exact commands to run.
   If it fails (exit 1 = command unavailable), fall back to the manual paths below.
 
-Already reviewed and approved (LGTM — reached from unfinished work check step 1):
-  maw exec default -- crit reviews mark-merged <review-id> --agent {agent}
-  Run MERGE PROTOCOL above for $WS
-  maw exec default -- br comments add --actor {agent} --author {agent} <id> "Completed by {agent}"
-  maw exec default -- br close --actor {agent} <id> --reason="Completed"
-  bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+  Already reviewed and approved (LGTM):
+    maw exec default -- crit reviews mark-merged <review-id> --agent {agent}
+    Run MERGE PROTOCOL above for $WS
+    maw exec default -- br close --actor {agent} <id> --reason="Completed"
+    bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
-Not yet reviewed — RISK:LOW (evals, docs, tests, config):
-  Self-review and merge directly. No security review needed.
-  Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
-  Run MERGE PROTOCOL above for $WS
-  maw exec default -- br close --actor {agent} <id> --reason="Completed"
-  bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+  Not yet reviewed — RISK:LOW (evals, docs, tests, config):
+    Self-review and merge directly.
+    maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+    Run MERGE PROTOCOL above for $WS
+    maw exec default -- br close --actor {agent} <id> --reason="Completed"
+    bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
-Not yet reviewed — RISK:MEDIUM (REVIEW is true):
-  CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
-  Create review with reviewer (if none exists): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
-  IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace <ws-name>"
-  Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-  STOP — wait for reviewer
+  Not yet reviewed — RISK:MEDIUM/HIGH/CRITICAL (REVIEW is true):
+    CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+    Create review (if none): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
+    Record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace <ws-name>"
+    Announce: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
+    STOP — wait for reviewer. For risk:high add failure-mode checklist, for risk:critical add human approval request.
 
-Not yet reviewed — RISK:HIGH — Security review + failure-mode checklist:
-  Same as risk:medium, add "risk:high — failure-mode checklist required" to review description.
-
-Not yet reviewed — RISK:CRITICAL — Security review + human approval:
-  Same as risk:high, plus post human approval request to bus.
-
-If REVIEW is false (regardless of risk):
-  Run MERGE PROTOCOL above for $WS
-  maw exec default -- br close --actor {agent} <id>
-  bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
+  If REVIEW is false (regardless of risk):
+    Run MERGE PROTOCOL above for $WS
+    maw exec default -- br close --actor {agent} <id>
+    bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
 After finishing all ready work:
   bus claims release --agent {agent} --all
