@@ -2,6 +2,7 @@ pub mod adapters;
 pub mod cleanup;
 pub mod context;
 pub mod render;
+pub mod review_gate;
 pub mod shell;
 
 use std::io::IsTerminal;
