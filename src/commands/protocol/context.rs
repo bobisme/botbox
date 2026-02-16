@@ -106,6 +106,7 @@ impl ProtocolContext {
 
     /// Fetch bead status by calling `maw exec default -- br show <id> --format json`.
     pub fn bead_status(&self, bead_id: &str) -> Result<BeadInfo, ContextError> {
+        Self::validate_bead_id(bead_id)?;
         let output = Self::run_subprocess(&["maw", "exec", "default", "--", "br", "show", bead_id, "--format", "json"])?;
         let bead = adapters::parse_bead_show(&output)
             .map_err(|e| ContextError::ParseFailed(format!("bead {bead_id}: {e}")))?;
@@ -116,6 +117,7 @@ impl ProtocolContext {
     ///
     /// Returns empty list if no reviews exist or crit is not configured.
     pub fn reviews_in_workspace(&self, workspace: &str) -> Result<Vec<adapters::ReviewSummary>, ContextError> {
+        Self::validate_workspace_name(workspace)?;
         let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "reviews", "list", "--format", "json"]);
         match output {
             Ok(json) => {
@@ -132,6 +134,8 @@ impl ProtocolContext {
 
     /// Fetch review status by calling `maw exec <ws> -- crit review <id> --format json`.
     pub fn review_status(&self, review_id: &str, workspace: &str) -> Result<ReviewDetail, ContextError> {
+        Self::validate_review_id(review_id)?;
+        Self::validate_workspace_name(workspace)?;
         let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "review", review_id, "--format", "json"])?;
         let review_resp: ReviewDetailResponse = serde_json::from_str(&output)
             .map_err(|e| ContextError::ParseFailed(format!("review {review_id}: {e}")))?;
@@ -158,6 +162,33 @@ impl ProtocolContext {
             }
         }
         Ok(None)
+    }
+
+    /// Validate that a bead ID matches the expected pattern (bd-xxxx).
+    fn validate_bead_id(id: &str) -> Result<(), ContextError> {
+        if id.starts_with("bd-") && id.len() <= 20 && id[3..].chars().all(|c| c.is_ascii_alphanumeric()) {
+            Ok(())
+        } else {
+            Err(ContextError::ParseFailed(format!("invalid bead ID: {id}")))
+        }
+    }
+
+    /// Validate that a workspace name is safe (alphanumeric + hyphens only).
+    fn validate_workspace_name(name: &str) -> Result<(), ContextError> {
+        if !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+            Ok(())
+        } else {
+            Err(ContextError::ParseFailed(format!("invalid workspace name: {name}")))
+        }
+    }
+
+    /// Validate that a review ID matches the expected pattern (cr-xxxx).
+    fn validate_review_id(id: &str) -> Result<(), ContextError> {
+        if id.starts_with("cr-") && id.len() <= 20 && id[3..].chars().all(|c| c.is_ascii_alphanumeric()) {
+            Ok(())
+        } else {
+            Err(ContextError::ParseFailed(format!("invalid review ID: {id}")))
+        }
     }
 
     /// Run a subprocess and capture stdout.
