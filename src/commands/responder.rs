@@ -1291,6 +1291,14 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             return Ok(());
         }
 
+        // Skip messages from project agents (e.g., botbox-dev, botbox-security, botbox-dev/worker-suffix)
+        let project_prefix = format!("{}-", self.project);
+        if trigger_message.agent.starts_with(&project_prefix) {
+            eprintln!("Skipping project-internal message from {}", trigger_message.agent);
+            self.cleanup();
+            return Ok(());
+        }
+
         // Skip internal coordination messages
         if let Some(matched) = trigger_message.labels.iter().find(|l| SKIP_LABELS.contains(&l.as_str())) {
             eprintln!("Skipping internal message (label: {matched})");
@@ -1626,5 +1634,22 @@ mod tests {
         assert_eq!(strip_prefix_ci("!DEV fix bug", "!dev"), Some("fix bug".into()));
         assert_eq!(strip_prefix_ci("!dev", "!dev"), Some("".into()));
         assert_eq!(strip_prefix_ci("!devloop", "!dev"), None); // word boundary
+    }
+
+    #[test]
+    fn skip_project_agent_messages() {
+        // Test project-agent prefix matching
+        let project = "botbox";
+        let project_prefix = format!("{}-", project);
+
+        // Should match project agents
+        assert!(format!("botbox-dev").starts_with(&project_prefix));
+        assert!(format!("botbox-security").starts_with(&project_prefix));
+        assert!(format!("botbox-dev/worker-suffix").starts_with(&project_prefix));
+
+        // Should not match external agents
+        assert!(!format!("alice").starts_with(&project_prefix));
+        assert!(!format!("alice-dev").starts_with(&project_prefix));
+        assert!(!format!("myproject-dev").starts_with(&project_prefix));
     }
 }
