@@ -3,7 +3,7 @@
 //! Renders protocol guidance with shell-safe commands, validation, and format support.
 
 use crate::commands::doctor::OutputFormat;
-use crate::commands::protocol::executor::ExecutionReport;
+use crate::commands::protocol::executor::{ExecutionReport, StepResult};
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -873,5 +873,248 @@ mod tests {
         assert!(g.review.is_none());
         assert!(g.revalidate_cmd.is_none());
         assert!(g.advice.is_none());
+    }
+
+    // --- Status Rendering Tests: All Variants ---
+
+    #[test]
+    fn render_text_status_resumable() {
+        let mut g = ProtocolGuidance::new("resume");
+        g.status = ProtocolStatus::Resumable;
+        g.bead = Some(BeadRef {
+            id: "bd-abc".to_string(),
+            title: "In progress task".to_string(),
+        });
+        g.advise("Resume from previous work state.".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Resumable"));
+        assert!(text.contains("bd-abc"));
+        assert!(text.contains("resume"));
+    }
+
+    #[test]
+    fn render_json_status_resumable() {
+        let mut g = ProtocolGuidance::new("resume");
+        g.status = ProtocolStatus::Resumable;
+        g.bead = Some(BeadRef {
+            id: "bd-abc".to_string(),
+            title: "In progress".to_string(),
+        });
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["status"].as_str(), Some("Resumable"));
+        assert_eq!(parsed["command"].as_str(), Some("resume"));
+    }
+
+    #[test]
+    fn render_text_status_has_resources() {
+        let mut g = ProtocolGuidance::new("cleanup");
+        g.status = ProtocolStatus::HasResources;
+        g.steps(vec!["bus claims list --agent $AGENT --mine".to_string()]);
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Has Resources"));
+        assert!(text.contains("bus claims list"));
+    }
+
+    #[test]
+    fn render_json_status_has_resources() {
+        let mut g = ProtocolGuidance::new("cleanup");
+        g.status = ProtocolStatus::HasResources;
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["status"].as_str(), Some("HasResources"));
+    }
+
+    #[test]
+    fn render_text_status_has_work() {
+        let mut g = ProtocolGuidance::new("start");
+        g.status = ProtocolStatus::HasWork;
+        g.steps(vec!["maw exec default -- br ready".to_string()]);
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Has Work"));
+    }
+
+    #[test]
+    fn render_json_status_has_work() {
+        let mut g = ProtocolGuidance::new("start");
+        g.status = ProtocolStatus::HasWork;
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["status"].as_str(), Some("HasWork"));
+    }
+
+    #[test]
+    fn render_text_status_fresh() {
+        let mut g = ProtocolGuidance::new("start");
+        g.status = ProtocolStatus::Fresh;
+        g.advise("Starting fresh with no prior state.".to_string());
+
+        let text = render_text(&g);
+        assert!(text.contains("Status: Fresh"));
+        assert!(text.contains("Fresh"));
+    }
+
+    #[test]
+    fn render_json_status_fresh() {
+        let mut g = ProtocolGuidance::new("start");
+        g.status = ProtocolStatus::Fresh;
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["status"].as_str(), Some("Fresh"));
+    }
+
+    // --- Execution Report Rendering Tests ---
+
+    #[test]
+    fn render_text_with_execution_report_success() {
+        let mut g = ProtocolGuidance::new("start");
+        g.executed = true;
+        g.execution_report = Some(ExecutionReport {
+            results: vec![
+                StepResult {
+                    command: "echo test".to_string(),
+                    success: true,
+                    stdout: "test".to_string(),
+                    stderr: String::new(),
+                },
+            ],
+            remaining: vec![],
+        });
+
+        let text = render_text(&g);
+        assert!(text.contains("Execution:"));
+        assert!(text.contains("ok"));
+    }
+
+    #[test]
+    fn render_json_with_execution_report() {
+        let mut g = ProtocolGuidance::new("start");
+        g.executed = true;
+        g.execution_report = Some(ExecutionReport {
+            results: vec![
+                StepResult {
+                    command: "echo hello".to_string(),
+                    success: true,
+                    stdout: "hello".to_string(),
+                    stderr: String::new(),
+                },
+            ],
+            remaining: vec![],
+        });
+
+        let json = render_json(&g).unwrap();
+        assert!(json.contains("executed"));
+        assert!(json.contains("true"));
+        assert!(json.contains("execution_report"));
+        assert!(json.contains("hello"));
+    }
+
+    #[test]
+    fn render_pretty_with_execution_report() {
+        let mut g = ProtocolGuidance::new("start");
+        g.executed = true;
+        g.execution_report = Some(ExecutionReport {
+            results: vec![
+                StepResult {
+                    command: "echo test".to_string(),
+                    success: true,
+                    stdout: "test".to_string(),
+                    stderr: String::new(),
+                },
+            ],
+            remaining: vec![],
+        });
+
+        let pretty = render_pretty(&g);
+        assert!(pretty.contains("Execution:"));
+    }
+
+    #[test]
+    fn render_text_execution_report_with_failure() {
+        let mut g = ProtocolGuidance::new("finish");
+        g.executed = true;
+        g.execution_report = Some(ExecutionReport {
+            results: vec![
+                StepResult {
+                    command: "maw ws merge --destroy".to_string(),
+                    success: false,
+                    stdout: String::new(),
+                    stderr: "error: workspace not found".to_string(),
+                },
+            ],
+            remaining: vec!["next step".to_string()],
+        });
+
+        let text = render_text(&g);
+        assert!(text.contains("Execution:"));
+        assert!(text.contains("FAILED"));
+    }
+
+    #[test]
+    fn render_json_execution_report_with_remaining_steps() {
+        let mut g = ProtocolGuidance::new("finish");
+        g.executed = true;
+        g.execution_report = Some(ExecutionReport {
+            results: vec![
+                StepResult {
+                    command: "step1".to_string(),
+                    success: true,
+                    stdout: String::new(),
+                    stderr: String::new(),
+                },
+            ],
+            remaining: vec!["step2".to_string(), "step3".to_string()],
+        });
+
+        let json = render_json(&g).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert!(parsed["execution_report"].is_object());
+        let report = &parsed["execution_report"];
+        assert!(report["results"].is_array());
+        assert!(report["remaining"].is_array());
+        assert_eq!(report["remaining"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn render_text_without_execution_report_shows_steps() {
+        let mut g = ProtocolGuidance::new("start");
+        g.executed = false;
+        g.step("echo hello".to_string());
+        g.step("echo world".to_string());
+
+        let text = render_text(&g);
+        // When not executed, should show steps, not execution report
+        assert!(text.contains("Steps:"));
+        assert!(text.contains("echo hello"));
+        assert!(!text.contains("Execution:"));
+    }
+
+    #[test]
+    fn render_pretty_executed_true_skips_steps_section() {
+        let mut g = ProtocolGuidance::new("start");
+        g.executed = true;
+        g.step("echo hello".to_string());
+        g.execution_report = Some(ExecutionReport {
+            results: vec![
+                StepResult {
+                    command: "echo hello".to_string(),
+                    success: true,
+                    stdout: "hello".to_string(),
+                    stderr: String::new(),
+                },
+            ],
+            remaining: vec![],
+        });
+
+        let pretty = render_pretty(&g);
+        // When executed, should show execution report instead of steps section
+        assert!(pretty.contains("Execution:"));
     }
 }
