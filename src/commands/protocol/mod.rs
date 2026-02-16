@@ -117,6 +117,9 @@ pub enum ProtocolCommand {
     },
     /// Check for held resources and output cleanup commands
     Cleanup {
+        /// Execute cleanup steps instead of outputting them
+        #[arg(long)]
+        execute: bool,
         #[command(flatten)]
         args: ProtocolArgs,
     },
@@ -191,7 +194,7 @@ impl ProtocolCommand {
                     format,
                 )
             }
-            ProtocolCommand::Cleanup { args } => {
+            ProtocolCommand::Cleanup { execute, args } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
                     None => std::env::current_dir()
@@ -209,7 +212,7 @@ impl ProtocolCommand {
                 let agent = args.resolve_agent(&config);
                 let project = args.resolve_project(&config);
                 let format = args.resolve_format();
-                cleanup::execute(&agent, &project, format)
+                cleanup::execute(*execute, &agent, &project, format)
             }
             ProtocolCommand::Resume { args } => {
                 let project_root = match args.project_root.clone() {

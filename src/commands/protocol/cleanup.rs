@@ -7,6 +7,7 @@
 //! Operational failures (bus/maw unavailable) propagate as anyhow errors → exit 1.
 
 use super::context::ProtocolContext;
+use super::executor;
 use super::exit_policy;
 use super::render::{ProtocolGuidance, ProtocolStatus};
 use super::shell;
@@ -16,7 +17,11 @@ use crate::commands::doctor::OutputFormat;
 ///
 /// Returns Ok(()) with guidance on stdout (exit 0) for all status outcomes.
 /// ProtocolContext::collect errors propagate as anyhow::Error → exit 1.
+///
+/// When `execute` is true and status is HasResources, runs the cleanup steps
+/// via the executor instead of outputting them as guidance.
 pub fn execute(
+    execute: bool,
     agent: &str,
     project: &str,
     format: OutputFormat,
@@ -38,7 +43,8 @@ pub fn execute(
     if bead_claims.is_empty() && workspace_claims.is_empty() {
         guidance.status = ProtocolStatus::Ready;
         guidance.advise("No cleanup needed.".to_string());
-        return render_cleanup(&guidance, format);
+        // If execute is true but we're already clean, just report status (no execution needed)
+        return render_cleanup(&guidance, format, execute);
     }
 
     // We have resources held
@@ -83,7 +89,7 @@ pub fn execute(
     );
     guidance.advise(summary);
 
-    render_cleanup(&guidance, format)
+    render_cleanup(&guidance, format, execute)
 }
 
 /// Render cleanup guidance in the requested format.
@@ -92,8 +98,20 @@ pub fn execute(
 /// For text/pretty formats, uses cleanup-specific rendering optimized for
 /// the cleanup use case (tab-delimited status, claim counts, etc.).
 ///
+/// When execute is true and status is HasResources, runs the steps via the executor.
+/// If execute is true but status is Ready (clean), just reports clean status.
+///
 /// All formats exit 0 — status is communicated via stdout content.
-fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::Result<()> {
+fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat, execute: bool) -> anyhow::Result<()> {
+    // If execute flag is set and we have resources to clean up, run the executor
+    if execute && matches!(guidance.status, ProtocolStatus::HasResources) {
+        let report = executor::execute_steps(&guidance.steps)?;
+        let output = executor::render_report(&report, format);
+        println!("{}", output);
+        return Ok(());
+    }
+
+    // Otherwise, render guidance as usual (including when execute=true but status=Ready)
     match format {
         OutputFormat::Text => {
             // Text format: machine-readable, token-efficient
