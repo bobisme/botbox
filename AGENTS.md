@@ -574,7 +574,7 @@ Use these commands at protocol transitions to check state and get exact guidance
 | Finish | `botbox protocol finish <bead-id> --agent $AGENT` | Verify review approved, get merge/cleanup commands |
 | Cleanup | `botbox protocol cleanup --agent $AGENT` | Check for held resources to release |
 
-All commands support JSON output with `--format json` for parsing. If a command is unavailable or fails (exit code 1), fall back to manual steps documented in [start](./agents/botbox/start.md), [review-request](./agents/botbox/review-request.md), and [finish](./agents/botbox/finish.md).
+All commands support JSON output with `--format json` for parsing. If a command is unavailable or fails (exit code 1), fall back to manual steps documented in [start](.agents/botbox/start.md), [review-request](.agents/botbox/review-request.md), and [finish](.agents/botbox/finish.md).
 
 ### Beads Conventions
 
