@@ -566,13 +566,14 @@ jj abandon <change-id>/0   # keep one, abandon the divergent copy
 
 Use these commands at protocol transitions to check state and get exact guidance. Each command outputs instructions for the next steps.
 
-| Step | Command | Purpose |
-|------|---------|---------|
-| Resume | `botbox protocol resume --agent $AGENT` | Detect in-progress work from previous session |
-| Start | `botbox protocol start <bead-id> --agent $AGENT` | Verify bead is ready, get start commands |
-| Review | `botbox protocol review <bead-id> --agent $AGENT` | Verify work is complete, get review commands |
-| Finish | `botbox protocol finish <bead-id> --agent $AGENT` | Verify review approved, get merge/cleanup commands |
-| Cleanup | `botbox protocol cleanup --agent $AGENT` | Check for held resources to release |
+| Step | Command | Who | Purpose |
+|------|---------|-----|---------|
+| Resume | `botbox protocol resume --agent $AGENT` | Worker | Detect in-progress work from previous session |
+| Start | `botbox protocol start <bead-id> --agent $AGENT` | Worker | Verify bead is ready, get start commands |
+| Review | `botbox protocol review <bead-id> --agent $AGENT` | Worker | Verify work is complete, get review commands |
+| Finish | `botbox protocol finish <bead-id> --agent $AGENT` | Worker | Verify review approved, get close/cleanup commands |
+| Merge | `botbox protocol merge <workspace> --agent $AGENT` | Lead | Check preconditions, detect conflicts, get merge steps |
+| Cleanup | `botbox protocol cleanup --agent $AGENT` | Worker | Check for held resources to release |
 
 All commands support JSON output with `--format json` for parsing. If a command is unavailable or fails (exit code 1), fall back to manual steps documented in [start](.agents/botbox/start.md), [review-request](.agents/botbox/review-request.md), and [finish](.agents/botbox/finish.md).
 
@@ -580,6 +581,7 @@ All commands support JSON output with `--format json` for parsing. If a command 
 
 - Create a bead before starting work. Update status: `open` → `in_progress` → `closed`.
 - Post progress comments during work for crash recovery.
+- **Run checks before requesting review**: `just check` (or your project's build/test command). Fix any failures before proceeding.
 - After finishing a bead, follow [finish.md](.agents/botbox/finish.md). **Workers: do NOT push** — the lead handles merges and pushes.
 - **Install locally** after releasing: `just install`
 
@@ -660,7 +662,7 @@ Use `cass search "error or problem"` to find how similar issues were solved in p
 
 - [Reviewer agent loop](.agents/botbox/review-loop.md)
 
-- [Verify approval before merge](.agents/botbox/merge-check.md)
+- [Merge a worker workspace (protocol merge + conflict recovery)](.agents/botbox/merge-check.md)
 
 - [Validate toolchain health](.agents/botbox/preflight.md)
 

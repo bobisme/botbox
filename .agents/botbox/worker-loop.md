@@ -25,17 +25,7 @@ Your project channel is `$BOTBOX_PROJECT`. All bus commands must include `--agen
 
 Before triaging new work, check if you have unfinished work from a previous session that was interrupted. This handles crash recovery naturally.
 
-**Recommended: Use Protocol Command**
-
-First, check for in-progress work:
-
-```bash
-botbox protocol resume --agent $AGENT
-```
-
-Read the output carefully — it will tell you if you have a resumed bead and provide the exact commands to continue. If the protocol command is unavailable or fails with exit code 1, fall back to the manual steps below.
-
-**Manual Check — if no in_progress beads found:**
+**First, check for in_progress beads owned by you:**
 
 - `maw exec default -- br list --status in_progress --assignee $AGENT --json` — shows all beads marked in_progress that you own
 - If any beads are found, you have unfinished work. For each bead:
@@ -86,16 +76,6 @@ Read the output carefully — it will tell you if you have a resumed bead and pr
 
 ### 2. Start — claim and set up
 
-**Recommended: Use Protocol Command**
-
-```bash
-botbox protocol start <bead-id> --agent $AGENT
-```
-
-Read the output carefully and run the suggested commands. If the protocol command is unavailable or fails, use the manual steps below.
-
-**Manual Steps:**
-
 - `maw exec default -- br update --actor $AGENT <bead-id> --status=in_progress --owner=$AGENT`
 - `bus claims stake --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
 - `maw ws create --random` — note the workspace name (e.g., `frost-castle`). Store as `$WS`.
@@ -132,16 +112,7 @@ If stuck:
 
 After completing the implementation:
 
-**Recommended: Use Protocol Command**
-
-```bash
-botbox protocol review <bead-id> --agent $AGENT
-```
-
-Read the output carefully and run the suggested review commands. If the protocol command is unavailable or fails, use the manual steps below.
-
-**Manual Steps:**
-
+- **Run quality checks before review**: Execute `maw exec $WS -- just check` (or the configured `checkCommand` from `.botbox.json`). Fix any failures before proceeding with review.
 - Describe the change: `maw exec $WS -- jj describe -m "<bead-id>: <summary>"`
 - **Check the bead's risk label** to determine review routing:
   - Get bead details: `maw exec default -- br show <bead-id>`
@@ -187,18 +158,6 @@ Read the output carefully and run the suggested review commands. If the protocol
 See [review-request](review-request.md) for full details.
 
 ### 6. Finish — mandatory teardown (never skip)
-
-**Recommended: Use Protocol Command**
-
-After your review is approved (LGTM):
-
-```bash
-botbox protocol finish <bead-id> --agent $AGENT
-```
-
-Read the output carefully and run the suggested merge and cleanup commands. If the protocol command is unavailable or fails, use the manual steps below.
-
-**Manual Steps:**
 
 If a review was conducted:
 - Verify approval: `maw exec $WS -- crit review <review-id>` — confirm LGTM, no blocks

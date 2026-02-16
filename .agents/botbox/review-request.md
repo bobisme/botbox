@@ -17,17 +17,7 @@ Request a review using crit and announce it in the project channel.
 
 The botbus hook system watches for @mentions. When you send a message containing `@myproject-security`, the hook spawns the security reviewer agent.
 
-## Recommended: Use Protocol Command
-
-After completing your implementation, check state and get the exact review commands to run:
-
-```bash
-botbox protocol review <bead-id> --agent $AGENT
-```
-
-Read the output carefully — it will tell you whether a review is needed and provide the exact review creation and announcement commands. If the protocol command is unavailable or fails with exit code 1, fall back to the manual steps below.
-
-## Manual Steps (Fallback)
+## Steps
 
 1. Resolve agent identity: use `--agent` argument if provided, otherwise `$AGENT` env var. If neither is set, stop and instruct the user. Run `bus whoami --agent $AGENT` first to confirm; if it returns a name, use it.
 

@@ -115,7 +115,7 @@ fn list_workflow_docs() -> Vec<DocEntry> {
         },
         DocEntry {
             name: "merge-check.md".to_string(),
-            description: "Verify approval before merge".to_string(),
+            description: "Merge a worker workspace (protocol merge + conflict recovery)".to_string(),
         },
         DocEntry {
             name: "preflight.md".to_string(),
