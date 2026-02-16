@@ -2,3 +2,4 @@
 {"ts":"2026-02-16T04:45:35.779785115Z","author":"swift-jaguar","event":"ReviewersRequested","data":{"review_id":"cr-2apv","reviewers":["botbox-security"]}}
 {"ts":"2026-02-16T04:52:17.164997348Z","author":"botbox-dev","event":"ReviewerVoted","data":{"review_id":"cr-2apv","vote":"lgtm","reason":"LGTM - output contract and freshness semantics approved"}}
 {"ts":"2026-02-16T04:52:17.178369128Z","author":"botbox-dev","event":"ReviewApproved","data":{"review_id":"cr-2apv"}}
+{"ts":"2026-02-16T04:53:50.428641381Z","author":"botbox-dev","event":"ReviewMerged","data":{"review_id":"cr-2apv","final_commit":"a7b3234326deea2fef12e4eee9deac3bb49437be"}}

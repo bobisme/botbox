@@ -100,15 +100,15 @@ These are the source of truth. When botbox updates, run `botbox sync` to pull ch
 Agents are spawned automatically via botbus hooks when messages arrive on project channels. The spawn chain:
 
 ```
-message → botbus hook → botty spawn → botbox run-agent responder → botbox run-agent dev-loop
+message → botbus hook → botty spawn → botbox run responder → botbox run dev-loop
 ```
 
 Agent loops are built-in subcommands of the `botbox` binary:
 
-- **`botbox run-agent responder`** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
-- **`botbox run-agent dev-loop`** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
-- **`botbox run-agent worker-loop`** — Worker. Sequential: triage → start → work → review → finish.
-- **`botbox run-agent reviewer-loop`** — Reviewer. Processes crit reviews, votes LGTM or BLOCK.
+- **`botbox run responder`** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
+- **`botbox run dev-loop`** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
+- **`botbox run worker-loop`** — Worker. Sequential: triage → start → work → review → finish.
+- **`botbox run reviewer-loop`** — Reviewer. Processes crit reviews, votes LGTM or BLOCK.
 
 No manual agent management needed — send a message to a project channel and the hook chain handles the rest.
 
@@ -127,7 +127,7 @@ Botbox coordinates five specialized Rust tools that work together to enable mult
 
 ### Flywheel connection
 
-Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. The built-in `botbox run-agent triage` command wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
+Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. The built-in `botbox run triage` command wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
 
 ### How they work together
 

@@ -30,7 +30,7 @@ Understanding the full chain from "message arrives" to "agent does work" is crit
 1. Message lands on a botbus channel (e.g., `bus send myproject "New task" -L task-request`)
 2. botbus checks registered hooks (`bus hooks list`) for matching conditions
 3. Matching hook fires → runs its command (typically `botty spawn ...`)
-4. botty spawn creates a PTY session, runs `botbox run-agent <subcommand>`
+4. botty spawn creates a PTY session, runs `botbox run <subcommand>`
 5. The agent loop iterates: triage → start → work → review → finish
 6. Agent communicates back via `bus send`, updates beads via `br`, manages workspace via `maw`
 ```
@@ -41,10 +41,10 @@ Registered during `botbox init` (and updated via migrations):
 
 | Hook Type | Trigger | Spawns | Example |
 |-----------|---------|--------|---------|
-| **Router** (claim-based) | Any message on project channel, when no agent claimed | `botbox run-agent responder` | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
+| **Router** (claim-based) | Any message on project channel, when no agent claimed | `botbox run responder` | `bus hooks add --channel myproject --claim "agent://myproject-dev" ...` |
 | **Reviewer** (mention-based) | `@myproject-security` mention | Reviewer agent | `bus hooks add --channel myproject --mention "myproject-security" ...` |
 
-The router hook spawns `botbox run-agent responder` which routes messages based on `!` prefixes:
+The router hook spawns `botbox run responder` which routes messages based on `!` prefixes:
 - `!dev [msg]` — create bead + spawn dev-loop
 - `!bead [desc]` — create bead (with dedup via `br search`)
 - `!q [question]` — answer with sonnet
@@ -186,9 +186,9 @@ File-based issue tracker designed for crash recovery. Beads are stored in `.bead
 
 ## Agent Subcommands
 
-All agent loops are built into the `botbox` binary as subcommands under `botbox run-agent`. They are invoked by botbus hooks via `botty spawn`.
+All agent loops are built into the `botbox` binary as subcommands under `botbox run`. They are invoked by botbus hooks via `botty spawn`.
 
-### `botbox run-agent dev-loop` — Lead Dev Agent
+### `botbox run dev-loop` — Lead Dev Agent
 
 Triages work, dispatches parallel workers, monitors progress, merges completed work.
 
@@ -204,7 +204,7 @@ Triages work, dispatches parallel workers, monitors progress, merges completed w
 
 **Dispatch pattern:** Creates workspace per worker, generates random worker name via `bus generate-name`, stakes claims, comments bead with worker/workspace info, spawns via `botty spawn`.
 
-### `botbox run-agent worker-loop` — Worker Agent
+### `botbox run worker-loop` — Worker Agent
 
 Sequential: one bead per iteration. Triage → start → work → review → finish.
 
@@ -220,7 +220,7 @@ Sequential: one bead per iteration. Triage → start → work → review → fin
 7. Finish: close bead, merge workspace (`maw ws merge --destroy`), release claims, sync
 8. Release check: unreleased feat/fix → bump version
 
-### `botbox run-agent reviewer-loop` — Reviewer Agent
+### `botbox run reviewer-loop` — Reviewer Agent
 
 Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
@@ -237,7 +237,7 @@ Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
 **Journal:** Maintains `.agents/botbox/review-loop-<role>.txt` with iteration summaries.
 
-### `botbox run-agent responder` — Universal Message Router
+### `botbox run responder` — Universal Message Router
 
 THE single entrypoint for all project channel messages. Routes based on `!` prefixes, maintains conversation context across turns, and can escalate to dev-loop mid-conversation.
 
@@ -247,11 +247,11 @@ THE single entrypoint for all project channel messages. Routes based on `!` pref
 
 **Config:** `.botbox.json` → `agents.responder.{model, timeout, wait_timeout, max_conversations}`
 
-### `botbox run-agent triage` — Token-Efficient Triage
+### `botbox run triage` — Token-Efficient Triage
 
 Wraps `bv --robot-triage` JSON into scannable output: top picks, blockers, quick wins, health metrics.
 
-### `botbox run-agent iteration-start` — Combined Status
+### `botbox run iteration-start` — Combined Status
 
 Aggregates inbox, ready beads, pending reviews, active claims into a single status snapshot at iteration start.
 
@@ -428,7 +428,7 @@ When asked to look at a botty session, immediately run `botty tail <name> --last
 Drop whatever you're doing and run the tail command. Analyze the output and report what the agent is doing, whether it's stuck, and what might need fixing.
 
 ### Agent not spawning
-1. Check hook registration: `bus hooks list` — is the router hook there? Does the channel match? It should point to `botbox run-agent responder`.
+1. Check hook registration: `bus hooks list` — is the router hook there? Does the channel match? It should point to `botbox run responder`.
 2. Check claim availability: `bus claims list` — is the `agent://X-dev` claim already taken? (router hook won't fire if claimed)
 3. Check botty: `botty list` — is the agent already running?
 4. Verify hook command: the hook should run `botty spawn` with correct script path and `--env-inherit`

@@ -14,3 +14,4 @@
 {"ts":"2026-02-16T04:49:45.862673689Z","author":"botbox-dev","event":"ReviewerVoted","data":{"review_id":"cr-jw42","vote":"block","reason":"MEDIUM: Command injection risk — cleanup.rs uses raw format!() interpolation for agent/project names in shell command strings instead of using the shell-safe command builders from shell.rs. While output-only, agents copy-paste these commands. Use shell command builders and add validate_identifier() calls."}}
 {"ts":"2026-02-16T04:52:15.240736943Z","author":"botbox-dev","event":"ReviewerVoted","data":{"review_id":"cr-jw42","vote":"lgtm","reason":"LGTM - cleanup implementation approved, MEDIUM findings tracked"}}
 {"ts":"2026-02-16T04:52:15.256825176Z","author":"botbox-dev","event":"ReviewApproved","data":{"review_id":"cr-jw42"}}
+{"ts":"2026-02-16T04:53:48.921833724Z","author":"botbox-dev","event":"ReviewMerged","data":{"review_id":"cr-jw42","final_commit":"0d2d94c647b56f47a6364b9c8695a7c471a67e3f"}}
