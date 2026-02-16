@@ -200,6 +200,20 @@ fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+/// Validate that an agent variable name is a safe shell variable reference.
+///
+/// Agent var names must match `[A-Z_][A-Z0-9_]*` to be safe for `${var}` interpolation.
+/// Panics on invalid input since this indicates a programming error (callers should
+/// always pass compile-time string literals).
+fn validate_agent_var(var: &str) {
+    assert!(
+        !var.is_empty()
+            && var.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_')
+            && var.chars().next().is_some_and(|c| c.is_ascii_uppercase() || c == '_'),
+        "agent_var must be a valid shell variable name ([A-Z_][A-Z0-9_]*), got: {var:?}"
+    );
+}
+
 // --- Command builders ---
 // These produce shell-safe command strings. All dynamic values are validated
 // or escaped before inclusion. Structural identifiers pass through safe_ident()
@@ -207,6 +221,7 @@ fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
 
 /// Build: `bus claims stake --agent $AGENT "bead://<project>/<id>" -m "<memo>"`
 pub fn claims_stake_cmd(agent_var: &str, uri: &str, memo: &str) -> String {
+    validate_agent_var(agent_var);
     let mut cmd = String::new();
     write!(cmd, "bus claims stake --agent ${agent_var} {}", shell_escape(uri)).unwrap();
     if !memo.is_empty() {
@@ -217,6 +232,7 @@ pub fn claims_stake_cmd(agent_var: &str, uri: &str, memo: &str) -> String {
 
 /// Build: `bus claims release --agent $AGENT "<uri>"`
 pub fn claims_release_cmd(agent_var: &str, uri: &str) -> String {
+    validate_agent_var(agent_var);
     format!(
         "bus claims release --agent ${agent_var} {}",
         shell_escape(uri)
@@ -225,11 +241,30 @@ pub fn claims_release_cmd(agent_var: &str, uri: &str) -> String {
 
 /// Build: `bus claims release --agent $AGENT --all`
 pub fn claims_release_all_cmd(agent_var: &str) -> String {
+    validate_agent_var(agent_var);
     format!("bus claims release --agent ${agent_var} --all")
 }
 
 /// Build: `bus send --agent $AGENT <project> '<message>' -L <label>`
 pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) -> String {
+    validate_agent_var(agent_var);
+    // Validate project name before use
+    if let Err(_) = validate_identifier("project", project) {
+        // If validation fails, force escaping instead of raw interpolation
+        let mut cmd = String::new();
+        write!(
+            cmd,
+            "bus send --agent ${agent_var} {} {}",
+            shell_escape(project),
+            shell_escape(message)
+        )
+        .unwrap();
+        if !label.is_empty() {
+            write!(cmd, " -L {}", shell_escape(label)).unwrap();
+        }
+        return cmd;
+    }
+
     let mut cmd = String::new();
     write!(
         cmd,
@@ -239,7 +274,12 @@ pub fn bus_send_cmd(agent_var: &str, project: &str, message: &str, label: &str) 
     )
     .unwrap();
     if !label.is_empty() {
-        write!(cmd, " -L {}", safe_ident(label)).unwrap();
+        // Apply same validate+escape fallback as project parameter
+        if validate_identifier("label", label).is_ok() {
+            write!(cmd, " -L {}", safe_ident(label)).unwrap();
+        } else {
+            write!(cmd, " -L {}", shell_escape(label)).unwrap();
+        }
     }
     cmd
 }
@@ -251,10 +291,25 @@ pub fn br_update_cmd(
     status: &str,
     set_owner: bool,
 ) -> String {
+    validate_agent_var(agent_var);
+    // Validate bead_id before use - escape if validation fails
+    let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
+        safe_ident(bead_id)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(bead_id))
+    };
+
+    // Validate status - escape if validation fails
+    let status_safe = if validate_identifier("status", status).is_ok() {
+        safe_ident(status)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(status))
+    };
+
     let mut cmd = format!(
         "maw exec default -- br update --actor ${agent_var} {} --status={}",
-        safe_ident(bead_id),
-        safe_ident(status)
+        bead_id_safe,
+        status_safe
     );
     if set_owner {
         write!(cmd, " --owner=${agent_var}").unwrap();
@@ -264,18 +319,34 @@ pub fn br_update_cmd(
 
 /// Build: `maw exec default -- br comments add --actor $AGENT --author $AGENT <id> '<message>'`
 pub fn br_comment_cmd(agent_var: &str, bead_id: &str, message: &str) -> String {
+    validate_agent_var(agent_var);
+    // Validate bead_id before use
+    let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
+        safe_ident(bead_id)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(bead_id))
+    };
+
     format!(
         "maw exec default -- br comments add --actor ${agent_var} --author ${agent_var} {} {}",
-        safe_ident(bead_id),
+        bead_id_safe,
         shell_escape(message)
     )
 }
 
 /// Build: `maw exec default -- br close --actor $AGENT <id> --reason='<reason>'`
 pub fn br_close_cmd(agent_var: &str, bead_id: &str, reason: &str) -> String {
+    validate_agent_var(agent_var);
+    // Validate bead_id before use
+    let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
+        safe_ident(bead_id)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(bead_id))
+    };
+
     format!(
         "maw exec default -- br close --actor ${agent_var} {} --reason={}",
-        safe_ident(bead_id),
+        bead_id_safe,
         shell_escape(reason)
     )
 }
@@ -287,7 +358,14 @@ pub fn ws_create_cmd() -> String {
 
 /// Build: `maw ws merge <ws> --destroy`
 pub fn ws_merge_cmd(workspace: &str) -> String {
-    format!("maw ws merge {} --destroy", safe_ident(workspace))
+    // Validate workspace name before use
+    let workspace_safe = if validate_workspace_name(workspace).is_ok() {
+        safe_ident(workspace)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(workspace))
+    };
+
+    format!("maw ws merge {} --destroy", workspace_safe)
 }
 
 /// Build: `maw exec default -- br sync --flush-only`
@@ -302,11 +380,25 @@ pub fn crit_create_cmd(
     title: &str,
     reviewers: &str,
 ) -> String {
+    validate_agent_var(agent_var);
+    // Validate workspace and reviewers before use
+    let workspace_safe = if validate_workspace_name(workspace).is_ok() {
+        safe_ident(workspace)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(workspace))
+    };
+
+    let reviewers_safe = if validate_identifier("reviewers", reviewers).is_ok() {
+        safe_ident(reviewers)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(reviewers))
+    };
+
     format!(
         "maw exec {} -- crit reviews create --agent ${agent_var} --title {} --reviewers {}",
-        safe_ident(workspace),
+        workspace_safe,
         shell_escape(title),
-        safe_ident(reviewers)
+        reviewers_safe
     )
 }
 
@@ -317,25 +409,59 @@ pub fn crit_request_cmd(
     reviewers: &str,
     agent_var: &str,
 ) -> String {
+    validate_agent_var(agent_var);
+    // Validate all identifiers before use
+    let workspace_safe = if validate_workspace_name(workspace).is_ok() {
+        safe_ident(workspace)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(workspace))
+    };
+
+    let review_id_safe = if validate_review_id(review_id).is_ok() {
+        safe_ident(review_id)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(review_id))
+    };
+
+    let reviewers_safe = if validate_identifier("reviewers", reviewers).is_ok() {
+        safe_ident(reviewers)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(reviewers))
+    };
+
     format!(
         "maw exec {} -- crit reviews request {} --reviewers {} --agent ${agent_var}",
-        safe_ident(workspace),
-        safe_ident(review_id),
-        safe_ident(reviewers)
+        workspace_safe,
+        review_id_safe,
+        reviewers_safe
     )
 }
 
 /// Build: `maw exec <ws> -- crit review <id>`
 pub fn crit_show_cmd(workspace: &str, review_id: &str) -> String {
+    // Validate workspace and review_id before use
+    let workspace_safe = if validate_workspace_name(workspace).is_ok() {
+        safe_ident(workspace)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(workspace))
+    };
+
+    let review_id_safe = if validate_review_id(review_id).is_ok() {
+        safe_ident(review_id)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(review_id))
+    };
+
     format!(
         "maw exec {} -- crit review {}",
-        safe_ident(workspace),
-        safe_ident(review_id)
+        workspace_safe,
+        review_id_safe
     )
 }
 
 /// Build: `bus statuses clear --agent $AGENT`
 pub fn bus_statuses_clear_cmd(agent_var: &str) -> String {
+    validate_agent_var(agent_var);
     format!("bus statuses clear --agent ${agent_var}")
 }
 

@@ -9,6 +9,7 @@
 use super::context::ProtocolContext;
 use super::exit_policy;
 use super::render::{ProtocolGuidance, ProtocolStatus};
+use super::shell;
 use crate::commands::doctor::OutputFormat;
 
 /// Execute cleanup protocol: check for held resources and output cleanup guidance.
@@ -47,10 +48,10 @@ pub fn execute(
     let mut steps = Vec::new();
 
     // Step 1: Post agent idle message
-    steps.push(format!("bus send --agent {agent} {project} \"Agent idle\" -L agent-idle"));
+    steps.push(shell::bus_send_cmd("AGENT", project, "Agent idle", "agent-idle"));
 
     // Step 2: Clear statuses
-    steps.push(format!("bus statuses clear --agent {agent}"));
+    steps.push(shell::bus_statuses_clear_cmd("AGENT"));
 
     // Step 3: Release claims (but warn if bead claims are active)
     if !bead_claims.is_empty() {
@@ -65,10 +66,10 @@ pub fn execute(
             bead_list
         ));
     }
-    steps.push(format!("bus claims release --agent {agent} --all"));
+    steps.push(shell::claims_release_all_cmd("AGENT"));
 
     // Step 4: Flush bead changes
-    steps.push("maw exec default -- br sync --flush-only".to_string());
+    steps.push(shell::br_sync_cmd());
 
     guidance.steps(steps);
 

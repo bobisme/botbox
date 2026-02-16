@@ -66,12 +66,22 @@ pub fn evaluate_review_gate(
     let mut latest_votes: HashMap<String, &ReviewVote> = HashMap::new();
 
     // Build a map of latest vote per reviewer
+    // Track both latest vote and whether they previously LGTM'd
+    let mut previous_lgtm: HashMap<String, bool> = HashMap::new();
+
     for vote in &review.votes {
         let reviewer_key = vote.reviewer.clone();
+
+        // Track if this reviewer LGTM'd at some point
+        if vote.is_lgtm() {
+            previous_lgtm.insert(reviewer_key.clone(), true);
+        }
+
         latest_votes
             .entry(reviewer_key)
             .and_modify(|existing| {
                 // Keep the vote with the later timestamp
+                // Lexicographic string comparison works correctly for ISO 8601/RFC3339 timestamps
                 if let (Some(existing_voted_at), Some(new_voted_at)) = (&existing.voted_at, &vote.voted_at) {
                     if new_voted_at > existing_voted_at {
                         *existing = vote;
@@ -91,7 +101,10 @@ pub fn evaluate_review_gate(
                     approved_by.push(required.clone());
                 } else if vote.is_block() {
                     blocked_by.push(required.clone());
-                    newer_block_after_lgtm.push(required.clone());
+                    // Only add to newer_block_after_lgtm if they previously LGTM'd
+                    if previous_lgtm.get(required).copied().unwrap_or(false) {
+                        newer_block_after_lgtm.push(required.clone());
+                    }
                 }
             }
             None => {
@@ -175,8 +188,9 @@ mod tests {
 
         assert_eq!(decision.status, ReviewGateStatus::Blocked);
         assert!(decision.missing_approvals.is_empty());
-        assert_eq!(decision.newer_block_after_lgtm, vec!["botbox-perf"]);
-        assert_eq!(decision.blocked_by.len(), 1);
+        // botbox-perf only has a block vote (no prior LGTM), so it should NOT be in newer_block_after_lgtm
+        assert!(decision.newer_block_after_lgtm.is_empty());
+        assert_eq!(decision.blocked_by, vec!["botbox-perf"]);
     }
 
     #[test]
