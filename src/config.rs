@@ -36,6 +36,8 @@ pub struct ProjectConfig {
     #[serde(default)]
     pub install_command: Option<String>,
     #[serde(default)]
+    pub check_command: Option<String>,
+    #[serde(default)]
     pub critical_approvers: Option<Vec<String>>,
 }
 

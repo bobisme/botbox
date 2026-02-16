@@ -85,6 +85,7 @@ struct InitChoices {
     reviewers: Vec<String>,
     languages: Vec<String>,
     install_command: Option<String>,
+    check_command: Option<String>,
     init_beads: bool,
     seed_work: bool,
 }
@@ -523,6 +524,29 @@ impl InitArgs {
             None
         };
 
+        // Check command
+        let check_command = if interactive {
+            let default = match types.first().map(|s| s.as_str()) {
+                Some("cli") | Some("api") | Some("library") => {
+                    if types.iter().any(|t| t == "rust") {
+                        Some("cargo test && cargo clippy -- -D warnings")
+                    } else if types.iter().any(|t| t == "node") {
+                        Some("npm test")
+                    } else {
+                        Some("true")
+                    }
+                }
+                _ => Some("true"),
+            };
+            if prompt_confirm("Run quality checks before merge?", true)? {
+                Some(prompt_input("Check command", default)?)
+            } else {
+                Some("true".to_string())
+            }
+        } else {
+            None
+        };
+
         Ok(InitChoices {
             name,
             types,
@@ -530,6 +554,7 @@ impl InitArgs {
             reviewers,
             languages,
             install_command,
+            check_command,
             init_beads,
             seed_work,
         })
@@ -625,6 +650,7 @@ fn build_config(choices: &InitChoices) -> Config {
             default_agent: Some(format!("{}-dev", choices.name)),
             channel: Some(choices.name.clone()),
             install_command: choices.install_command.clone(),
+            check_command: choices.check_command.clone(),
             critical_approvers: None,
         },
         tools: ToolsConfig {
@@ -1106,6 +1132,7 @@ mod tests {
             reviewers: vec!["security".to_string()],
             languages: vec!["rust".to_string()],
             install_command: Some("just install".to_string()),
+            check_command: Some("cargo test && cargo clippy -- -D warnings".to_string()),
             init_beads: true,
             seed_work: false,
         };

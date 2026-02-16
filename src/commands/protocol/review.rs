@@ -383,6 +383,7 @@ mod tests {
                 default_agent: Some("botbox-dev".into()),
                 channel: Some("botbox".into()),
                 install_command: None,
+                check_command: None,
                 critical_approvers: None,
             },
             tools: Default::default(),

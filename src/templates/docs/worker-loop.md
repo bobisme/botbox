@@ -112,6 +112,7 @@ If stuck:
 
 After completing the implementation:
 
+- **Run quality checks before review**: Execute `maw exec $WS -- just check` (or the configured `checkCommand` from `.botbox.json`). Fix any failures before proceeding with review.
 - Describe the change: `maw exec $WS -- jj describe -m "<bead-id>: <summary>"`
 - **Check the bead's risk label** to determine review routing:
   - Get bead details: `maw exec default -- br show <bead-id>`
