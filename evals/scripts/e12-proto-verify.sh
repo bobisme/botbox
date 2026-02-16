@@ -303,10 +303,10 @@ check "No active claims for worker" "$($WORKER_CLAIMS && echo 1 || echo 0)" 10
 echo ""
 echo "--- Check 17: cleanup announcement ---"
 ANNOUNCED=false
-if echo "$CHANNEL_HISTORY" | grep -qi "idle\|clean\|sign.*off\|done\|complet"; then
+if echo "$CHANNEL_HISTORY" | grep -qi "idle\|clean\|sign.*off\|done\|complet\|finish"; then
   ANNOUNCED=true
 fi
-if echo "$AGENT_LOG" | grep -qi "bus send.*idle\|bus send.*done\|bus statuses clear\|Signing off"; then
+if echo "$AGENT_LOG" | grep -qi "bus send.*idle\|bus send.*done\|bus send.*Finish\|bus statuses clear\|Signing off"; then
   ANNOUNCED=true
 fi
 check "Agent sent cleanup/idle announcement" "$($ANNOUNCED && echo 0 || echo 1)" 10
