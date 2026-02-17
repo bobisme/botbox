@@ -33,7 +33,7 @@ pub fn run(
     model_override: Option<&str>,
 ) -> anyhow::Result<()> {
     let project_root = resolve_project_root(project_root)?;
-    let config = load_config(&project_root)?;
+    let (config, config_dir) = load_config(&project_root)?;
 
     let agent = resolve_agent(&config, agent_override)?;
     let project = config.channel();
@@ -70,6 +70,7 @@ pub fn run(
         missions_config,
         multi_lead_enabled,
         multi_lead_config,
+        project_dir: config_dir.display().to_string(),
     };
 
     eprintln!("Agent:     {agent}");
@@ -286,6 +287,7 @@ pub struct LoopContext {
     pub missions_config: Option<crate::config::MissionsConfig>,
     pub multi_lead_enabled: bool,
     pub multi_lead_config: Option<crate::config::MultiLeadConfig>,
+    pub project_dir: String,
 }
 
 /// Info about a sibling lead agent.
@@ -303,14 +305,15 @@ fn resolve_project_root(explicit: Option<&Path>) -> anyhow::Result<PathBuf> {
 }
 
 /// Load config from .botbox.json (checking both project root and ws/default/).
-fn load_config(project_root: &Path) -> anyhow::Result<Config> {
+/// Returns (config, config_dir) where config_dir is the directory containing .botbox.json.
+fn load_config(project_root: &Path) -> anyhow::Result<(Config, PathBuf)> {
     let direct = project_root.join(".botbox.json");
     if direct.exists() {
-        return Config::load(&direct);
+        return Ok((Config::load(&direct)?, project_root.to_path_buf()));
     }
     let ws_default = project_root.join("ws/default/.botbox.json");
     if ws_default.exists() {
-        return Config::load(&ws_default);
+        return Ok((Config::load(&ws_default)?, project_root.join("ws/default")));
     }
     anyhow::bail!("No .botbox.json found in {} or ws/default/", project_root.display())
 }

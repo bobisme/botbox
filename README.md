@@ -2,11 +2,11 @@
 
 ![botbox utopia](images/botbox-utopia.webp)
 
-Setup, sync, and runtime for multi-agent workflows. Bootstraps projects, keeps workflow docs in sync, and runs agent loops with built-in protocol guidance.
+Setup, sync, and runtime for multi-agent workflows. Bootstraps projects with workflow docs and companion tool configurations, keeps them synchronized across upgrades, and provides built-in agent loop subcommands with protocol guidance.
 
 ## Eval Results
 
-32 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the botbox protocol when driven autonomously through the botty-native spawn chain (hooks → botty spawn → loop scripts).
+32 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the botbox protocol when driven autonomously through the botty-native spawn chain (hooks → botty spawn → botbox run).
 
 | Eval | Model | Score | What it tests |
 |------|-------|-------|---------------|
@@ -21,10 +21,10 @@ Setup, sync, and runtime for multi-agent workflows. Bootstraps projects, keeps w
 
 ## What is botbox?
 
-`botbox` is a Rust CLI that:
+`botbox` is a Rust CLI (stable edition 2024) that:
 
 1. **Initializes projects** for multi-agent collaboration (interactive or via flags)
-2. **Syncs workflow docs** from a canonical source to `.agents/botbox/`
+2. **Syncs workflow docs** from embedded templates to `.agents/botbox/`
 3. **Validates health** via `doctor` command
 4. **Runs agent loops** as built-in subcommands (`dev-loop`, `worker-loop`, `reviewer-loop`, `responder`)
 5. **Provides protocol commands** that guide agents through state transitions (`protocol start`, `merge`, `finish`, etc.)
@@ -73,40 +73,45 @@ botbox protocol finish <bead-id> --agent $AGENT
 After `botbox init`:
 
 ```
-.agents/botbox/          # Workflow docs (triage, start, finish, etc.)
-  triage.md
-  start.md
-  update.md
-  finish.md
-  worker-loop.md
-  review-request.md
-  review-loop.md
-  merge-check.md
-  preflight.md
-  report-issue.md
+.agents/botbox/          # Workflow docs (embedded in binary, synced to project)
+  docs/
+    triage.md            # Find work from inbox and beads
+    start.md             # Claim bead, create workspace, announce
+    update.md            # Post progress updates
+    finish.md            # Close bead, merge workspace, release claims
+    worker-loop.md       # Full triage-start-work-finish lifecycle
+    review-request.md    # Request code review via crit
+    review-response.md   # Handle reviewer feedback (fix/address/defer)
+    review-loop.md       # Reviewer agent loop
+    merge-check.md       # Verify approval before merge
+    preflight.md         # Validate toolchain health
+    cross-channel.md     # Ask questions, report bugs across projects
+    report-issue.md      # Report bugs/features to other projects
+    planning.md          # Turn specs/PRDs into actionable beads
+    scout.md             # Explore unfamiliar code before planning
+    proposal.md          # Create and validate proposals before implementation
+    groom.md             # Groom backlog
+    mission.md           # Mission-based parallel dispatch (dev-loop)
+    coordination.md      # Multi-agent coordination patterns
+  design/
+    cli-conventions.md   # CLI tool design for humans, agents, and machines
+  prompts/
+    reviewer.md          # Generic reviewer prompt template
+    reviewer-security.md # Security reviewer prompt template
+  hooks/                 # Claude Code event hooks (SessionStart, PostToolUse)
   .version               # Version hash for sync tracking
-AGENTS.md                # Generated with managed section + project-specific content above
+AGENTS.md                # Generated with managed section + project-specific content
 CLAUDE.md -> AGENTS.md   # Symlink
+.botbox.json             # Project configuration
 ```
 
 ## Workflow docs
 
-The workflow docs in `.agents/botbox/` define the protocol:
+The workflow docs in `.agents/botbox/docs/` define the protocol. These are embedded in the Rust binary as compile-time templates and synced to projects during `botbox init` and `botbox sync`.
 
-- **triage.md**: Find work from inbox and beads
-- **start.md**: Claim bead, create workspace, announce
-- **update.md**: Post progress updates
-- **finish.md**: Close bead, merge workspace, release claims, sync
-- **worker-loop.md**: Full triage-start-work-finish lifecycle
-- **review-request.md**: Request code review via crit
-- **review-loop.md**: Reviewer agent loop
-- **merge-check.md**: Verify approval before merge
-- **preflight.md**: Validate toolchain health
-- **report-issue.md**: Report bugs/features to other projects
+When botbox updates, run `botbox sync` to pull the latest workflow doc changes.
 
-These are the source of truth. When botbox updates, run `botbox sync` to pull changes.
-
-## Agent loop
+## Agent loops
 
 Agents are spawned automatically via botbus hooks when messages arrive on project channels. The spawn chain:
 
@@ -114,12 +119,14 @@ Agents are spawned automatically via botbus hooks when messages arrive on projec
 message → botbus hook → botty spawn → botbox run responder → botbox run dev-loop
 ```
 
-Agent loops are built-in subcommands of the `botbox` binary:
+Agent loops are built-in Rust subcommands of the `botbox` binary:
 
 - **`botbox run responder`** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
 - **`botbox run dev-loop`** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
 - **`botbox run worker-loop`** — Worker. Sequential: triage → start → work → review → finish.
 - **`botbox run reviewer-loop`** — Reviewer. Processes crit reviews, votes LGTM or BLOCK.
+- **`botbox run triage`** — Token-efficient triage. Wraps `bv --robot-triage` with scannable output.
+- **`botbox run iteration-start`** — Combined status snapshot. Aggregates inbox, beads, reviews, claims.
 
 No manual agent management needed — send a message to a project channel and the hook chain handles the rest.
 
@@ -150,18 +157,52 @@ Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https:
 
 **botbox** configures projects to use these tools, keeps workflow docs synchronized, and runs the agent loops (`botbox run dev-loop`, `botbox run worker-loop`, etc.) that drive the entire workflow.
 
+## Architecture
+
+Botbox is a Rust project (edition 2024) with:
+
+- **Zero build step** beyond `cargo build` — workflow docs are embedded at compile time via `include_str!` and rendered with `minijinja`
+- **Agent loops as subcommands** — `dev-loop`, `worker-loop`, `reviewer-loop`, `responder` are built into the binary
+- **Protocol commands** — `botbox protocol start/merge/finish` check preconditions and output guidance
+- **Config migrations** — `botbox sync` runs version-based migrations to update `.botbox.json` and botbus hooks
+
+See [CLAUDE.md](CLAUDE.md) for full architecture docs, development conventions, and companion tool deep dives.
+
 ## Cross-project feedback
 
 The `#projects` registry on botbus tracks which tools belong to which projects:
 
 ```bash
 # Find who owns a tool
-bus inbox --agent $AGENT --channels projects --all | grep "tools:.*botty"
+bus history projects -n 50 | grep "tools:.*botty"
 
 # File bugs in their repo
 cd ~/src/botty
-br create --title="Bug: ..." --type=bug --priority=2
-bus send botty "Filed bd-xyz: description @botty-dev" -L feedback
+br create --actor $AGENT --owner $AGENT --title="Bug: ..." --type=bug --priority=2
+bus send --agent $AGENT botty "Filed bd-xyz: description @botty-dev" -L feedback
 ```
 
-See `.agents/botbox/report-issue.md` for full workflow.
+See `.agents/botbox/docs/report-issue.md` for full workflow.
+
+## Development
+
+Runtime: **Rust** (stable, edition 2024). Tooling: **clippy** (lint), **rustfmt** (format), **cargo check** (type check).
+
+```bash
+# From ws/default/ (maw v2 bare repo layout)
+maw exec default -- just install    # cargo install --path .
+maw exec default -- just lint       # cargo clippy
+maw exec default -- just fmt        # cargo fmt
+maw exec default -- just check      # cargo check
+maw exec default -- just test       # cargo test
+```
+
+This project uses Jujutsu (jj) for version control and maw for workspace management. Source files live in `ws/default/`, not at the project root. Run `maw exec default -- <command>` to execute commands in the workspace context.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+## License
+
+MIT

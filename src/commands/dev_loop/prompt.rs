@@ -258,6 +258,7 @@ When all children are closed:
 
     // Worker dispatch command (built into botbox binary)
     let worker_cmd = "botbox run worker-loop";
+    let project_dir = &ctx.project_dir;
 
     let check_command = ctx
         .check_command
@@ -498,7 +499,7 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
     --env "BOTBUS_CHANNEL={project}" \
     --env "BOTBOX_PROJECT={project}" \
     --timeout <model-timeout> \
-    --cwd $(pwd) \
+    --cwd {project_dir} \
     -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
 
 Set --timeout based on the selected model (complex work needs more time):
@@ -714,6 +715,7 @@ mod tests {
             missions_config: None,
             multi_lead_enabled: false,
             multi_lead_config: None,
+            project_dir: "/home/test/project/ws/default".to_string(),
         }
     }
 

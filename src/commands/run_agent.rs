@@ -35,9 +35,18 @@ impl OutputFormat {
             }
         }
 
-        // TTY detection
+        // TTY detection: check stdout.is_terminal() OR presence of TERM env var
+        // The TERM check handles cases where we're in a PTY (like botty spawn)
+        // but stdout appears as a pipe due to stream processing
         if std::io::stdout().is_terminal() {
             OutputFormat::Pretty
+        } else if let Ok(term) = std::env::var("TERM") {
+            // If TERM is set and not "dumb", treat as a terminal
+            if !term.is_empty() && term != "dumb" {
+                OutputFormat::Pretty
+            } else {
+                OutputFormat::Text
+            }
         } else {
             OutputFormat::Text
         }
@@ -47,6 +56,8 @@ impl OutputFormat {
 /// ANSI codes for pretty output
 struct Style {
     bold: &'static str,
+    bright: &'static str,
+    bold_bright: &'static str,
     dim: &'static str,
     reset: &'static str,
     green: &'static str,
@@ -59,6 +70,8 @@ struct Style {
 
 const PRETTY_STYLE: Style = Style {
     bold: "\x1b[1m",
+    bright: "\x1b[97m",
+    bold_bright: "\x1b[1;97m",
     dim: "\x1b[2m",
     reset: "\x1b[0m",
     green: "\x1b[32m",
@@ -71,6 +84,8 @@ const PRETTY_STYLE: Style = Style {
 
 const TEXT_STYLE: Style = Style {
     bold: "",
+    bright: "",
+    bold_bright: "",
     dim: "",
     reset: "",
     green: "",
@@ -321,7 +336,7 @@ fn print_text_event(event: &Value, style: &Style) {
             first_line.to_string()
         };
         if !truncated.trim().is_empty() {
-            println!("{}{} {}{}", style.dim, style.bullet, truncated, style.reset);
+            println!("{}{} {}{}", style.bright, style.bullet, truncated, style.reset);
         }
     }
 }
@@ -336,7 +351,7 @@ fn print_assistant_event(event: &Value, style: &Style) {
             if item.get("type").and_then(|t| t.as_str()) == Some("text") {
                 if let Some(text) = item.get("text").and_then(|t| t.as_str()) {
                     let formatted = format_markdown(text, style);
-                    println!("\n{}", formatted);
+                    println!("\n{}{}{}", style.bright, formatted, style.reset);
                 }
             } else if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
                 && let Some(tool_name) = item.get("name").and_then(|n| n.as_str()) {
@@ -350,7 +365,7 @@ fn print_assistant_event(event: &Value, style: &Style) {
                     println!(
                         "\n{} {}{}{} {}{}{}",
                         style.tool_arrow,
-                        style.bold,
+                        style.bold_bright,
                         tool_name,
                         style.reset,
                         style.dim,
@@ -461,6 +476,48 @@ mod tests {
     fn detect_format_explicit() {
         assert_eq!(OutputFormat::detect(Some("pretty")), OutputFormat::Pretty);
         assert_eq!(OutputFormat::detect(Some("text")), OutputFormat::Text);
+    }
+
+    #[test]
+    fn detect_format_via_term_env() {
+        // Save current TERM value
+        let original_term = std::env::var("TERM").ok();
+
+        // Test with TERM=xterm-256color (should enable pretty mode)
+        unsafe {
+            std::env::set_var("TERM", "xterm-256color");
+        }
+        // Note: This test might still return Text if stdout is not a TTY,
+        // but the TERM check is a fallback that happens after the TTY check fails
+        let _format = OutputFormat::detect(None);
+
+        // Test with TERM=dumb (should disable colors)
+        unsafe {
+            std::env::set_var("TERM", "dumb");
+        }
+        let format_dumb = OutputFormat::detect(None);
+        // dumb terminal should give us Text mode (unless stdout is a real TTY)
+
+        // Test with empty TERM
+        unsafe {
+            std::env::set_var("TERM", "");
+        }
+        let format_empty = OutputFormat::detect(None);
+
+        // Restore original TERM
+        unsafe {
+            match original_term {
+                Some(term) => std::env::set_var("TERM", term),
+                None => std::env::remove_var("TERM"),
+            }
+        }
+
+        // Verify dumb and empty both give Text when not in a TTY
+        // (can't easily test the Pretty case without a real TTY)
+        if !std::io::stdout().is_terminal() {
+            assert_eq!(format_dumb, OutputFormat::Text);
+            assert_eq!(format_empty, OutputFormat::Text);
+        }
     }
 
     #[test]
