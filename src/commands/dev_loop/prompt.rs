@@ -512,19 +512,26 @@ After dispatching all workers, skip to step 6 (MONITOR).
 {mission_section_5c}
 ## 6. MONITOR (if workers are dispatched)
 
-WAIT for a worker to finish instead of polling. Use bus wait to block until a completion message arrives:
+IMPORTANT: Do NOT end the iteration early just to poll again. Ending the iteration and starting a new one
+burns a full Claude API call. Instead, WAIT for workers to finish using one of these approaches:
+
+**Preferred: bus wait** — blocks until a worker posts a completion message:
 
   bus wait -c {project} -L task-done -t 300
 
-This blocks until a worker posts a task-done message (up to 5 minutes). When it returns:
-- If a message arrived: a worker finished. Proceed to check completions below.
-- If timeout (exit code 1): no worker finished yet. Do a quick dead-worker check (Crash Recovery below),
-  then output END_OF_STORY to return control to the outer loop.
+This blocks until a task-done message arrives (up to 5 minutes). Zero tokens consumed while waiting.
+When it returns, check completions below.
 
-IMPORTANT: Do NOT use shell `sleep` for monitoring. Shell sleep counts against your Claude timeout
-budget and wastes tokens. bus wait is the correct way to block — it costs zero tokens while waiting.
+**Alternative: sleep** — if you want to check periodically:
 
-After bus wait returns (or if you already have unmerged completions from a previous iteration):
+  sleep 120
+
+Then check for completions. This is fine — sleep does NOT consume tokens.
+
+**Do NOT** output END_OF_STORY while workers are still running unless you've done a dead-worker check
+and confirmed all workers are alive. Each unnecessary iteration wastes tokens.
+
+After waiting:
 
 Check for completion messages:
 - bus inbox --agent {agent} --channels {project} -n 20

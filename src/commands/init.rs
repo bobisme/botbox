@@ -684,7 +684,7 @@ fn build_config(choices: &InitChoices) -> Config {
                 model: "opus".into(),
                 max_loops: 20,
                 pause: 2,
-                timeout: 900,
+                timeout: 1800,
                 missions: Some(MissionsConfig {
                     enabled: true,
                     max_workers: 4,
@@ -695,13 +695,13 @@ fn build_config(choices: &InitChoices) -> Config {
             }),
             worker: Some(WorkerAgentConfig {
                 model: "haiku".into(),
-                timeout: 600,
+                timeout: 900,
             }),
             reviewer: Some(ReviewerAgentConfig {
                 model: "opus".into(),
                 max_loops: 20,
                 pause: 2,
-                timeout: 600,
+                timeout: 900,
             }),
             responder: None,
         },
