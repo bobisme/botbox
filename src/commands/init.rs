@@ -682,7 +682,7 @@ fn build_config(choices: &InitChoices) -> Config {
         agents: AgentsConfig {
             dev: Some(DevAgentConfig {
                 model: "opus".into(),
-                max_loops: 20,
+                max_loops: 100,
                 pause: 2,
                 timeout: 1800,
                 missions: Some(MissionsConfig {
@@ -699,7 +699,7 @@ fn build_config(choices: &InitChoices) -> Config {
             }),
             reviewer: Some(ReviewerAgentConfig {
                 model: "opus".into(),
-                max_loops: 20,
+                max_loops: 100,
                 pause: 2,
                 timeout: 900,
             }),

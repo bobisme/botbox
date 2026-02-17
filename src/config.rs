@@ -193,7 +193,7 @@ pub struct ResponderAgentConfig {
 fn default_model_opus() -> String { "opus".into() }
 fn default_model_haiku() -> String { "haiku".into() }
 fn default_model_sonnet() -> String { "sonnet".into() }
-fn default_max_loops() -> u32 { 20 }
+fn default_max_loops() -> u32 { 100 }
 fn default_pause() -> u32 { 2 }
 fn default_timeout_300() -> u64 { 300 }
 fn default_timeout_900() -> u64 { 900 }
@@ -318,7 +318,7 @@ mod tests {
         let config = Config::parse(json).unwrap();
         let dev = config.agents.dev.unwrap();
         assert_eq!(dev.model, "sonnet");
-        assert_eq!(dev.max_loops, 20); // default
+        assert_eq!(dev.max_loops, 100); // default
         assert_eq!(dev.pause, 2); // default
         assert_eq!(dev.timeout, 1800); // default
     }
