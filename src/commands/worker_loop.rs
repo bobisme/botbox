@@ -49,7 +49,7 @@ impl WorkerLoop {
             .or_else(|| worker_config.map(|w| w.model.clone()))
             .unwrap_or_default();
 
-        let timeout = worker_config.map(|w| w.timeout).unwrap_or(600);
+        let timeout = worker_config.map(|w| w.timeout).unwrap_or(900);
         let review_enabled = config.review.enabled;
         let critical_approvers = config.project.critical_approvers.clone().unwrap_or_default();
 
@@ -684,7 +684,7 @@ mod tests {
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
             model: "haiku".to_string(),
-            timeout: 600,
+            timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
             dispatched_bead: None,
@@ -715,7 +715,7 @@ mod tests {
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
             model: "haiku".to_string(),
-            timeout: 600,
+            timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
             dispatched_bead: Some("bd-test".to_string()),
@@ -745,7 +745,7 @@ mod tests {
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
             model: "haiku".to_string(),
-            timeout: 600,
+            timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
             dispatched_bead: None,
@@ -793,7 +793,7 @@ mod tests {
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
             model: "haiku".to_string(),
-            timeout: 600,
+            timeout: 900,
             review_enabled: false,
             critical_approvers: vec![],
             dispatched_bead: None,
@@ -822,7 +822,7 @@ mod tests {
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
             model: "haiku".to_string(),
-            timeout: 600,
+            timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
             dispatched_bead: None,

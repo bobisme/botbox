@@ -402,7 +402,7 @@ pub fn run_reviewer_loop(
         model: "opus".to_string(),
         max_loops: 20,
         pause: 2,
-        timeout: 600,
+        timeout: 900,
     });
 
     let model = model_override.unwrap_or(reviewer_config.model);

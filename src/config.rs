@@ -109,7 +109,7 @@ pub struct DevAgentConfig {
     pub max_loops: u32,
     #[serde(default = "default_pause")]
     pub pause: u32,
-    #[serde(default = "default_timeout_900")]
+    #[serde(default = "default_timeout_1800")]
     pub timeout: u64,
     #[serde(default)]
     pub missions: Option<MissionsConfig>,
@@ -123,7 +123,7 @@ impl Default for DevAgentConfig {
             model: default_model_opus(),
             max_loops: default_max_loops(),
             pause: default_pause(),
-            timeout: default_timeout_900(),
+            timeout: default_timeout_1800(),
             missions: None,
             multi_lead: None,
         }
@@ -159,7 +159,7 @@ pub struct MultiLeadConfig {
 pub struct WorkerAgentConfig {
     #[serde(default = "default_model_haiku")]
     pub model: String,
-    #[serde(default = "default_timeout_600")]
+    #[serde(default = "default_timeout_900")]
     pub timeout: u64,
 }
 
@@ -172,7 +172,7 @@ pub struct ReviewerAgentConfig {
     pub max_loops: u32,
     #[serde(default = "default_pause")]
     pub pause: u32,
-    #[serde(default = "default_timeout_600")]
+    #[serde(default = "default_timeout_900")]
     pub timeout: u64,
 }
 
@@ -196,8 +196,8 @@ fn default_model_sonnet() -> String { "sonnet".into() }
 fn default_max_loops() -> u32 { 20 }
 fn default_pause() -> u32 { 2 }
 fn default_timeout_300() -> u64 { 300 }
-fn default_timeout_600() -> u64 { 600 }
 fn default_timeout_900() -> u64 { 900 }
+fn default_timeout_1800() -> u64 { 1800 }
 fn default_true() -> bool { true }
 fn default_max_workers() -> u32 { 4 }
 fn default_max_children() -> u32 { 12 }
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(dev.model, "sonnet");
         assert_eq!(dev.max_loops, 20); // default
         assert_eq!(dev.pause, 2); // default
-        assert_eq!(dev.timeout, 900); // default
+        assert_eq!(dev.timeout, 1800); // default
     }
 
     #[test]

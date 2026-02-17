@@ -474,9 +474,10 @@ impl SyncArgs {
     }
 
     fn auto_commit(&self, project_root: &Path, changed_files: &[&str]) -> Result<()> {
-        // Check if this is a jj repo
-        let jj_dir = project_root.join(".jj");
-        if !jj_dir.exists() {
+        // Check if this is a jj repo by searching up the directory tree.
+        // In maw v2 bare repos, .jj lives at the bare root (e.g. /repo/.jj)
+        // while project_root is a workspace subdir (e.g. /repo/ws/default/).
+        if find_jj_root(project_root).is_none() {
             return Ok(()); // Not a jj repo, skip commit
         }
 
@@ -670,6 +671,14 @@ fn migrate_bus_hooks(config: &Config) {
     }
 }
 
+/// Search up the directory tree for a .jj directory (like jj itself does).
+/// Returns the repo root if found, or None if not a jj repo.
+fn find_jj_root(from: &Path) -> Option<PathBuf> {
+    from.ancestors()
+        .find(|p| p.join(".jj").is_dir())
+        .map(|p| p.to_path_buf())
+}
+
 /// Compute SHA-256 hash of all workflow docs
 fn compute_docs_version() -> String {
     let mut hasher = Sha256::new();
@@ -703,6 +712,33 @@ fn compute_design_docs_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_find_jj_root_direct() {
+        let dir = tempfile::tempdir().unwrap();
+        let jj = dir.path().join(".jj");
+        fs::create_dir(&jj).unwrap();
+        // Should find .jj right at `from`
+        assert_eq!(find_jj_root(dir.path()), Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_find_jj_root_ancestor() {
+        let dir = tempfile::tempdir().unwrap();
+        let jj = dir.path().join(".jj");
+        fs::create_dir(&jj).unwrap();
+        let ws = dir.path().join("ws/default");
+        fs::create_dir_all(&ws).unwrap();
+        // Should find .jj at the ancestor
+        assert_eq!(find_jj_root(&ws), Some(dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_find_jj_root_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        // No .jj anywhere
+        assert_eq!(find_jj_root(dir.path()), None);
+    }
 
     #[test]
     fn test_version_hashes() {

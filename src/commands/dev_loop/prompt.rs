@@ -503,7 +503,7 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
     -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
 
 Set --timeout based on the selected model (complex work needs more time):
-  opus: 900, sonnet: 600, haiku: 300
+  opus: 1800, sonnet: 900, haiku: 600
 
 The hierarchical name ({agent}/<suffix>) lets you find all your workers via `botty list`.
 The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
@@ -512,9 +512,19 @@ After dispatching all workers, skip to step 6 (MONITOR).
 {mission_section_5c}
 ## 6. MONITOR (if workers are dispatched)
 
+WAIT for a worker to finish instead of polling. Use bus wait to block until a completion message arrives:
+
+  bus wait -c {project} -L task-done -t 300
+
+This blocks until a worker posts a task-done message (up to 5 minutes). When it returns:
+- If a message arrived: a worker finished. Proceed to check completions below.
+- If timeout (exit code 1): no worker finished yet. Do a quick dead-worker check (Crash Recovery below),
+  then output END_OF_STORY to return control to the outer loop.
+
 IMPORTANT: Do NOT use shell `sleep` for monitoring. Shell sleep counts against your Claude timeout
-budget and can kill your session. Use quick sequential checks and then output END_OF_STORY to return
-control to the outer loop, which handles iteration timing.
+budget and wastes tokens. bus wait is the correct way to block — it costs zero tokens while waiting.
+
+After bus wait returns (or if you already have unmerged completions from a previous iteration):
 
 Check for completion messages:
 - bus inbox --agent {agent} --channels {project} -n 20
