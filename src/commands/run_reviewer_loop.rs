@@ -469,6 +469,14 @@ pub fn run_reviewer_loop(
         fs::write(&journal_path, "")?;
     }
 
+    // Install signal handler for cleanup
+    let cleanup_agent = agent.clone();
+    let cleanup_project = project.clone();
+    let _ = ctrlc::set_handler(move || {
+        let _ = cleanup(&cleanup_agent, &cleanup_project, false);
+        std::process::exit(0);
+    });
+
     let mut already_signed_off = false;
 
     // Main loop

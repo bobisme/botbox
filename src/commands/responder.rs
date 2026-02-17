@@ -1388,16 +1388,22 @@ pub fn run_responder(
 ) -> anyhow::Result<()> {
     let project_root = project_root.unwrap_or_else(|| std::env::current_dir().unwrap_or_default());
 
-    // Install signal handlers for cleanup
-    ctrlc_cleanup();
-
     let mut responder = Responder::new(project_root, agent, model)?;
-    responder.run()
-}
 
-fn ctrlc_cleanup() {
-    // Best-effort signal handling — the cleanup in Responder::run covers the normal path.
-    // For abnormal exits, the agent claim TTL will expire naturally.
+    // Install signal handler for cleanup (after construction so we have the agent name)
+    let signal_agent = responder.agent.clone();
+    let _ = ctrlc::set_handler(move || {
+        let uri = format!("agent://{signal_agent}");
+        let _ = Tool::new("bus")
+            .args(&["claims", "release", "--agent", &signal_agent, &uri])
+            .run();
+        let _ = Tool::new("bus")
+            .args(&["statuses", "clear", "--agent", &signal_agent])
+            .run();
+        std::process::exit(0);
+    });
+
+    responder.run()
 }
 
 // ---------------------------------------------------------------------------
