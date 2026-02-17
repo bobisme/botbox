@@ -189,12 +189,10 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
 
    RISK:LOW PATH (evals, docs, tests, config) — Self-review and merge directly:
      No security review needed regardless of REVIEW setting.
-     Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
      Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
      Proceed directly to step 7 (FINISH).
 
    RISK:MEDIUM PATH — Standard review (current default):
-     Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
      Try protocol command: botbox protocol review <bead-id> --agent {agent}
      Read the output carefully. If status is Ready, run the suggested commands.
      If it fails (exit 1 = command unavailable), fall back to manual review request:
@@ -235,7 +233,6 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
             )
         } else {
             r#"   REVIEW is disabled. Skip code review.
-   Describe the change: maw exec $WS -- jj describe -m "<id>: <summary>".
    Proceed directly to step 7 (FINISH)."#.to_string()
         };
 
@@ -245,7 +242,6 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
    Try protocol command: botbox protocol finish <bead-id> --agent {agent} --no-merge
    Read the output carefully. If status is Ready, run the suggested commands.
    If it fails (exit 1 = command unavailable), fall back to manual finish:
-     Describe commit: maw exec $WS -- jj describe -m "<id>: <summary>"
      Close bead: maw exec default -- br close --actor {agent} <id> --reason="Completed"
      Announce: bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
      Release bead claim: bus claims release --agent {agent} "bead://{project}/<id>"
@@ -292,11 +288,15 @@ IMPORTANT: Use --agent {agent} on ALL bus and crit commands. Use --actor {agent}
 
 CRITICAL - HUMAN MESSAGE PRIORITY: If you see a system reminder with "STOP:" showing unread bus messages, these are from humans or other agents trying to reach you. IMMEDIATELY check inbox and respond before continuing your current task. Human questions, clarifications, and redirects take priority over heads-down work.
 
-COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. All crit/jj commands run in their workspace.
+COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. All crit commands run in their workspace.
   br/bv: maw exec default -- br <args>       or  maw exec default -- bv <args>
   crit:  maw exec $WS -- crit <args>
-  jj:    maw exec $WS -- jj <args>
   other: maw exec $WS -- <command>           (cargo test, etc.)
+
+CRITICAL — NO JJ COMMANDS: Workers must NEVER run jj commands (jj status, jj describe, jj diff, jj log, etc.).
+  jj shares a single operation log across all workspaces. Concurrent jj commands from multiple workers
+  cause operation forks (opforks) that corrupt the repo and require manual recovery.
+  Edit files directly using absolute workspace paths. The lead handles all jj operations during merge.
 
 {dispatched}{dispatched_intro}
 
@@ -321,8 +321,7 @@ At the end of your work, output exactly one of these completion signals:
             - Fix the code in the workspace (use absolute WS_PATH for file edits)
             - Reply: maw exec $WS -- crit reply <thread-id> --agent {agent} "Fixed: <what you did>"
             - Resolve: maw exec $WS -- crit threads resolve <thread-id> --agent {agent}
-         3. Update commit: maw exec $WS -- jj describe -m "<id>: <summary> (addressed review feedback)"
-         4. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers {project}-security --agent {agent}
+         3. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers {project}-security --agent {agent}
          5. Announce: bus send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
          STOP this iteration — wait for re-review.
        * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
