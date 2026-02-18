@@ -525,6 +525,7 @@ pub fn run_reviewer_loop(
             timeout,
             Some("text"),
             true,
+            "off",
         );
 
         match run_agent_result {

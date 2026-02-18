@@ -104,6 +104,7 @@ pub fn run_agent(
     timeout_secs: u64,
     format: Option<&str>,
     skip_permissions: bool,
+    thinking: &str,
 ) -> anyhow::Result<()> {
     let format = OutputFormat::detect(format);
     let style = match format {
@@ -113,7 +114,7 @@ pub fn run_agent(
 
     let (mut child, tool_name) = match agent_type {
         "claude" => (spawn_claude(prompt, model, skip_permissions)?, "claude"),
-        "pi" => (spawn_pi(prompt, model)?, "pi"),
+        "pi" => (spawn_pi(prompt, model, thinking)?, "pi"),
         _ => {
             return Err(anyhow!(
                 "Unsupported agent type: {}. Supported: 'claude', 'pi'.",
@@ -212,7 +213,7 @@ fn spawn_claude(
 /// Pi is a multi-provider agent harness supporting Anthropic, OpenAI, Google, etc.
 /// Model format: "provider/model-id" (e.g. "openai/gpt-4o", "google/gemini-2.5-pro")
 /// or just "model-id" with --provider flag.
-fn spawn_pi(prompt: &str, model: Option<&str>) -> anyhow::Result<Child> {
+fn spawn_pi(prompt: &str, model: Option<&str>, thinking: &str) -> anyhow::Result<Child> {
     let mut args = vec![
         "--print",
         "--no-extensions",
@@ -223,8 +224,9 @@ fn spawn_pi(prompt: &str, model: Option<&str>) -> anyhow::Result<Child> {
         "json",
         "--no-session",
         "--thinking",
-        "off",
     ];
+    let thinking_owned = thinking.to_string();
+    args.push(&thinking_owned);
 
     // Model can be "provider/model" or just "model"
     let model_arg;
@@ -498,21 +500,21 @@ fn handle_pi_event(event: &Value, style: &Style) -> bool {
     false
 }
 
-fn print_pi_text_delta(ae: &Value, _style: &Style) {
+fn print_pi_text_delta(ae: &Value, style: &Style) {
     if let Some(delta) = ae.get("delta").and_then(|d| d.as_str()) {
         if delta.is_empty() {
             return;
         }
         // Print delta text inline (Pi streams character by character)
-        print!("{}", delta);
+        print!("{}{}{}", style.bright, delta, style.reset);
         use std::io::Write;
         let _ = std::io::stdout().flush();
     }
 }
 
-fn print_pi_text_end(_ae: &Value, _style: &Style) {
+fn print_pi_text_end(_ae: &Value, style: &Style) {
     // Newline after accumulated text deltas
-    println!();
+    println!("{}", style.reset);
 }
 
 fn print_pi_toolcall_start(ae: &Value, style: &Style) {
@@ -760,7 +762,7 @@ mod tests {
 
     #[test]
     fn unsupported_agent_type_error() {
-        let result = run_agent("foobar", "test", None, 10, Some("text"), false);
+        let result = run_agent("foobar", "test", None, 10, Some("text"), false, "off");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Unsupported agent type"));

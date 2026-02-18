@@ -472,6 +472,12 @@ Read each bead (maw exec default -- br show <id>) and select a model based on co
 - **sonnet**: Multiple files, design decisions, moderate complexity. E.g., refactor module, add feature with tests.
 - **opus**: Deep debugging, architecture changes, subtle correctness issues. E.g., fix race condition, redesign data flow.
 
+Non-Claude models are also available via Pi. Use provider/model format:
+- **openai-codex/gpt-5.3-codex**: Strong coding model, good for implementation tasks.
+- **google-gemini-cli/gemini-2.5-pro**: Large context, good for analysis-heavy work.
+- Append `:thinking` level if needed: e.g. `openai-codex/gpt-5.3-codex:medium`
+- Full list: run `pi --list-models` to see all available models and providers.
+
 ### For each bead being dispatched:
 1. maw ws create --random — note NAME and PATH
 2. bus generate-name — get a worker identity
