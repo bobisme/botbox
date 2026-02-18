@@ -4,14 +4,14 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
-    /// Run Claude Code with stream-JSON output parsing
+    /// Run an agent with stream output parsing (claude or pi)
     Agent {
-        /// Agent type (currently only 'claude' is supported)
+        /// Agent type: 'claude' or 'pi' (pi supports openai, gemini, anthropic via --model provider/id)
         agent_type: String,
-        /// Prompt to send to Claude
+        /// Prompt to send to the agent
         #[arg(short, long)]
         prompt: String,
-        /// Model to use (sonnet, opus, haiku)
+        /// Model to use (claude: sonnet/opus/haiku; pi: provider/model-id e.g. openai/gpt-4o)
         #[arg(short, long)]
         model: Option<String>,
         /// Timeout in seconds

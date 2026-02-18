@@ -96,7 +96,7 @@ const TEXT_STYLE: Style = Style {
     checkmark: "+",
 };
 
-/// Run the Claude Code agent with stream-JSON parsing
+/// Run an agent (claude or pi) with stream output parsing.
 pub fn run_agent(
     agent_type: &str,
     prompt: &str,
@@ -105,59 +105,22 @@ pub fn run_agent(
     format: Option<&str>,
     skip_permissions: bool,
 ) -> anyhow::Result<()> {
-    if agent_type != "claude" {
-        return Err(anyhow!(
-            "Unsupported agent type: {}. Currently only 'claude' is supported.",
-            agent_type
-        ));
-    }
-
     let format = OutputFormat::detect(format);
     let style = match format {
         OutputFormat::Pretty => &PRETTY_STYLE,
         OutputFormat::Text => &TEXT_STYLE,
     };
 
-    // Build command args
-    let mut args = vec![
-        "--verbose",
-        "--output-format",
-        "stream-json",
-    ];
-
-    // Only add permission bypass when explicitly requested by the caller
-    if skip_permissions {
-        args.push("--dangerously-skip-permissions");
-        args.push("--allow-dangerously-skip-permissions");
-    }
-
-    let model_arg;
-    if let Some(m) = model {
-        model_arg = m.to_string();
-        args.push("--model");
-        args.push(&model_arg);
-    }
-
-    args.push("-p");
-    args.push(prompt);
-
-    // Spawn process
-    let mut child = Command::new("claude")
-        .args(&args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| -> anyhow::Error {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                ExitError::ToolNotFound {
-                    tool: "claude".to_string(),
-                }
-                .into()
-            } else {
-                anyhow::Error::new(e).context("spawning claude")
-            }
-        })?;
+    let (mut child, tool_name) = match agent_type {
+        "claude" => (spawn_claude(prompt, model, skip_permissions)?, "claude"),
+        "pi" => (spawn_pi(prompt, model)?, "pi"),
+        _ => {
+            return Err(anyhow!(
+                "Unsupported agent type: {}. Supported: 'claude', 'pi'.",
+                agent_type
+            ));
+        }
+    };
 
     // Spawn threads to read stdout and stderr
     let stdout = child.stdout.take().context("failed to capture stdout")?;
@@ -180,6 +143,11 @@ pub fn run_agent(
         }
     });
 
+    let event_handler: &dyn Fn(&Value, &Style) -> bool = match agent_type {
+        "pi" => &handle_pi_event,
+        _ => &handle_claude_event,
+    };
+
     // Process output
     let result = process_output(
         &mut child,
@@ -187,6 +155,8 @@ pub fn run_agent(
         stderr_rx,
         style,
         Duration::from_secs(timeout_secs),
+        tool_name,
+        event_handler,
     );
 
     // Clean up
@@ -196,12 +166,107 @@ pub fn run_agent(
     result
 }
 
+/// Spawn Claude Code with stream-JSON output.
+fn spawn_claude(
+    prompt: &str,
+    model: Option<&str>,
+    skip_permissions: bool,
+) -> anyhow::Result<Child> {
+    let mut args = vec!["--verbose", "--output-format", "stream-json"];
+
+    if skip_permissions {
+        args.push("--dangerously-skip-permissions");
+        args.push("--allow-dangerously-skip-permissions");
+    }
+
+    let model_arg;
+    if let Some(m) = model {
+        model_arg = m.to_string();
+        args.push("--model");
+        args.push(&model_arg);
+    }
+
+    args.push("-p");
+    args.push(prompt);
+
+    Command::new("claude")
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| -> anyhow::Error {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ExitError::ToolNotFound {
+                    tool: "claude".to_string(),
+                }
+                .into()
+            } else {
+                anyhow::Error::new(e).context("spawning claude")
+            }
+        })
+}
+
+/// Spawn Pi agent with JSON mode output.
+///
+/// Pi is a multi-provider agent harness supporting Anthropic, OpenAI, Google, etc.
+/// Model format: "provider/model-id" (e.g. "openai/gpt-4o", "google/gemini-2.5-pro")
+/// or just "model-id" with --provider flag.
+fn spawn_pi(prompt: &str, model: Option<&str>) -> anyhow::Result<Child> {
+    let mut args = vec![
+        "--print",
+        "--no-extensions",
+        "--no-skills",
+        "--no-prompt-templates",
+        "--no-themes",
+        "--mode",
+        "json",
+        "--no-session",
+        "--thinking",
+        "off",
+    ];
+
+    // Model can be "provider/model" or just "model"
+    let model_arg;
+    if let Some(m) = model {
+        model_arg = m.to_string();
+        args.push("--model");
+        args.push(&model_arg);
+    }
+
+    // Pi uses positional arg for prompt, not -p (which is --print boolean flag)
+    args.push(prompt);
+
+    Command::new("pi")
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| -> anyhow::Error {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ExitError::ToolNotFound {
+                    tool: "pi".to_string(),
+                }
+                .into()
+            } else {
+                anyhow::Error::new(e).context("spawning pi")
+            }
+        })
+}
+
+/// Process stdout/stderr from a spawned agent process.
+///
+/// The `event_handler` callback processes each JSON event and returns true
+/// when a "completion" event is received (signaling the agent is done).
 fn process_output(
     child: &mut Child,
     stdout_rx: Receiver<String>,
     stderr_rx: Receiver<String>,
     style: &Style,
     timeout: Duration,
+    tool_name: &str,
+    event_handler: &dyn Fn(&Value, &Style) -> bool,
 ) -> anyhow::Result<()> {
     let start = Instant::now();
     let mut result_received = false;
@@ -213,7 +278,7 @@ fn process_output(
         let elapsed = start.elapsed();
         if elapsed >= timeout && !result_received {
             return Err(ExitError::Timeout {
-                tool: "claude".to_string(),
+                tool: tool_name.to_string(),
                 timeout_secs: timeout.as_secs(),
             }
             .into());
@@ -221,19 +286,29 @@ fn process_output(
 
         // Check if we should kill after result
         if let Some(result_instant) = result_time
-            && result_instant.elapsed() >= Duration::from_secs(2) {
-                // Kill hung process
-                eprintln!("Warning: Process hung after completion, killing...");
-                return Ok(());
-            }
+            && result_instant.elapsed() >= Duration::from_secs(2)
+        {
+            // Kill hung process
+            eprintln!("Warning: Process hung after completion, killing...");
+            return Ok(());
+        }
 
         // Check if process exited
         match child.try_wait() {
             Ok(Some(status)) => {
-                // Process exited
-                if result_received {
-                    return Ok(());
-                } else if status.success() {
+                // Drain remaining stdout before returning
+                while let Ok(line) = stdout_rx.try_recv() {
+                    if line.trim().is_empty() {
+                        continue;
+                    }
+                    if let Ok(event) = serde_json::from_str::<Value>(&line) {
+                        if event_handler(&event, style) {
+                            result_received = true;
+                        }
+                    }
+                }
+
+                if result_received || status.success() {
                     return Ok(());
                 } else {
                     let code = status.code().unwrap_or(-1);
@@ -243,7 +318,7 @@ fn process_output(
                         format!("Agent exited with code {}", code)
                     };
                     return Err(ExitError::ToolFailed {
-                        tool: "claude".to_string(),
+                        tool: tool_name.to_string(),
                         code,
                         message: error_msg,
                     }
@@ -254,7 +329,7 @@ fn process_output(
                 // Still running
             }
             Err(e) => {
-                return Err(anyhow::Error::new(e).context("waiting for claude"));
+                return Err(anyhow::Error::new(e).context(format!("waiting for {tool_name}")));
             }
         }
 
@@ -264,8 +339,7 @@ fn process_output(
                 continue;
             }
             if let Ok(event) = serde_json::from_str::<Value>(&line) {
-                print_event(&event, style);
-                if event.get("type").and_then(|t| t.as_str()) == Some("result") {
+                if event_handler(&event, style) {
                     result_received = true;
                     result_time = Some(Instant::now());
                 }
@@ -287,44 +361,21 @@ fn process_output(
     }
 }
 
-/// Truncate a string at a valid UTF-8 char boundary.
-fn truncate_safe(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
-}
+// --- Claude event handlers ---
 
-fn detect_api_error(stderr: &str) -> Option<String> {
-    if stderr.contains("API Error: 5") || stderr.contains("500") {
-        Some("API Error: Server error (5xx)".to_string())
-    } else if stderr.contains("rate limit")
-        || stderr.contains("Rate limit")
-        || stderr.contains("429")
-    {
-        Some("API Error: Rate limit exceeded".to_string())
-    } else if stderr.contains("overloaded") || stderr.contains("503") {
-        Some("API Error: Service overloaded".to_string())
-    } else {
-        None
-    }
-}
-
-fn print_event(event: &Value, style: &Style) {
+/// Handle a Claude stream-JSON event. Returns true if this is a completion event.
+fn handle_claude_event(event: &Value, style: &Style) -> bool {
     match event.get("type").and_then(|t| t.as_str()) {
-        Some("text") => print_text_event(event, style),
-        Some("assistant") => print_assistant_event(event, style),
-        Some("user") => print_user_event(event, style),
-        Some("result") => {} // Silent
+        Some("text") => print_claude_text_event(event, style),
+        Some("assistant") => print_claude_assistant_event(event, style),
+        Some("user") => print_claude_user_event(event, style),
+        Some("result") => return true,
         _ => {}
     }
+    false
 }
 
-fn print_text_event(event: &Value, style: &Style) {
+fn print_claude_text_event(event: &Value, style: &Style) {
     if let Some(text) = event.get("text").and_then(|t| t.as_str()) {
         if text.trim().is_empty() {
             return;
@@ -336,12 +387,15 @@ fn print_text_event(event: &Value, style: &Style) {
             first_line.to_string()
         };
         if !truncated.trim().is_empty() {
-            println!("{}{} {}{}", style.bright, style.bullet, truncated, style.reset);
+            println!(
+                "{}{} {}{}",
+                style.bright, style.bullet, truncated, style.reset
+            );
         }
     }
 }
 
-fn print_assistant_event(event: &Value, style: &Style) {
+fn print_claude_assistant_event(event: &Value, style: &Style) {
     if let Some(content) = event
         .get("message")
         .and_then(|m| m.get("content"))
@@ -354,30 +408,31 @@ fn print_assistant_event(event: &Value, style: &Style) {
                     println!("\n{}{}{}", style.bright, formatted, style.reset);
                 }
             } else if item.get("type").and_then(|t| t.as_str()) == Some("tool_use")
-                && let Some(tool_name) = item.get("name").and_then(|n| n.as_str()) {
-                    let input = item.get("input").unwrap_or(&Value::Null);
-                    let input_str = serde_json::to_string(input).unwrap_or_default();
-                    let truncated = if input_str.len() > 80 {
-                        format!("{}...", truncate_safe(&input_str, 80))
-                    } else {
-                        input_str
-                    };
-                    println!(
-                        "\n{} {}{}{} {}{}{}",
-                        style.tool_arrow,
-                        style.bold_bright,
-                        tool_name,
-                        style.reset,
-                        style.dim,
-                        truncated,
-                        style.reset
-                    );
-                }
+                && let Some(tool_name) = item.get("name").and_then(|n| n.as_str())
+            {
+                let input = item.get("input").unwrap_or(&Value::Null);
+                let input_str = serde_json::to_string(input).unwrap_or_default();
+                let truncated = if input_str.len() > 80 {
+                    format!("{}...", truncate_safe(&input_str, 80))
+                } else {
+                    input_str
+                };
+                println!(
+                    "\n{} {}{}{} {}{}{}",
+                    style.tool_arrow,
+                    style.bold_bright,
+                    tool_name,
+                    style.reset,
+                    style.dim,
+                    truncated,
+                    style.reset
+                );
+            }
         }
     }
 }
 
-fn print_user_event(event: &Value, style: &Style) {
+fn print_claude_user_event(event: &Value, style: &Style) {
     if let Some(content) = event
         .get("message")
         .and_then(|m| m.get("content"))
@@ -403,6 +458,161 @@ fn print_user_event(event: &Value, style: &Style) {
                 );
             }
         }
+    }
+}
+
+// --- Pi event handlers ---
+
+/// Handle a Pi JSON mode event. Returns true if this is a completion event.
+///
+/// Pi JSONL event types:
+/// - session: session metadata
+/// - agent_start/agent_end: session lifecycle
+/// - turn_start/turn_end: turn lifecycle
+/// - message_start/message_end: message boundaries
+/// - message_update: streaming content (text_delta, toolcall_start/end, thinking_*)
+/// - tool_execution_start/end: tool execution with results
+fn handle_pi_event(event: &Value, style: &Style) -> bool {
+    let event_type = event.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+    match event_type {
+        "message_update" => {
+            if let Some(ae) = event.get("assistantMessageEvent") {
+                let ae_type = ae.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match ae_type {
+                    "text_delta" => print_pi_text_delta(ae, style),
+                    "text_end" => print_pi_text_end(ae, style),
+                    "toolcall_start" => print_pi_toolcall_start(ae, style),
+                    "toolcall_end" => print_pi_toolcall_end(ae, style),
+                    _ => {} // thinking_*, text_start, toolcall_delta
+                }
+            }
+        }
+        "tool_execution_end" => {
+            print_pi_tool_result(event, style);
+        }
+        "agent_end" => return true,
+        _ => {} // session, agent_start, turn_start/end, message_start/end, tool_execution_start
+    }
+
+    false
+}
+
+fn print_pi_text_delta(ae: &Value, _style: &Style) {
+    if let Some(delta) = ae.get("delta").and_then(|d| d.as_str()) {
+        if delta.is_empty() {
+            return;
+        }
+        // Print delta text inline (Pi streams character by character)
+        print!("{}", delta);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    }
+}
+
+fn print_pi_text_end(_ae: &Value, _style: &Style) {
+    // Newline after accumulated text deltas
+    println!();
+}
+
+fn print_pi_toolcall_start(ae: &Value, style: &Style) {
+    // Extract tool name from the partial content
+    if let Some(content) = ae
+        .get("partial")
+        .and_then(|p| p.get("content"))
+        .and_then(|c| c.as_array())
+    {
+        for item in content {
+            if item.get("type").and_then(|t| t.as_str()) == Some("toolCall") {
+                if let Some(name) = item.get("name").and_then(|n| n.as_str()) {
+                    println!(
+                        "\n{} {}{}{}",
+                        style.tool_arrow, style.bold_bright, name, style.reset
+                    );
+                }
+            }
+        }
+    }
+}
+
+fn print_pi_toolcall_end(ae: &Value, style: &Style) {
+    // Print tool call arguments
+    if let Some(tc) = ae.get("toolCall") {
+        if let Some(args) = tc.get("arguments") {
+            let args_str = serde_json::to_string(args).unwrap_or_default();
+            let truncated = if args_str.len() > 80 {
+                format!("{}...", truncate_safe(&args_str, 80))
+            } else {
+                args_str
+            };
+            println!("  {}{}{}", style.dim, truncated, style.reset);
+        }
+    }
+}
+
+fn print_pi_tool_result(event: &Value, style: &Style) {
+    let tool_name = event
+        .get("toolName")
+        .and_then(|n| n.as_str())
+        .unwrap_or("?");
+    let is_error = event.get("isError").and_then(|e| e.as_bool()).unwrap_or(false);
+
+    // Extract result text
+    let result_text = event
+        .get("result")
+        .and_then(|r| r.get("content"))
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|item| item.get("text"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("");
+
+    let truncated = result_text.replace('\n', " ");
+    let truncated = if truncated.len() > 100 {
+        format!("{}...", truncate_safe(&truncated, 100))
+    } else {
+        truncated
+    };
+
+    if is_error {
+        println!(
+            "  {}x{} {}: {}{}{}",
+            style.yellow, style.reset, tool_name, style.dim, truncated, style.reset
+        );
+    } else {
+        println!(
+            "  {}{}{} {}: {}{}{}",
+            style.green, style.checkmark, style.reset, tool_name, style.dim, truncated, style.reset
+        );
+    }
+}
+
+// --- Shared utilities ---
+
+/// Truncate a string at a valid UTF-8 char boundary.
+fn truncate_safe(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+fn detect_api_error(stderr: &str) -> Option<String> {
+    if stderr.contains("API Error: 5") || stderr.contains("500") {
+        Some("API Error: Server error (5xx)".to_string())
+    } else if stderr.contains("rate limit")
+        || stderr.contains("Rate limit")
+        || stderr.contains("429")
+    {
+        Some("API Error: Rate limit exceeded".to_string())
+    } else if stderr.contains("overloaded") || stderr.contains("503") {
+        Some("API Error: Service overloaded".to_string())
+    } else {
+        None
     }
 }
 
@@ -546,5 +756,83 @@ mod tests {
         let output = format_markdown(input, &PRETTY_STYLE);
         assert!(output.contains("\x1b[36m")); // cyan
         assert!(output.contains("\x1b[0m")); // reset
+    }
+
+    #[test]
+    fn unsupported_agent_type_error() {
+        let result = run_agent("foobar", "test", None, 10, Some("text"), false);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Unsupported agent type"));
+        assert!(err.contains("foobar"));
+    }
+
+    // --- Claude event handler tests ---
+
+    #[test]
+    fn claude_result_event_is_completion() {
+        let event: Value = serde_json::from_str(r#"{"type":"result"}"#).unwrap();
+        assert!(handle_claude_event(&event, &TEXT_STYLE));
+    }
+
+    #[test]
+    fn claude_text_event_is_not_completion() {
+        let event: Value =
+            serde_json::from_str(r#"{"type":"text","text":"hello"}"#).unwrap();
+        assert!(!handle_claude_event(&event, &TEXT_STYLE));
+    }
+
+    // --- Pi event handler tests ---
+
+    #[test]
+    fn pi_agent_end_is_completion() {
+        let event: Value = serde_json::from_str(r#"{"type":"agent_end","messages":[]}"#).unwrap();
+        assert!(handle_pi_event(&event, &TEXT_STYLE));
+    }
+
+    #[test]
+    fn pi_text_delta_is_not_completion() {
+        let event: Value = serde_json::from_str(
+            r#"{"type":"message_update","assistantMessageEvent":{"type":"text_delta","delta":"hello","contentIndex":1}}"#,
+        )
+        .unwrap();
+        assert!(!handle_pi_event(&event, &TEXT_STYLE));
+    }
+
+    #[test]
+    fn pi_session_event_is_not_completion() {
+        let event: Value = serde_json::from_str(
+            r#"{"type":"session","version":3,"id":"test-id","timestamp":"2026-01-01T00:00:00Z"}"#,
+        )
+        .unwrap();
+        assert!(!handle_pi_event(&event, &TEXT_STYLE));
+    }
+
+    #[test]
+    fn pi_toolcall_end_event_parsed() {
+        let event: Value = serde_json::from_str(
+            r#"{"type":"message_update","assistantMessageEvent":{"type":"toolcall_end","contentIndex":0,"toolCall":{"type":"toolCall","id":"tc-1","name":"read","arguments":{"path":"/tmp/test.txt"}}}}"#,
+        )
+        .unwrap();
+        // Should not panic and should not be completion
+        assert!(!handle_pi_event(&event, &TEXT_STYLE));
+    }
+
+    #[test]
+    fn pi_tool_execution_end_parsed() {
+        let event: Value = serde_json::from_str(
+            r#"{"type":"tool_execution_end","toolCallId":"tc-1","toolName":"read","result":{"content":[{"type":"text","text":"file contents"}],"details":{}},"isError":false}"#,
+        )
+        .unwrap();
+        assert!(!handle_pi_event(&event, &TEXT_STYLE));
+    }
+
+    #[test]
+    fn pi_tool_execution_error_parsed() {
+        let event: Value = serde_json::from_str(
+            r#"{"type":"tool_execution_end","toolCallId":"tc-1","toolName":"read","result":{"content":[{"type":"text","text":"ENOENT: no such file"}],"details":{}},"isError":true}"#,
+        )
+        .unwrap();
+        assert!(!handle_pi_event(&event, &TEXT_STYLE));
     }
 }
