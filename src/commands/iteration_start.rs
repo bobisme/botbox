@@ -193,7 +193,7 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                                     .map(|l| format!("[{}]", l))
                                     .unwrap_or_default();
                                 let body = if msg.body.len() > 60 {
-                                    format!("{}...", &msg.body[..60])
+                                    format!("{}...", &msg.body[..msg.body.floor_char_boundary(60)])
                                 } else {
                                     msg.body.clone()
                                 };

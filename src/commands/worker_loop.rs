@@ -74,11 +74,11 @@ impl WorkerLoop {
         });
         // Siblings and file hints are informational — limit size to prevent prompt bloat
         let dispatched_siblings = std::env::var("BOTBOX_SIBLINGS").ok()
-            .map(|v| if v.len() > 4096 { v[..4096].to_string() } else { v });
+            .map(|v| if v.len() > 4096 { v[..v.floor_char_boundary(4096)].to_string() } else { v });
         let dispatched_mission_outcome = std::env::var("BOTBOX_MISSION_OUTCOME").ok()
-            .map(|v| if v.len() > 2048 { v[..2048].to_string() } else { v });
+            .map(|v| if v.len() > 2048 { v[..v.floor_char_boundary(2048)].to_string() } else { v });
         let dispatched_file_hints = std::env::var("BOTBOX_FILE_HINTS").ok()
-            .map(|v| if v.len() > 4096 { v[..4096].to_string() } else { v });
+            .map(|v| if v.len() > 4096 { v[..v.floor_char_boundary(4096)].to_string() } else { v });
 
         Ok(Self {
             project_root,

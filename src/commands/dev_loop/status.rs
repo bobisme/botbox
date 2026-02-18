@@ -166,7 +166,11 @@ fn gather_inbox(agent: &str, project: &str) -> Option<String> {
                         .map(|l| format!("[{l}]"))
                         .unwrap_or_default();
                     let body = msg["body"].as_str().unwrap_or("");
-                    let truncated = if body.len() > 80 { &body[..80] } else { body };
+                    let truncated = if body.len() > 80 {
+                        &body[..body.floor_char_boundary(80)]
+                    } else {
+                        body
+                    };
                     lines.push(format!("  {msg_agent} {label}: {truncated}"));
                 }
             }
