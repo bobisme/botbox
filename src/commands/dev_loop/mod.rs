@@ -57,12 +57,18 @@ pub fn run(
         .is_some_and(|m| m.enabled);
 
     let check_command = config.project.check_command.clone();
+    let worker_timeout = config
+        .agents
+        .worker
+        .as_ref()
+        .map_or(900, |w| w.timeout);
 
     let ctx = LoopContext {
         agent: agent.clone(),
         project: project.clone(),
         model,
         worker_model,
+        worker_timeout,
         review_enabled,
         push_main,
         check_command,
@@ -280,6 +286,7 @@ pub struct LoopContext {
     pub project: String,
     pub model: String,
     pub worker_model: String,
+    pub worker_timeout: u64,
     pub review_enabled: bool,
     pub push_main: bool,
     pub check_command: Option<String>,

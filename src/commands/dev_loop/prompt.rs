@@ -259,6 +259,7 @@ When all children are closed:
     // Worker dispatch command (built into botbox binary)
     let worker_cmd = "botbox run worker-loop";
     let project_dir = &ctx.project_dir;
+    let worker_timeout = ctx.worker_timeout;
 
     let check_command = ctx
         .check_command
@@ -502,8 +503,7 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
     --cwd {project_dir} \
     -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
 
-Set --timeout based on the selected model (complex work needs more time):
-  opus: 1800, sonnet: 900, haiku: 600
+Set --timeout to {worker_timeout} (from config agents.worker.timeout).
 
 The hierarchical name ({agent}/<suffix>) lets you find all your workers via `botty list`.
 The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
@@ -732,6 +732,7 @@ mod tests {
             project: "testproject".to_string(),
             model: "opus".to_string(),
             worker_model: "haiku".to_string(),
+            worker_timeout: 900,
             review_enabled: true,
             push_main: false,
             check_command: Some("cargo clippy && cargo test".to_string()),
