@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{channel, Receiver};
@@ -460,6 +461,13 @@ fn print_claude_user_event(event: &Value, style: &Style) {
 
 // --- Pi event handlers ---
 
+// Thread-local buffer for accumulating Pi text deltas in pretty mode.
+// In pretty mode, we buffer the full text block and render it as markdown
+// when the text_end event arrives, rather than streaming char-by-char.
+thread_local! {
+    static PI_TEXT_BUFFER: RefCell<String> = RefCell::new(String::new());
+}
+
 /// Handle a Pi JSON mode event. Returns true if this is a completion event.
 ///
 /// Pi JSONL event types:
@@ -503,16 +511,35 @@ fn print_pi_text_delta(ae: &Value, style: &Style) {
         if delta.is_empty() {
             return;
         }
-        // Print delta text inline (Pi streams character by character)
-        print!("{}{}{}", style.bright, delta, style.reset);
-        use std::io::Write;
-        let _ = std::io::stdout().flush();
+        if !style.bold.is_empty() {
+            // Pretty mode: buffer text for markdown rendering at text_end
+            PI_TEXT_BUFFER.with(|buf| buf.borrow_mut().push_str(delta));
+        } else {
+            // Text mode: stream inline as before
+            print!("{}", delta);
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
     }
 }
 
 fn print_pi_text_end(_ae: &Value, style: &Style) {
-    // Newline after accumulated text deltas
-    println!("{}", style.reset);
+    if !style.bold.is_empty() {
+        // Pretty mode: render buffered text as markdown
+        PI_TEXT_BUFFER.with(|buf| {
+            let mut text = buf.borrow_mut();
+            if !text.trim().is_empty() {
+                let skin = termimad::MadSkin::default_dark();
+                // Print a blank line before the rendered block for visual separation
+                println!();
+                skin.print_text(&text);
+            }
+            text.clear();
+        });
+    } else {
+        // Text mode: just finish the line
+        println!();
+    }
 }
 
 fn print_pi_toolcall_start(ae: &Value, style: &Style) {
