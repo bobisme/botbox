@@ -1,4 +1,3 @@
-use std::fs;
 use std::io::IsTerminal;
 
 use serde::Deserialize;
@@ -107,17 +106,11 @@ pub fn hint(c: &Colors, s: &str) -> String {
         c.reset)
 }
 
-/// Fetch config from .botbox.json or ws/default/.botbox.json
+/// Fetch config from .botbox.toml/.botbox.json or ws/default/
 fn load_config() -> anyhow::Result<Config> {
-    let paths = vec![".botbox.json", "ws/default/.botbox.json"];
-
-    for path in paths {
-        if fs::metadata(path).is_ok() {
-            return Config::load(std::path::Path::new(path));
-        }
-    }
-
-    anyhow::bail!("Could not find .botbox.json in current directory or ws/default/");
+    let cwd = std::path::Path::new(".");
+    let (config_path, _) = crate::config::find_config_in_project(cwd)?;
+    Config::load(&config_path)
 }
 
 /// Helper to run a tool and parse JSON output, returning None on failure

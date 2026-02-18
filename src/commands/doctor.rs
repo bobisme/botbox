@@ -68,20 +68,14 @@ impl DoctorArgs {
                 .context("could not determine current directory")?,
         };
 
-        // Check .botbox.json at root, then ws/default/ (maw v2 bare repo)
-        let (project_root, config) = if project_root.join(".botbox.json").exists() {
-            let config = Config::load(&project_root.join(".botbox.json"))?;
-            (project_root, config)
-        } else if project_root.join("ws/default/.botbox.json").exists() {
-            let ws_default = project_root.join("ws/default");
-            let config = Config::load(&ws_default.join(".botbox.json"))?;
-            (ws_default, config)
-        } else {
-            anyhow::bail!(
-                "no .botbox.json found at {} or ws/default/ — is this a botbox project?",
+        // Check config at root, then ws/default/ (maw v2 bare repo)
+        let (config_path, config_dir) = crate::config::find_config_in_project(&project_root)
+            .map_err(|_| anyhow::anyhow!(
+                "no .botbox.toml or .botbox.json found at {} or ws/default/ — is this a botbox project?",
                 project_root.display()
-            );
-        };
+            ))?;
+        let project_root = config_dir;
+        let config = Config::load(&config_path)?;
 
         let format = self.format.unwrap_or_else(|| {
             if std::io::stdout().is_terminal() {

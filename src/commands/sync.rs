@@ -95,8 +95,7 @@ impl SyncArgs {
             .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current dir"));
 
         // Detect maw v2 bare repo
-        let bare_config_path = project_root.join("ws/default/.botbox.json");
-        if bare_config_path.exists() {
+        if crate::config::find_config(&project_root.join("ws/default")).is_some() {
             return self.handle_bare_repo(&project_root);
         }
 
@@ -108,16 +107,28 @@ impl SyncArgs {
             .into());
         }
 
-        // Load config
-        let config_path = project_root.join(".botbox.json");
-        let config = if config_path.exists() {
-            let content = fs::read_to_string(&config_path)
-                .with_context(|| format!("Failed to read {}", config_path.display()))?;
-            serde_json::from_str::<Config>(&content)
-                .with_context(|| format!("Failed to parse {}", config_path.display()))?
-        } else {
-            return Err(ExitError::Config("No .botbox.json found".to_string()).into());
-        };
+        // Load config (.botbox.toml preferred, .botbox.json fallback)
+        let config_path = crate::config::find_config(&project_root)
+            .ok_or_else(|| ExitError::Config("No .botbox.toml or .botbox.json found".to_string()))?;
+        let config = Config::load(&config_path)
+            .with_context(|| format!("Failed to parse {}", config_path.display()))?;
+
+        // Migrate .botbox.json -> .botbox.toml if needed
+        let json_path = project_root.join(crate::config::CONFIG_JSON);
+        let toml_path = project_root.join(crate::config::CONFIG_TOML);
+        if json_path.exists() && !toml_path.exists() {
+            let json_content = fs::read_to_string(&json_path)?;
+            match crate::config::json_to_toml(&json_content) {
+                Ok(toml_content) => {
+                    fs::write(&toml_path, &toml_content)?;
+                    fs::remove_file(&json_path)?;
+                    println!("Migrated .botbox.json -> .botbox.toml");
+                }
+                Err(e) => {
+                    eprintln!("Warning: failed to migrate .botbox.json to .botbox.toml: {e}");
+                }
+            }
+        }
 
         // Check staleness for each component
         let docs_stale = self.check_docs_staleness(&agents_dir)?;
@@ -209,8 +220,10 @@ impl SyncArgs {
             .context("canonicalizing project root")?;
 
         // Validate this is actually a botbox project
-        if !project_root.join(".botbox.json").exists() && !project_root.join("ws/default/.botbox.json").exists() {
-            anyhow::bail!("not a botbox project: .botbox.json not found in {}", project_root.display());
+        if crate::config::find_config(&project_root).is_none()
+            && crate::config::find_config(&project_root.join("ws/default")).is_none()
+        {
+            anyhow::bail!("not a botbox project: no .botbox.toml or .botbox.json found in {}", project_root.display());
         }
 
         let mut args = vec!["exec", "default", "--", "botbox", "sync"];

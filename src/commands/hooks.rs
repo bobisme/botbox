@@ -181,7 +181,7 @@ fn audit_hooks(project_root: Option<&Path>, format: super::doctor::OutputFormat)
 }
 
 fn run_hook(hook_name: &str, project_root: Option<&Path>, release: bool) -> Result<()> {
-    // For hook run, resolve_project_root checks .botbox.json — but hooks
+    // For hook run, resolve_project_root checks config — but hooks
     // may run before init. Use a simpler resolution that just canonicalizes.
     let root = match project_root {
         Some(p) => p
@@ -221,30 +221,24 @@ fn resolve_project_root(project_root: Option<&Path>) -> Result<PathBuf> {
     let canonical = path
         .canonicalize()
         .with_context(|| format!("resolving project root: {}", path.display()))?;
-    // Check .botbox.json at root, then ws/default/ (maw v2 bare repo)
-    if canonical.join(".botbox.json").exists() {
+    // Check config at root, then ws/default/ (maw v2 bare repo)
+    if crate::config::find_config(&canonical).is_some() {
         return Ok(canonical);
     }
     let ws_default = canonical.join("ws/default");
-    if ws_default.join(".botbox.json").exists() {
+    if crate::config::find_config(&ws_default).is_some() {
         return Ok(ws_default);
     }
     anyhow::bail!(
-        "no .botbox.json found at {} or ws/default/ — is this a botbox project?",
+        "no .botbox.toml or .botbox.json found at {} or ws/default/ — is this a botbox project?",
         canonical.display()
     );
 }
 
 fn load_config(root: &Path) -> Result<Config> {
-    let config_path = root.join(".botbox.json");
-    if config_path.exists() {
-        return Config::load(&config_path);
-    }
-    let ws_default_path = root.join("ws/default/.botbox.json");
-    if ws_default_path.exists() {
-        return Config::load(&ws_default_path);
-    }
-    Err(ExitError::Config("no .botbox.json found".into()).into())
+    let config_path = crate::config::find_config(root)
+        .ok_or_else(|| ExitError::Config("no .botbox.toml or .botbox.json found".into()))?;
+    Config::load(&config_path)
 }
 
 fn deploy_pi_hooks_extension(root: &Path) -> Result<PathBuf> {

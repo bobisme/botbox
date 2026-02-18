@@ -26,7 +26,7 @@ pub struct ProtocolArgs {
     /// Agent name (default: $AGENT or config defaultAgent)
     #[arg(long)]
     pub agent: Option<String>,
-    /// Project name (default: from .botbox.json)
+    /// Project name (default: from .botbox.toml)
     #[arg(long)]
     pub project: Option<String>,
     /// Project root directory
@@ -160,17 +160,8 @@ impl ProtocolCommand {
                         .context("could not determine current directory")?,
                 };
 
-                let config = if project_root.join(".botbox.json").exists() {
-                    Config::load(&project_root.join(".botbox.json"))?
-                } else if project_root.join("ws/default/.botbox.json").exists() {
-                    Config::load(&project_root.join("ws/default/.botbox.json"))?
-                } else {
-                    anyhow::bail!(
-                        "No .botbox.json found in {} or {}/ws/default",
-                        project_root.display(),
-                        project_root.display()
-                    );
-                };
+                let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
+                let config = Config::load(&config_path)?;
 
                 let project = args.resolve_project(&config);
                 let agent = args.resolve_agent(&config);
@@ -185,17 +176,8 @@ impl ProtocolCommand {
                         .context("could not determine current directory")?,
                 };
 
-                let config = if project_root.join(".botbox.json").exists() {
-                    Config::load(&project_root.join(".botbox.json"))?
-                } else if project_root.join("ws/default/.botbox.json").exists() {
-                    Config::load(&project_root.join("ws/default/.botbox.json"))?
-                } else {
-                    anyhow::bail!(
-                        "No .botbox.json found in {} or {}/ws/default",
-                        project_root.display(),
-                        project_root.display()
-                    );
-                };
+                let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
+                let config = Config::load(&config_path)?;
 
                 let agent = args.resolve_agent(&config);
                 let project = args.resolve_project(&config);
@@ -219,13 +201,8 @@ impl ProtocolCommand {
                         .context("could not determine current directory")?,
                 };
 
-                // Try .botbox.json at root, then ws/default/ (maw v2 bare repo)
-                let config = if project_root.join(".botbox.json").exists() {
-                    crate::config::Config::load(&project_root.join(".botbox.json"))?
-                } else {
-                    let ws_default = project_root.join("ws/default");
-                    crate::config::Config::load(&ws_default.join(".botbox.json"))?
-                };
+                let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
+                let config = crate::config::Config::load(&config_path)?;
 
                 let agent = args.resolve_agent(&config);
                 let project = args.resolve_project(&config);
@@ -239,17 +216,8 @@ impl ProtocolCommand {
                         .context("could not determine current directory")?,
                 };
 
-                let config = if project_root.join(".botbox.json").exists() {
-                    Config::load(&project_root.join(".botbox.json"))?
-                } else if project_root.join("ws/default/.botbox.json").exists() {
-                    Config::load(&project_root.join("ws/default/.botbox.json"))?
-                } else {
-                    anyhow::bail!(
-                        "No .botbox.json found in {} or {}/ws/default",
-                        project_root.display(),
-                        project_root.display()
-                    );
-                };
+                let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
+                let config = Config::load(&config_path)?;
 
                 let project = args.resolve_project(&config);
                 let agent = args.resolve_agent(&config);
@@ -264,12 +232,8 @@ impl ProtocolCommand {
                         .context("could not determine current directory")?,
                 };
 
-                let config = if project_root.join(".botbox.json").exists() {
-                    crate::config::Config::load(&project_root.join(".botbox.json"))?
-                } else {
-                    let ws_default = project_root.join("ws/default");
-                    crate::config::Config::load(&ws_default.join(".botbox.json"))?
-                };
+                let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
+                let config = crate::config::Config::load(&config_path)?;
 
                 let agent = args.resolve_agent(&config);
                 let project = args.resolve_project(&config);
@@ -293,19 +257,18 @@ impl ProtocolCommand {
             None => std::env::current_dir().context("could not determine current directory")?,
         };
 
-        let config = if project_root.join(".botbox.json").exists() {
-            Config::load(&project_root.join(".botbox.json"))?
-        } else if project_root.join("ws/default/.botbox.json").exists() {
-            Config::load(&project_root.join("ws/default/.botbox.json"))?
-        } else {
-            return Err(exit_policy::ProtocolExitError::operational(
-                "start",
-                format!(
-                    "no .botbox.json found in {} or {}/ws/default",
-                    project_root.display(),
-                    project_root.display()
-                ),
-            ).into_exit_error().into());
+        let config = match crate::config::find_config_in_project(&project_root) {
+            Ok((config_path, _)) => Config::load(&config_path)?,
+            Err(_) => {
+                return Err(exit_policy::ProtocolExitError::operational(
+                    "start",
+                    format!(
+                        "no .botbox.toml or .botbox.json found in {} or {}/ws/default",
+                        project_root.display(),
+                        project_root.display()
+                    ),
+                ).into_exit_error().into());
+            }
         };
 
         let project = args.resolve_project(&config);

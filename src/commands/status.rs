@@ -104,7 +104,8 @@ impl StatusArgs {
         });
 
         // Get project and agent from args → env → config → hardcoded fallback
-        let config = Config::load(&PathBuf::from(".botbox.json")).ok();
+        let config = crate::config::find_config(&PathBuf::from("."))
+            .and_then(|p| Config::load(&p).ok());
         let project = self.project.clone()
             .or_else(|| std::env::var("BOTBOX_PROJECT").ok())
             .or_else(|| config.as_ref().map(|c| c.project.name.clone()))

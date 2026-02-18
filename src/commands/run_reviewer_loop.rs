@@ -388,13 +388,8 @@ pub fn run_reviewer_loop(
     }
 
     // Load config
-    let config_path = if Path::new(".botbox.json").exists() {
-        PathBuf::from(".botbox.json")
-    } else if Path::new("ws/default/.botbox.json").exists() {
-        PathBuf::from("ws/default/.botbox.json")
-    } else {
-        anyhow::bail!(".botbox.json not found in current directory or ws/default/");
-    };
+    let cwd = Path::new(".");
+    let (config_path, _) = crate::config::find_config_in_project(cwd)?;
 
     let config = Config::load(&config_path)?;
 

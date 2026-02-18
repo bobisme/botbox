@@ -227,7 +227,7 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
                 agent = self.agent,
                 project = self.project,
                 critical_approvers = if self.critical_approvers.is_empty() {
-                    "Check project.criticalApprovers in .botbox.json".to_string()
+                    "Check project.critical_approvers in .botbox.toml".to_string()
                 } else {
                     format!("Approvers: {}", self.critical_approvers.join(", "))
                 }
@@ -454,23 +454,19 @@ pub enum LoopStatus {
     Unknown,
 }
 
-/// Find .botbox.json config file.
+/// Find config file (.botbox.toml or .botbox.json).
 fn find_config_path(root: &Path) -> Option<PathBuf> {
-    let direct = root.join(".botbox.json");
-    if direct.exists() {
-        return Some(direct);
+    if let Some(path) = crate::config::find_config(root) {
+        return Some(path);
     }
-    let ws_default = root.join("ws/default/.botbox.json");
-    if ws_default.exists() {
-        return Some(ws_default);
-    }
-    None
+    let ws_default = root.join("ws/default");
+    crate::config::find_config(&ws_default)
 }
 
-/// Load .botbox.json config.
+/// Load config from .botbox.toml or .botbox.json.
 fn load_config(root: &Path) -> anyhow::Result<Config> {
     let config_path = find_config_path(root)
-        .context("no .botbox.json found in project root or ws/default/")?;
+        .context("no .botbox.toml or .botbox.json found in project root or ws/default/")?;
     Config::load(&config_path)
 }
 

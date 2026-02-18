@@ -5,9 +5,9 @@ use anyhow::{Context, Result};
 use crate::config::Config;
 use crate::subprocess::run_command;
 
-/// Run the init-agent hook: display agent identity from .botbox.json
+/// Run the init-agent hook: display agent identity from config
 pub fn run_init_agent(project_root: &Path) -> Result<()> {
-    let config_path = project_root.join(".botbox.json");
+    let config_path = crate::config::find_config(project_root);
 
     // Prefer AGENT env var (set by --env-inherit when spawned by hooks),
     // then fall back to BOTBUS_AGENT (backwards compat), then config defaultAgent, then bus whoami
@@ -17,8 +17,8 @@ pub fn run_init_agent(project_root: &Path) -> Result<()> {
         .filter(|a| validate_agent_name(a));
 
     if let Some(agent) = agent {
-        let channel = if config_path.exists() {
-            Config::load(&config_path)?.channel()
+        let channel = if let Some(ref cp) = config_path {
+            Config::load(cp)?.channel()
         } else {
             project_root
                 .file_name()
@@ -28,8 +28,8 @@ pub fn run_init_agent(project_root: &Path) -> Result<()> {
         };
         println!("Agent ID for use with botbus/crit/br: {agent}");
         println!("Project channel: {channel}");
-    } else if config_path.exists() {
-        let config = Config::load(&config_path)?;
+    } else if let Some(ref cp) = config_path {
+        let config = Config::load(cp)?;
         let agent = config.default_agent();
         let channel = config.channel();
 
@@ -75,11 +75,11 @@ fn validate_agent_name(name: &str) -> bool {
 
 /// Run the check-bus-inbox hook: check for unread bus messages
 pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Result<()> {
-    let config_path = project_root.join(".botbox.json");
+    let config_path = crate::config::find_config(project_root);
 
     // Read channel from config
-    let channel = if config_path.exists() {
-        Config::load(&config_path)?.channel()
+    let channel = if let Some(ref cp) = config_path {
+        Config::load(cp)?.channel()
     } else {
         project_root
             .file_name()
@@ -94,11 +94,9 @@ pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Re
         .ok()
         .filter(|a| validate_agent_name(a))
         .or_else(|| {
-            if config_path.exists() {
-                Config::load(&config_path).ok().map(|c| c.default_agent())
-            } else {
-                None
-            }
+            config_path.as_ref()
+                .and_then(|cp| Config::load(cp).ok())
+                .map(|c| c.default_agent())
         });
 
     // Build bus inbox command for count check

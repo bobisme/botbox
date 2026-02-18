@@ -6,7 +6,7 @@ use anyhow::{Context, Result};
 use clap::Args;
 
 use crate::config::{
-    AgentsConfig, Config, DevAgentConfig, MissionsConfig, ProjectConfig, ReviewConfig,
+    self, AgentsConfig, Config, DevAgentConfig, MissionsConfig, ProjectConfig, ReviewConfig,
     ReviewerAgentConfig, ToolsConfig, WorkerAgentConfig,
 };
 use crate::error::ExitError;
@@ -100,15 +100,14 @@ impl InitArgs {
             .clone()
             .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current dir"));
 
-        // Canonicalize project root and verify it contains .botbox.json or is a new init target
+        // Canonicalize project root and verify it contains config or is a new init target
         let project_dir = project_dir
             .canonicalize()
             .unwrap_or(project_dir);
 
         // Detect maw v2 bare repo
         let ws_default = project_dir.join("ws/default");
-        let ws_default_config = ws_default.join(".botbox.json");
-        if ws_default_config.exists()
+        if config::find_config(&ws_default).is_some()
             || (ws_default.exists()
                 && !project_dir.join(".agents/botbox").exists())
         {
@@ -138,12 +137,12 @@ impl InitArgs {
         // We create config first so sync can read it
         let config = build_config(&choices);
 
-        // Write .botbox.json
-        let config_path = project_dir.join(".botbox.json");
+        // Write .botbox.toml
+        let config_path = project_dir.join(config::CONFIG_TOML);
         if !config_path.exists() || self.force {
-            let json = serde_json::to_string_pretty(&config)?;
-            fs::write(&config_path, format!("{json}\n"))?;
-            println!("Generated .botbox.json");
+            let toml_str = config.to_toml()?;
+            fs::write(&config_path, &toml_str)?;
+            println!("Generated {}", config::CONFIG_TOML);
         }
 
         // Copy workflow docs (reuse sync logic)
@@ -218,6 +217,7 @@ impl InitArgs {
                      .beads/\n\
                      .crit/\n\
                      .maw.toml\n\
+                     .botbox.toml\n\
                      .botbox.json\n\
                      .claude/\n\
                      opencode.json\n",
@@ -303,8 +303,8 @@ impl InitArgs {
             .canonicalize()
             .context("canonicalizing project root")?;
 
-        if !project_dir.join(".botbox.json").exists()
-            && !project_dir.join("ws/default/.botbox.json").exists()
+        if config::find_config(&project_dir).is_none()
+            && config::find_config(&project_dir.join("ws/default")).is_none()
         {
             // First init at bare root — fine, delegate to ws/default
         }
@@ -819,7 +819,9 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
     let project_root_str = canonical.display().to_string();
 
     // Load config to determine eligible hooks
-    let config = Config::load(&project_dir.join(".botbox.json"))?;
+    let config_path = config::find_config(project_dir)
+        .context("no config file found")?;
+    let config = Config::load(&config_path)?;
     let eligible_hooks = HookRegistry::eligible(&config.tools);
 
     // Group hooks by event type

@@ -456,7 +456,7 @@ impl Responder {
             .map_err(|_| anyhow!("BOTBUS_CHANNEL not set (should be set by hook)"))?;
 
         if project.is_empty() {
-            return Err(anyhow!("Project name required (set in .botbox.json or provide --project-root)"));
+            return Err(anyhow!("Project name required (set in .botbox.toml or provide --project-root)"));
         }
 
         // Resolve default model through tiers
@@ -1036,7 +1036,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
     /// Uses numbered slot claims for admission control and identity (proposal §1, §3).
     fn handle_leads(&self, body: &str) -> anyhow::Result<()> {
         if !self.multi_lead_enabled {
-            self.bus_send("Multi-lead sessions are not enabled for this project. Set agents.dev.multiLead.enabled in .botbox.json.", None)?;
+            self.bus_send("Multi-lead sessions are not enabled for this project. Set agents.dev.multi_lead.enabled in .botbox.toml.", None)?;
             return Ok(());
         }
 
@@ -1369,15 +1369,11 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 // ---------------------------------------------------------------------------
 
 fn find_config_path(project_root: &Path) -> Option<PathBuf> {
-    let direct = project_root.join(".botbox.json");
-    if direct.exists() {
-        return Some(direct);
+    if let Some(path) = crate::config::find_config(project_root) {
+        return Some(path);
     }
-    let ws_default = project_root.join("ws/default/.botbox.json");
-    if ws_default.exists() {
-        return Some(ws_default);
-    }
-    None
+    let ws_default = project_root.join("ws/default");
+    crate::config::find_config(&ws_default)
 }
 
 fn extract_bead_id(output: &str) -> Option<String> {

@@ -147,7 +147,7 @@ The agent reads the `status` field in stdout to decide what to do next. Exit 0 m
 
 Returned when the protocol command cannot produce valid guidance at all:
 
-- `.botbox.json` config not found
+- `.botbox.toml` (or `.botbox.json`) config not found
 - Companion tool missing or unavailable (bus, maw, br, crit)
 - Subprocess output cannot be parsed
 - Command not yet implemented

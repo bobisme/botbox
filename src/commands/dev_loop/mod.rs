@@ -311,18 +311,11 @@ fn resolve_project_root(explicit: Option<&Path>) -> anyhow::Result<PathBuf> {
     std::env::current_dir().context("getting current directory")
 }
 
-/// Load config from .botbox.json (checking both project root and ws/default/).
-/// Returns (config, config_dir) where config_dir is the directory containing .botbox.json.
+/// Load config from .botbox.toml/.botbox.json (checking both project root and ws/default/).
+/// Returns (config, config_dir) where config_dir is the directory containing the config file.
 fn load_config(project_root: &Path) -> anyhow::Result<(Config, PathBuf)> {
-    let direct = project_root.join(".botbox.json");
-    if direct.exists() {
-        return Ok((Config::load(&direct)?, project_root.to_path_buf()));
-    }
-    let ws_default = project_root.join("ws/default/.botbox.json");
-    if ws_default.exists() {
-        return Ok((Config::load(&ws_default)?, project_root.join("ws/default")));
-    }
-    anyhow::bail!("No .botbox.json found in {} or ws/default/", project_root.display())
+    let (config_path, config_dir) = crate::config::find_config_in_project(project_root)?;
+    Ok((Config::load(&config_path)?, config_dir))
 }
 
 /// Resolve the agent name from config or generate one.
