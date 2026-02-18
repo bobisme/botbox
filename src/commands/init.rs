@@ -681,7 +681,7 @@ fn build_config(choices: &InitChoices) -> Config {
         push_main: false,
         agents: AgentsConfig {
             dev: Some(DevAgentConfig {
-                model: "opus".into(),
+                model: "strong".into(),
                 max_loops: 100,
                 pause: 2,
                 timeout: 1800,
@@ -694,17 +694,18 @@ fn build_config(choices: &InitChoices) -> Config {
                 multi_lead: None,
             }),
             worker: Some(WorkerAgentConfig {
-                model: "haiku".into(),
+                model: "fast".into(),
                 timeout: 900,
             }),
             reviewer: Some(ReviewerAgentConfig {
-                model: "opus".into(),
+                model: "strong".into(),
                 max_loops: 100,
                 pause: 2,
                 timeout: 900,
             }),
             responder: None,
         },
+        models: Default::default(),
     }
 }
 
@@ -1167,7 +1168,7 @@ mod tests {
         assert_eq!(config.project.languages, vec!["rust"]);
 
         let dev = config.agents.dev.unwrap();
-        assert_eq!(dev.model, "opus");
+        assert_eq!(dev.model, "strong");
         assert_eq!(dev.max_loops, 100);
         assert!(dev.missions.is_some());
     }

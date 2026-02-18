@@ -96,9 +96,9 @@ const TEXT_STYLE: Style = Style {
     checkmark: "+",
 };
 
-/// Run an agent (claude or pi) with stream output parsing.
+/// Run an agent (pi or claude) with stream output parsing.
 pub fn run_agent(
-    agent_type: &str,
+    runner: &str,
     prompt: &str,
     model: Option<&str>,
     timeout_secs: u64,
@@ -112,13 +112,13 @@ pub fn run_agent(
         OutputFormat::Text => &TEXT_STYLE,
     };
 
-    let (mut child, tool_name) = match agent_type {
+    let (mut child, tool_name) = match runner {
         "claude" => (spawn_claude(prompt, model, skip_permissions)?, "claude"),
         "pi" => (spawn_pi(prompt, model, thinking)?, "pi"),
         _ => {
             return Err(anyhow!(
-                "Unsupported agent type: {}. Supported: 'claude', 'pi'.",
-                agent_type
+                "Unsupported runner: {}. Supported: 'pi', 'claude'.",
+                runner
             ));
         }
     };
@@ -144,7 +144,7 @@ pub fn run_agent(
         }
     });
 
-    let event_handler: &dyn Fn(&Value, &Style) -> bool = match agent_type {
+    let event_handler: &dyn Fn(&Value, &Style) -> bool = match runner {
         "pi" => &handle_pi_event,
         _ => &handle_claude_event,
     };
@@ -216,7 +216,6 @@ fn spawn_claude(
 fn spawn_pi(prompt: &str, model: Option<&str>, thinking: &str) -> anyhow::Result<Child> {
     let mut args = vec![
         "--print",
-        "--no-extensions",
         "--no-skills",
         "--no-prompt-templates",
         "--no-themes",
@@ -761,11 +760,11 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_agent_type_error() {
+    fn unsupported_runner_error() {
         let result = run_agent("foobar", "test", None, 10, Some("text"), false, "off");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
-        assert!(err.contains("Unsupported agent type"));
+        assert!(err.contains("Unsupported runner"));
         assert!(err.contains("foobar"));
     }
 

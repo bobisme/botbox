@@ -1,6 +1,7 @@
 use std::path::Path;
 
 use anyhow::Context;
+use rand::seq::IndexedRandom;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ExitError;
@@ -19,6 +20,8 @@ pub struct Config {
     pub push_main: bool,
     #[serde(default)]
     pub agents: AgentsConfig,
+    #[serde(default)]
+    pub models: ModelsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +90,54 @@ pub struct ReviewConfig {
     pub reviewers: Vec<String>,
 }
 
+
+/// Model tier configuration for cross-provider load balancing.
+///
+/// Each tier maps to a list of `provider/model:thinking` strings.
+/// When an agent config specifies a tier name (e.g. "fast"), `resolve_model()`
+/// randomly picks one model from that tier's pool.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelsConfig {
+    #[serde(default = "default_tier_fast")]
+    pub fast: Vec<String>,
+    #[serde(default = "default_tier_balanced")]
+    pub balanced: Vec<String>,
+    #[serde(default = "default_tier_strong")]
+    pub strong: Vec<String>,
+}
+
+impl Default for ModelsConfig {
+    fn default() -> Self {
+        Self {
+            fast: default_tier_fast(),
+            balanced: default_tier_balanced(),
+            strong: default_tier_strong(),
+        }
+    }
+}
+
+fn default_tier_fast() -> Vec<String> {
+    vec![
+        "anthropic/claude-haiku-4-5:low".into(),
+        "google-gemini-cli/gemini-3-flash-preview:low".into(),
+        "openai-codex/gpt-5.3-codex-spark:low".into(),
+    ]
+}
+
+fn default_tier_balanced() -> Vec<String> {
+    vec![
+        "anthropic/claude-sonnet-4-6:medium".into(),
+        "google-gemini-cli/gemini-3-pro-preview:medium".into(),
+        "openai-codex/gpt-5.3-codex:medium".into(),
+    ]
+}
+
+fn default_tier_strong() -> Vec<String> {
+    vec![
+        "anthropic/claude-opus-4-6:high".into(),
+        "openai-codex/gpt-5.3-codex:xhigh".into(),
+    ]
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AgentsConfig {
@@ -190,9 +241,9 @@ pub struct ResponderAgentConfig {
 }
 
 // Default value functions for serde
-fn default_model_opus() -> String { "opus".into() }
-fn default_model_haiku() -> String { "haiku".into() }
-fn default_model_sonnet() -> String { "sonnet".into() }
+fn default_model_opus() -> String { "strong".into() }
+fn default_model_haiku() -> String { "fast".into() }
+fn default_model_sonnet() -> String { "balanced".into() }
 fn default_max_loops() -> u32 { 100 }
 fn default_pause() -> u32 { 2 }
 fn default_timeout_300() -> u64 { 300 }
@@ -235,6 +286,26 @@ impl Config {
             .channel
             .clone()
             .unwrap_or_else(|| self.project.name.clone())
+    }
+
+    /// Resolve a model string: if it matches a tier name (fast/balanced/strong),
+    /// randomly pick from that tier's pool. Otherwise pass through as-is.
+    pub fn resolve_model(&self, model: &str) -> String {
+        let pool = match model {
+            "fast" => &self.models.fast,
+            "balanced" => &self.models.balanced,
+            "strong" => &self.models.strong,
+            _ => return model.to_string(),
+        };
+
+        if pool.is_empty() {
+            return model.to_string();
+        }
+
+        let mut rng = rand::rng();
+        pool.choose(&mut rng)
+            .cloned()
+            .unwrap_or_else(|| model.to_string())
     }
 }
 
@@ -321,6 +392,68 @@ mod tests {
         assert_eq!(dev.max_loops, 100); // default
         assert_eq!(dev.pause, 2); // default
         assert_eq!(dev.timeout, 1800); // default
+    }
+
+    #[test]
+    fn resolve_model_tier_names() {
+        let config = Config::parse(r#"{
+            "version": "1.0.0",
+            "project": { "name": "test" }
+        }"#).unwrap();
+
+        // Tier names should resolve to something from the pool
+        let fast = config.resolve_model("fast");
+        assert!(fast.contains('/'), "fast tier should resolve to provider/model, got: {fast}");
+
+        let balanced = config.resolve_model("balanced");
+        assert!(balanced.contains('/'), "balanced tier should resolve to provider/model, got: {balanced}");
+
+        let strong = config.resolve_model("strong");
+        assert!(strong.contains('/'), "strong tier should resolve to provider/model, got: {strong}");
+    }
+
+    #[test]
+    fn resolve_model_passthrough() {
+        let config = Config::parse(r#"{
+            "version": "1.0.0",
+            "project": { "name": "test" }
+        }"#).unwrap();
+
+        // Non-tier names pass through unchanged
+        assert_eq!(config.resolve_model("anthropic/claude-sonnet-4-6:medium"), "anthropic/claude-sonnet-4-6:medium");
+        assert_eq!(config.resolve_model("haiku"), "haiku");
+        assert_eq!(config.resolve_model("opus"), "opus");
+    }
+
+    #[test]
+    fn resolve_model_custom_tiers() {
+        let config = Config::parse(r#"{
+            "version": "1.0.0",
+            "project": { "name": "test" },
+            "models": {
+                "fast": ["custom/model-a"],
+                "balanced": ["custom/model-b"],
+                "strong": ["custom/model-c"]
+            }
+        }"#).unwrap();
+
+        // Single-element pools always resolve to that element
+        assert_eq!(config.resolve_model("fast"), "custom/model-a");
+        assert_eq!(config.resolve_model("balanced"), "custom/model-b");
+        assert_eq!(config.resolve_model("strong"), "custom/model-c");
+    }
+
+    #[test]
+    fn default_model_tiers() {
+        let config = Config::parse(r#"{
+            "version": "1.0.0",
+            "project": { "name": "test" }
+        }"#).unwrap();
+
+        // Default tiers should have entries
+        assert!(!config.models.fast.is_empty());
+        assert!(!config.models.balanced.is_empty());
+        assert!(!config.models.strong.is_empty());
     }
 
     #[test]

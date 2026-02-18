@@ -467,15 +467,13 @@ For EACH independent ready bead, assess and dispatch:
 
 ### Model Selection
 Read each bead (maw exec default -- br show <id>) and select a model based on complexity:
-- **{worker_model}**: Use for most tasks unless signals suggest otherwise.
-- **haiku**: Clear acceptance criteria, small scope (<~50 lines), well-groomed. E.g., add endpoint, fix typo, update config.
-- **sonnet**: Multiple files, design decisions, moderate complexity. E.g., refactor module, add feature with tests.
-- **opus**: Deep debugging, architecture changes, subtle correctness issues. E.g., fix race condition, redesign data flow.
+- **fast**: Small scope, clear criteria. Maps to haiku/flash/spark tier. E.g., add endpoint, fix typo, update config.
+- **balanced**: Multiple files, moderate complexity. Maps to sonnet/gemini-pro/codex tier. E.g., refactor module, add feature with tests.
+- **strong**: Deep debugging, architecture. Maps to opus/codex-xhigh tier. E.g., fix race condition, redesign data flow.
+- **{worker_model}** (from config): Use for most tasks unless signals suggest otherwise.
 
-Non-Claude models are also available via Pi. Use provider/model format:
-- **openai-codex/gpt-5.3-codex**: Strong coding model, good for implementation tasks.
-- **google-gemini-cli/gemini-2.5-pro**: Large context, good for analysis-heavy work.
-- Append `:thinking` level if needed: e.g. `openai-codex/gpt-5.3-codex:medium`
+Or use explicit provider/model:thinking format for specific models:
+- **anthropic/claude-sonnet-4-6:medium**, **openai-codex/gpt-5.3-codex:medium**, etc.
 - Full list: run `pi --list-models` to see all available models and providers.
 
 ### For each bead being dispatched:

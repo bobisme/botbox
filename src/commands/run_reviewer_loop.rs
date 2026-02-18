@@ -405,7 +405,8 @@ pub fn run_reviewer_loop(
         timeout: 900,
     });
 
-    let model = model_override.unwrap_or(reviewer_config.model);
+    let model_raw = model_override.unwrap_or(reviewer_config.model);
+    let model = config.resolve_model(&model_raw);
     let max_loops = reviewer_config.max_loops;
     let pause_secs = reviewer_config.pause;
     let timeout = reviewer_config.timeout;
@@ -517,14 +518,14 @@ pub fn run_reviewer_loop(
 
         let prompt = build_prompt(&agent, &project, &work_items, last_iter_ref)?;
 
-        // Run Claude via run agent (loops are autonomous, always skip permissions)
+        // Run agent via Pi (default runtime)
         let run_agent_result = crate::commands::run_agent::run_agent(
-            "claude",
+            "pi",
             &prompt,
             Some(&model),
             timeout,
             Some("text"),
-            true,
+            false,
             "off",
         );
 

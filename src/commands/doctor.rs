@@ -105,6 +105,25 @@ impl DoctorArgs {
         };
 
         // Check tools
+        // Always check for Pi (default agent runtime)
+        let pi_output = Tool::new("pi").arg("--version").run();
+        if let Ok(output) = pi_output {
+            report.tools.push(ToolStatus {
+                name: "pi (default runtime)".to_string(),
+                enabled: true,
+                version: Some(output.stdout.trim().to_string()),
+                present: true,
+            });
+        } else {
+            report.tools.push(ToolStatus {
+                name: "pi (default runtime)".to_string(),
+                enabled: true,
+                version: None,
+                present: false,
+            });
+            report.issues.push("Tool not found: pi (default agent runtime)".to_string());
+        }
+
         let required_tools = vec![
             ("beads (br)", config.tools.beads, "br"),
             ("maw", config.tools.maw, "maw"),

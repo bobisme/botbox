@@ -43,11 +43,12 @@ impl WorkerLoop {
         // Project name from config
         let project = config.channel();
 
-        // Model: CLI arg > config > default
+        // Model: CLI arg > config > default, then resolve tier names
         let worker_config = config.agents.worker.as_ref();
-        let model = model
+        let model_raw = model
             .or_else(|| worker_config.map(|w| w.model.clone()))
             .unwrap_or_default();
+        let model = config.resolve_model(&model_raw);
 
         let timeout = worker_config.map(|w| w.timeout).unwrap_or(900);
         let review_enabled = config.review.enabled;
@@ -104,8 +105,8 @@ impl WorkerLoop {
         // Build prompt for Claude
         let prompt = self.build_prompt();
 
-        // Run agent via botbox run agent (auto-detects claude vs pi from model string)
-        let output = run_agent_subprocess(&prompt, &self.model, self.timeout)?;
+        // Run agent via botbox run agent (Pi by default)
+        let output = run_agent(&prompt, &self.model, self.timeout)?;
 
         // Parse completion signal
         let status = parse_completion_signal(&output);
@@ -473,47 +474,31 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
     Config::load(&config_path)
 }
 
-/// Run an agent via botbox run agent.
-/// Auto-detects agent type from model string: contains '/' → pi, otherwise → claude.
-/// Supports 'provider/model:thinking' syntax for Pi thinking levels.
+/// Run an agent via `botbox run agent` (Pi by default).
+///
+/// Supports `provider/model:thinking` syntax for thinking levels.
 /// Echoes output to stderr for visibility in botty while capturing stdout for parsing.
-fn run_agent_subprocess(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
+fn run_agent(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
 
-    // Detect agent type and thinking level from model string
-    let (agent_type, effective_model, thinking) = if model.contains('/') {
-        // Pi model: "provider/model" or "provider/model:thinking"
-        if let Some((m, t)) = model.rsplit_once(':') {
-            ("pi", m.to_string(), t.to_string())
-        } else {
-            ("pi", model.to_string(), "off".to_string())
-        }
+    // Parse thinking level from model string if present (e.g. "anthropic/claude-sonnet-4-6:medium")
+    let (effective_model, thinking) = if let Some((m, t)) = model.rsplit_once(':') {
+        (m.to_string(), t.to_string())
     } else {
-        ("claude", model.to_string(), "off".to_string())
+        (model.to_string(), "off".to_string())
     };
 
     let timeout_string = timeout.to_string();
     let mut args = vec![
         "run",
         "agent",
-        agent_type,
-        "-p",
         prompt,
         "-t",
         &timeout_string,
+        "--thinking",
+        &thinking,
     ];
-
-    // Claude gets --skip-permissions; Pi doesn't need it
-    if agent_type == "claude" {
-        args.push("--skip-permissions");
-    }
-
-    // Add thinking level for Pi
-    if agent_type == "pi" {
-        args.push("--thinking");
-        args.push(&thinking);
-    }
 
     if !effective_model.is_empty() {
         args.push("-m");

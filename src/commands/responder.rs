@@ -152,7 +152,7 @@ fn strip_prefix_colon_ci(input: &str, prefix: &str) -> Option<String> {
 
 /// Match `!q(model)` pattern: `{bang_prefix}({model}) rest`
 /// Allowlist of valid model names for !q(model) routing.
-const ALLOWED_MODELS: &[&str] = &["opus", "sonnet", "haiku"];
+const ALLOWED_MODELS: &[&str] = &["opus", "sonnet", "haiku", "fast", "balanced", "strong"];
 
 fn match_explicit_model(input: &str, bang_prefix: &str) -> Option<(String, String)> {
     if input.len() < bang_prefix.len() + 3 {
@@ -398,6 +398,7 @@ struct Responder {
     transcript: Transcript,
     multi_lead_enabled: bool,
     multi_lead_max_leads: u32,
+    config: Option<Config>,
 }
 
 impl Responder {
@@ -458,6 +459,11 @@ impl Responder {
             return Err(anyhow!("Project name required (set in .botbox.json or provide --project-root)"));
         }
 
+        // Resolve default model through tiers
+        let default_model = config.as_ref()
+            .map(|c| c.resolve_model(&default_model))
+            .unwrap_or(default_model);
+
         Ok(Self {
             project,
             agent,
@@ -469,6 +475,7 @@ impl Responder {
             multi_lead_enabled,
             multi_lead_max_leads,
             transcript: Transcript::new(),
+            config,
         })
     }
 
@@ -548,13 +555,20 @@ impl Responder {
         extract_bead_id(&output).ok_or_else(|| anyhow!("could not parse bead ID from: {output}"))
     }
 
-    // --- Run Claude ---
+    /// Resolve a model string through config tiers, falling through to passthrough.
+    fn resolve_model(&self, model: &str) -> String {
+        self.config.as_ref()
+            .map(|c| c.resolve_model(model))
+            .unwrap_or_else(|| model.to_string())
+    }
 
-    fn run_claude(&self, prompt: &str, model: &str) -> anyhow::Result<String> {
-        eprintln!("Running Claude (model: {model})...");
+    // --- Run agent ---
+
+    fn run_agent(&self, prompt: &str, model: &str) -> anyhow::Result<String> {
+        eprintln!("Running agent (model: {model})...");
         let timeout_str = self.claude_timeout.to_string();
         let output = Tool::new("botbox")
-            .args(&["run", "agent", "claude", "--skip-permissions", "-p", prompt, "-m", model, "-t", &timeout_str])
+            .args(&["run", "agent", prompt, "-m", model, "-t", &timeout_str])
             .run_ok()?;
         Ok(output.stdout)
     }
@@ -697,7 +711,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
     fn handle_question(&mut self, route: &Route, message: &BusMessage) -> anyhow::Result<()> {
         self.transcript.add("user", &message.agent, &message.body);
-        let mut model = route.model.clone().unwrap_or_else(|| self.default_model.clone());
+        let mut model = self.resolve_model(&route.model.clone().unwrap_or_else(|| self.default_model.clone()));
         let mut conversation_count: u32 = 0;
         let mut current_message = message.clone_for_follow_up();
 
@@ -707,7 +721,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             eprintln!("Model: {model}");
 
             let prompt = self.build_question_prompt(&current_message);
-            match self.run_claude(&prompt, &model) {
+            match self.run_agent(&prompt, &model) {
                 Ok(output) => {
                     if let Some(response) = self.capture_agent_response() {
                         self.transcript.add("assistant", &self.agent, &response);
@@ -763,7 +777,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 }
                 RouteType::Question => {
                     if let Some(m) = re_parsed.model {
-                        model = m;
+                        model = self.resolve_model(&m);
                     }
                 }
                 _ => {}
@@ -907,8 +921,9 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         eprintln!("Triage: classifying message...");
         self.transcript.add("user", &message.agent, &message.body);
 
+        let triage_model = self.resolve_model("haiku");
         let prompt = self.build_triage_prompt(message);
-        match self.run_claude(&prompt, "haiku") {
+        match self.run_agent(&prompt, &triage_model) {
             Ok(output) => {
                 if let Some(response) = self.capture_agent_response() {
                     self.transcript.add("assistant", &self.agent, &response);
@@ -931,7 +946,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
     fn handle_oneshot(&self, message: &BusMessage) -> anyhow::Result<()> {
         let prompt = self.build_question_prompt(message);
-        if let Err(e) = self.run_claude(&prompt, &self.default_model) {
+        if let Err(e) = self.run_agent(&prompt, &self.default_model) {
             eprintln!("Error running Claude: {e}");
         }
         self.bus_mark_read();
@@ -988,15 +1003,15 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             conversation_count += 1;
             eprintln!("\n--- Response {conversation_count}/{} ---", self.max_conversations);
 
-            let model = if re_parsed.route_type == RouteType::Question {
+            let model = self.resolve_model(&if re_parsed.route_type == RouteType::Question {
                 re_parsed.model.unwrap_or_else(|| self.default_model.clone())
             } else {
                 self.default_model.clone()
-            };
+            });
             eprintln!("Model: {model}");
 
             let prompt = self.build_question_prompt(&current_message);
-            match self.run_claude(&prompt, &model) {
+            match self.run_agent(&prompt, &model) {
                 Ok(output) => {
                     if let Some(response) = self.capture_agent_response() {
                         self.transcript.add("assistant", &self.agent, &response);
@@ -1491,9 +1506,9 @@ mod tests {
 
     #[test]
     fn route_question_explicit_model() {
-        let r = route_message("!q(gpt4) what is this?");
+        let r = route_message("!q(strong) what is this?");
         assert_eq!(r.route_type, RouteType::Question);
-        assert_eq!(r.model, Some("gpt4".into()));
+        assert_eq!(r.model, Some("strong".into()));
         assert_eq!(r.body, "what is this?");
     }
 
@@ -1539,9 +1554,9 @@ mod tests {
 
     #[test]
     fn route_legacy_explicit_model_colon() {
-        let r = route_message("q(claude3): something");
+        let r = route_message("q(fast): something");
         assert_eq!(r.route_type, RouteType::Question);
-        assert_eq!(r.model, Some("claude3".into()));
+        assert_eq!(r.model, Some("fast".into()));
         assert_eq!(r.body, "something");
     }
 

@@ -208,7 +208,7 @@ pub fn run(
             status_snapshot.as_deref(),
         );
 
-        match run_claude(&prompt_text, &ctx.model, timeout_secs) {
+        match run_agent_subprocess(&prompt_text, &ctx.model, timeout_secs) {
             Ok(output) => {
                 // Check completion signals in the tail of the output
                 let signal_region = if output.len() > 1000 {
@@ -342,25 +342,28 @@ fn resolve_agent(config: &Config, agent_override: Option<&str>) -> anyhow::Resul
     Ok(output.stdout.trim().to_string())
 }
 
-/// Resolve the model for the lead dev.
+/// Resolve the model for the lead dev, expanding tier names.
 fn resolve_model(config: &Config, model_override: Option<&str>) -> String {
-    if let Some(m) = model_override {
-        return m.to_string();
-    }
-    config
-        .agents
-        .dev
-        .as_ref()
-        .map_or_else(String::new, |d| d.model.clone())
+    let raw = if let Some(m) = model_override {
+        m.to_string()
+    } else {
+        config
+            .agents
+            .dev
+            .as_ref()
+            .map_or_else(String::new, |d| d.model.clone())
+    };
+    if raw.is_empty() { raw } else { config.resolve_model(&raw) }
 }
 
-/// Resolve the default worker model.
+/// Resolve the default worker model, expanding tier names.
 fn resolve_worker_model(config: &Config) -> String {
-    config
+    let raw = config
         .agents
         .worker
         .as_ref()
-        .map_or_else(String::new, |w| w.model.clone())
+        .map_or_else(String::new, |w| w.model.clone());
+    if raw.is_empty() { raw } else { config.resolve_model(&raw) }
 }
 
 /// Check if there is any work to do (inbox, claims, ready beads).
@@ -570,20 +573,28 @@ fn discover_sibling_leads(agent: &str) -> anyhow::Result<Vec<SiblingLead>> {
     Ok(siblings)
 }
 
-/// Run Claude via `botbox run agent`.
-fn run_claude(prompt: &str, model: &str, timeout_secs: u64) -> anyhow::Result<String> {
-    let mut args = vec!["run", "agent", "claude", "--skip-permissions", "-p", prompt];
+/// Run agent via `botbox run agent` (Pi by default).
+fn run_agent_subprocess(prompt: &str, model: &str, timeout_secs: u64) -> anyhow::Result<String> {
+    // Parse thinking level from model string if present
+    let (effective_model, thinking) = if let Some((m, t)) = model.rsplit_once(':') {
+        (m.to_string(), t.to_string())
+    } else {
+        (model.to_string(), "off".to_string())
+    };
 
-    let model_owned;
-    if !model.is_empty() {
-        model_owned = model.to_string();
+    let mut args = vec!["run", "agent", prompt];
+
+    if !effective_model.is_empty() {
         args.push("-m");
-        args.push(&model_owned);
+        args.push(&effective_model);
     }
 
     let timeout_str = timeout_secs.to_string();
     args.push("-t");
     args.push(&timeout_str);
+
+    args.push("--thinking");
+    args.push(&thinking);
 
     // Spawn the process, streaming stdout through
     use std::io::{BufRead, BufReader};

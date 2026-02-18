@@ -4,14 +4,11 @@ use clap::Subcommand;
 
 #[derive(Debug, Subcommand)]
 pub enum RunCommand {
-    /// Run an agent with stream output parsing (claude or pi)
+    /// Run an agent with stream output parsing (pi default, claude opt-in)
     Agent {
-        /// Agent type: 'claude' or 'pi' (pi supports openai, gemini, anthropic via --model provider/id)
-        agent_type: String,
         /// Prompt to send to the agent
-        #[arg(short, long)]
         prompt: String,
-        /// Model to use (claude: sonnet/opus/haiku; pi: provider/model-id e.g. openai/gpt-4o)
+        /// Model to use (tier name: fast/balanced/strong, or provider/model-id e.g. anthropic/claude-sonnet-4-6:medium)
         #[arg(short, long)]
         model: Option<String>,
         /// Timeout in seconds
@@ -20,7 +17,10 @@ pub enum RunCommand {
         /// Output format (pretty or text)
         #[arg(long)]
         format: Option<String>,
-        /// Skip Claude Code permission checks (DANGEROUS: allows unrestricted file/command access)
+        /// Runtime: 'pi' (default) or 'claude'
+        #[arg(long, default_value = "pi")]
+        runner: String,
+        /// Skip Claude Code permission checks (only for --runner claude)
         #[arg(long)]
         skip_permissions: bool,
         /// Thinking level for Pi agents (off, minimal, low, medium, high, xhigh)
@@ -95,8 +95,8 @@ pub enum RunCommand {
 impl RunCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
-            RunCommand::Agent { agent_type, prompt, model, timeout, format, skip_permissions, thinking } => {
-                crate::commands::run_agent::run_agent(agent_type, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions, thinking)
+            RunCommand::Agent { prompt, model, timeout, format, runner, skip_permissions, thinking } => {
+                crate::commands::run_agent::run_agent(runner, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions, thinking)
             }
             RunCommand::DevLoop { project_root, agent, model } => {
                 crate::commands::dev_loop::run(

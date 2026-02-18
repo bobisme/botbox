@@ -6,23 +6,23 @@ use std::os::unix::fs::PermissionsExt;
 #[test]
 fn run_agent_requires_prompt() {
     let mut cmd = Command::cargo_bin("botbox").unwrap();
-    cmd.arg("run").arg("agent").arg("claude");
+    cmd.arg("run").arg("agent");
     cmd.assert()
         .failure()
         .stderr(predicate::str::contains("required arguments were not provided"));
 }
 
 #[test]
-fn run_agent_rejects_unknown_agent_type() {
+fn run_agent_rejects_unknown_runner() {
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run")
         .arg("agent")
-        .arg("unknown-agent")
-        .arg("--prompt")
-        .arg("test");
+        .arg("test prompt")
+        .arg("--runner")
+        .arg("unknown-runner");
     cmd.assert()
         .failure()
-        .stderr(predicate::str::contains("Unsupported agent type"));
+        .stderr(predicate::str::contains("Unsupported runner"));
 }
 
 #[test]
@@ -32,9 +32,9 @@ fn run_agent_handles_claude_not_found() {
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run")
         .arg("agent")
-        .arg("claude")
-        .arg("--prompt")
         .arg("say hello")
+        .arg("--runner")
+        .arg("claude")
         .arg("--timeout")
         .arg("5");
 
@@ -46,13 +46,11 @@ fn run_agent_handles_claude_not_found() {
 }
 
 #[test]
-fn run_agent_accepts_pi_type() {
-    // Verify "pi" is accepted as agent type (even if pi binary isn't installed)
+fn run_agent_defaults_to_pi_runner() {
+    // Verify default runner is "pi" (even if pi binary isn't installed)
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run")
         .arg("agent")
-        .arg("pi")
-        .arg("--prompt")
         .arg("test")
         .arg("--timeout")
         .arg("2");
@@ -60,10 +58,10 @@ fn run_agent_accepts_pi_type() {
     let output = cmd.output().unwrap();
     let stderr = String::from_utf8_lossy(&output.stderr);
 
-    // Should NOT say "Unsupported agent type" — pi is supported
+    // Should NOT say "Unsupported runner" — pi is the default
     assert!(
-        !stderr.contains("Unsupported agent type"),
-        "pi should be a supported agent type, got stderr: {}",
+        !stderr.contains("Unsupported runner"),
+        "pi should be the default runner, got stderr: {}",
         stderr
     );
 }
@@ -103,8 +101,6 @@ EVENTS
     )
     .arg("run")
     .arg("agent")
-    .arg("pi")
-    .arg("--prompt")
     .arg("Say hello")
     .arg("--timeout")
     .arg("10")
@@ -155,8 +151,6 @@ EVENTS
     )
     .arg("run")
     .arg("agent")
-    .arg("pi")
-    .arg("--prompt")
     .arg("Read test file")
     .arg("--timeout")
     .arg("10")
@@ -225,8 +219,6 @@ EVENTS
     )
     .arg("run")
     .arg("agent")
-    .arg("pi")
-    .arg("--prompt")
     .arg("Read missing file")
     .arg("--timeout")
     .arg("10")
@@ -266,8 +258,6 @@ exit 1
     )
     .arg("run")
     .arg("agent")
-    .arg("pi")
-    .arg("--prompt")
     .arg("test")
     .arg("--timeout")
     .arg("5")

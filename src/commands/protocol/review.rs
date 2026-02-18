@@ -393,6 +393,7 @@ mod tests {
             },
             push_main: false,
             agents: Default::default(),
+            models: Default::default(),
         }
     }
 

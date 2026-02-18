@@ -61,12 +61,12 @@ pub fn claim_workspace(agent: &str, project: &str, ws: &str, memo: &str) -> anyh
     Ok(())
 }
 
-/// Timeout in seconds for a given model.
+/// Timeout in seconds for a given model or tier name.
 pub fn model_timeout(model: &str) -> u64 {
     match model {
-        "opus" => 900,
-        "sonnet" => 600,
-        "haiku" => 300,
+        "strong" | "opus" => 900,
+        "balanced" | "sonnet" => 600,
+        "fast" | "haiku" => 300,
         _ => 600,
     }
 }

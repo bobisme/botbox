@@ -249,6 +249,7 @@ mod tests {
             },
             push_main: false,
             agents: Default::default(),
+            models: Default::default(),
         };
 
         let result = render_agents_md(&config).unwrap();
@@ -299,6 +300,7 @@ More custom content.
             },
             push_main: false,
             agents: Default::default(),
+            models: Default::default(),
         };
 
         let ctx = TemplateContext::from_config(&config);
