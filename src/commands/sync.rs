@@ -270,6 +270,32 @@ impl SyncArgs {
             }
         }
 
+        // Symlink .pi directory
+        let root_pi_dir = project_root.join(".pi");
+        let ws_pi_dir = project_root.join("ws/default/.pi");
+
+        if ws_pi_dir.exists() {
+            let needs_symlink = match fs::read_link(&root_pi_dir) {
+                Ok(target) => target != Path::new("ws/default/.pi"),
+                Err(_) => true,
+            };
+
+            if needs_symlink {
+                let tmp_link = project_root.join(".pi.tmp");
+                let _ = fs::remove_file(&tmp_link);
+                #[cfg(unix)]
+                std::os::unix::fs::symlink("ws/default/.pi", &tmp_link)?;
+                #[cfg(windows)]
+                std::os::windows::fs::symlink_dir("ws/default/.pi", &tmp_link)?;
+
+                if let Err(e) = fs::rename(&tmp_link, &root_pi_dir) {
+                    let _ = fs::remove_file(&tmp_link);
+                    return Err(e).context("creating .pi symlink");
+                }
+                println!("Symlinked .pi → ws/default/.pi");
+            }
+        }
+
         Ok(())
     }
 
@@ -453,6 +479,13 @@ impl SyncArgs {
 
         let pretty = serde_json::to_string_pretty(&botbox_hooks)?;
         fs::write(&settings_path, pretty)?;
+
+        // Deploy Pi extension (equivalent of Claude hooks)
+        let pi_ext_path = project_root.join(".pi/extensions/botbox-hooks.ts");
+        if let Some(parent) = pi_ext_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&pi_ext_path, super::hooks::PI_BOTBOX_HOOKS_EXTENSION)?;
 
         Ok(())
     }

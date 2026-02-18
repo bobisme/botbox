@@ -403,6 +403,29 @@ impl InitArgs {
             }
         }
 
+        // Symlink .pi → ws/default/.pi
+        let root_pi_dir = project_dir.join(".pi");
+        let ws_pi_dir = project_dir.join("ws/default/.pi");
+        if ws_pi_dir.exists() {
+            let needs_symlink = match fs::read_link(&root_pi_dir) {
+                Ok(target) => target != Path::new("ws/default/.pi"),
+                Err(_) => true,
+            };
+            if needs_symlink {
+                let tmp_link = project_dir.join(".pi.tmp");
+                let _ = fs::remove_file(&tmp_link);
+                #[cfg(unix)]
+                std::os::unix::fs::symlink("ws/default/.pi", &tmp_link)?;
+                #[cfg(windows)]
+                std::os::windows::fs::symlink_dir("ws/default/.pi", &tmp_link)?;
+                if let Err(e) = fs::rename(&tmp_link, &root_pi_dir) {
+                    let _ = fs::remove_file(&tmp_link);
+                    return Err(e).context("creating .pi symlink");
+                }
+                println!("Symlinked .pi → ws/default/.pi");
+            }
+        }
+
         Ok(())
     }
 
