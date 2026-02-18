@@ -26,19 +26,20 @@ All steps below are required — they clean up resources, prevent workspace leak
    - Run in the workspace: `maw exec $WS -- <checkCommand>` (e.g., `cargo clippy && cargo test`, `npm test`)
    - If checks fail, fix the issues before proceeding. Do NOT merge broken code.
    - If no `checkCommand` is configured, at minimum verify compilation succeeds.
-7. **Merge and destroy the workspace**: `maw ws merge $WS --destroy` (where `$WS` is the workspace name from the start step — **never `default`**)
+7. **Snapshot worker files** (critical if workers don't run jj): `maw exec $WS -- jj status` — triggers jj's working-copy snapshot, capturing on-disk edits into the workspace commit. Without this, merge may see an empty commit and all worker changes are lost.
+8. **Merge and destroy the workspace**: `maw ws merge $WS --destroy` (where `$WS` is the workspace name from the start step — **never `default`**)
    - The `--destroy` flag is required — it cleans up the workspace after merging
    - **Never merge or destroy the default workspace.** Default is where other workspaces merge into.
    - `maw ws merge` now produces linear history: workspace commits are rebased onto main and squashed into a single commit (as of v0.22.0)
    - Scaffolding commits are automatically abandoned; main bookmark is automatically moved and ready for push
    - If merge fails due to conflicts, do NOT destroy. Instead add a comment: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Merge conflict — workspace preserved for manual resolution"` and announce the conflict in the project channel.
    - If the command succeeds but the workspace still exists (`maw ws list`), report: `bus send --agent $AGENT $BOTBOX_PROJECT "Tool issue: maw ws merge --destroy did not remove workspace $WS" -L tool-issue`
-8. Release all claims held by this agent: `bus claims release --agent $AGENT --all`
-9. Sync the beads ledger: `maw exec default -- br sync --flush-only`
-10. **If pushMain is enabled** (check `.botbox.json` for `"pushMain": true`), push to GitHub main:
+9. Release all claims held by this agent: `bus claims release --agent $AGENT --all`
+10. Sync the beads ledger: `maw exec default -- br sync --flush-only`
+11. **If pushMain is enabled** (check `.botbox.json` for `"pushMain": true`), push to GitHub main:
    - `maw push` (maw v0.24.0+ handles bookmark and push automatically)
    - If push fails, announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Push failed for <bead-id>, manual intervention needed" -L tool-issue`
-11. Announce completion in the project channel: `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L task-done`
+12. Announce completion in the project channel: `bus send --agent $AGENT $BOTBOX_PROJECT "Completed <bead-id>: <bead-title>" -L task-done`
 
 ## After Finishing a Batch of Beads
 

@@ -581,6 +581,13 @@ After protocol merge reports Ready, close the bead:
 
 Every merge into default MUST follow this protocol to prevent concurrent merge conflicts:
 
+  a0. SNAPSHOT WORKER FILES (critical — workers don't run jj):
+      Workers edit files directly without running jj commands. Their changes are on disk but NOT in
+      jj's commit tree. You MUST snapshot the workspace before any jj operation or the changes will be lost:
+        maw exec $WS -- jj status
+      This triggers jj's working-copy snapshot, capturing all on-disk edits into the workspace commit.
+      If you skip this step, maw ws merge will merge an EMPTY commit and all worker changes are lost.
+
   a. PREFLIGHT REBASE (outside mutex — reduces lock hold time):
      maw exec $WS -- jj rebase -d main
 

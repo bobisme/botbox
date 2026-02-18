@@ -23,11 +23,12 @@ If any check fails, the output explains why and what to do.
 
 ## Merge steps (output by protocol merge)
 
-1. `maw ws merge <workspace> --destroy` — squash-merge and clean up
-2. `crit reviews mark-merged <review-id>` — mark review as merged (if review exists)
-3. `br sync --flush-only` — sync beads ledger
-4. `maw push` — push to remote (if `pushMain` is enabled)
-5. `bus send` — announce merge on project channel
+1. **Snapshot worker files** (critical if workers don't run jj): `maw exec <workspace> -- jj status` — triggers jj's working-copy snapshot, capturing on-disk edits into the workspace commit. Without this, merge may see an empty commit.
+2. `maw ws merge <workspace> --destroy` — squash-merge and clean up
+3. `crit reviews mark-merged <review-id>` — mark review as merged (if review exists)
+4. `br sync --flush-only` — sync beads ledger
+5. `maw push` — push to remote (if `pushMain` is enabled)
+6. `bus send` — announce merge on project channel
 
 ## Conflict recovery
 
@@ -46,6 +47,7 @@ If `botbox protocol merge` is unavailable, check manually:
 
 1. `maw exec $WS -- crit review <review-id>` — confirm LGTM, no blocks
 2. `maw exec default -- br show <bead-id>` — confirm bead is closed
-3. `maw ws merge <workspace> --check` — pre-flight conflict detection
-4. `maw ws merge <workspace> --destroy` — merge
-5. `bus claims release --agent $AGENT --all` — release claims
+3. `maw exec $WS -- jj status` — snapshot worker files (critical if workers don't run jj)
+4. `maw ws merge <workspace> --check` — pre-flight conflict detection
+5. `maw ws merge <workspace> --destroy` — merge
+6. `bus claims release --agent $AGENT --all` — release claims

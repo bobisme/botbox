@@ -1168,7 +1168,7 @@ mod tests {
 
         let dev = config.agents.dev.unwrap();
         assert_eq!(dev.model, "opus");
-        assert_eq!(dev.max_loops, 20);
+        assert_eq!(dev.max_loops, 100);
         assert!(dev.missions.is_some());
     }
 
