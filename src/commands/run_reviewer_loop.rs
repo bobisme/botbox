@@ -343,6 +343,11 @@ fn read_last_iteration(journal_path: &Path) -> Option<(String, String)> {
 fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
     eprintln!("Cleaning up...");
 
+    // All subprocess spawns below use .new_process_group() so they run in their
+    // own process group and survive the SIGTERM that triggered this cleanup
+    // (botty kill sends SIGTERM to the parent's process group, which would
+    // otherwise kill these children before they complete).
+
     if !already_signed_off {
         let _ = Tool::new("bus")
             .args(&[
@@ -352,15 +357,18 @@ fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
                 &format!("Reviewer {} signing off.", agent),
                 "-L", "agent-idle",
             ])
+            .new_process_group()
             .run();
     }
 
     let _ = Tool::new("bus")
         .args(&["statuses", "clear", "--agent", agent])
+        .new_process_group()
         .run();
 
     let _ = Tool::new("bus")
         .args(&["claims", "release", "--agent", agent, &format!("agent://{}", agent)])
+        .new_process_group()
         .run();
 
     eprintln!("Cleanup complete for {}.", agent);

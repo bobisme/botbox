@@ -562,10 +562,16 @@ fn register_cleanup_handlers(agent: &str, project: &str) {
 fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     eprintln!("Cleaning up...");
 
+    // All subprocess spawns below use .new_process_group() so they run in their
+    // own process group and survive the SIGTERM that triggered this cleanup
+    // (botty kill sends SIGTERM to the parent's process group, which would
+    // otherwise kill these children before they complete).
+
     // Reset orphaned in-progress beads
     let result = Tool::new("br")
         .args(&["list", "--status", "in_progress", "--assignee", agent, "--json"])
         .in_workspace("default")?
+        .new_process_group()
         .run();
 
     if let Ok(output) = result
@@ -575,6 +581,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
                     let _ = Tool::new("br")
                         .args(&["update", "--actor", agent, id, "--status=open"])
                         .in_workspace("default")?
+                        .new_process_group()
                         .run();
                     let _ = Tool::new("br")
                         .args(&[
@@ -588,6 +595,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
                             &format!("Worker {agent} exited without completing. Resetting to open for reassignment."),
                         ])
                         .in_workspace("default")?
+                        .new_process_group()
                         .run();
                     eprintln!("Reset orphaned bead {id} to open");
                 }
@@ -605,27 +613,32 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
             "-L",
             "agent-idle",
         ])
+        .new_process_group()
         .run();
 
     // Clear status
     let _ = Tool::new("bus")
         .args(&["statuses", "clear", "--agent", agent])
+        .new_process_group()
         .run();
 
     // Release agent claim
     let _ = Tool::new("bus")
         .args(&["claims", "release", "--agent", agent, &format!("agent://{agent}")])
+        .new_process_group()
         .run();
 
     // Release all claims
     let _ = Tool::new("bus")
         .args(&["claims", "release", "--agent", agent, "--all"])
+        .new_process_group()
         .run();
 
     // Sync beads
     let _ = Tool::new("br")
         .args(&["sync", "--flush-only"])
         .in_workspace("default")?
+        .new_process_group()
         .run();
 
     eprintln!("Cleanup complete for {agent}.");

@@ -6,6 +6,11 @@ use anyhow::Context;
 
 use crate::error::ExitError;
 
+// On Unix, CommandExt lets us call .process_group(0) to detach the child
+// into its own process group so SIGTERM to the parent's group doesn't kill it.
+#[cfg(unix)]
+use std::os::unix::process::CommandExt as _;
+
 /// Result of running a subprocess.
 #[derive(Debug)]
 pub struct RunOutput {
@@ -33,6 +38,10 @@ pub struct Tool {
     args: Vec<String>,
     timeout: Option<Duration>,
     maw_workspace: Option<String>,
+    /// When true, spawn the subprocess in a new process group (process_group(0)) so
+    /// it survives a SIGTERM directed at the parent's process group.  Use this for
+    /// cleanup subprocesses that must outlive the signal that triggered them.
+    new_process_group: bool,
 }
 
 impl Tool {
@@ -43,7 +52,18 @@ impl Tool {
             args: Vec::new(),
             timeout: None,
             maw_workspace: None,
+            new_process_group: false,
         }
+    }
+
+    /// Spawn the subprocess in a new process group so it survives a SIGTERM
+    /// sent to the parent's process group.  Use this for cleanup subprocesses
+    /// (e.g. `bus claims release`) that are spawned from a signal handler.
+    ///
+    /// On non-Unix platforms this is a no-op (the flag is ignored).
+    pub fn new_process_group(mut self) -> Self {
+        self.new_process_group = true;
+        self
     }
 
     /// Add a single argument.
@@ -95,6 +115,14 @@ impl Tool {
         cmd.args(&args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+
+        // Detach cleanup subprocesses into their own process group so they
+        // survive a SIGTERM that kills the parent's process group (e.g. from
+        // `botty kill`).  On non-Unix targets the flag is simply ignored.
+        #[cfg(unix)]
+        if self.new_process_group {
+            cmd.process_group(0);
+        }
 
         let output: Output = if let Some(timeout) = self.timeout {
             run_with_timeout(&mut cmd, timeout, &self.program)?

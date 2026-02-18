@@ -1171,7 +1171,9 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             for msg in &ch.messages {
                 // Skip the trigger message (already processed)
                 if let Some(tid) = trigger_id {
+                    eprintln!("Drain: checking msg id={:?} vs trigger={tid}", msg.id);
                     if msg.id.as_deref() == Some(tid) {
+                        eprintln!("Drain: skipping trigger message {tid}");
                         continue;
                     }
                 }
@@ -1304,7 +1306,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         };
 
         eprintln!("Trigger: {}: {}...", trigger_message.agent,
-            &trigger_message.body[..trigger_message.body.len().min(80)]);
+            &trigger_message.body[..trigger_message.body.floor_char_boundary(80)]);
 
         // Skip self-messages
         if trigger_message.agent == self.agent {
@@ -1415,12 +1417,16 @@ pub fn run_responder(
     // Install signal handler for cleanup (after construction so we have the agent name)
     let signal_agent = responder.agent.clone();
     let _ = ctrlc::set_handler(move || {
+        // Use .new_process_group() so these subprocesses run in their own process
+        // group and survive the SIGTERM that killed the parent's process group.
         let uri = format!("agent://{signal_agent}");
         let _ = Tool::new("bus")
             .args(&["claims", "release", "--agent", &signal_agent, &uri])
+            .new_process_group()
             .run();
         let _ = Tool::new("bus")
             .args(&["statuses", "clear", "--agent", &signal_agent])
+            .new_process_group()
             .run();
         std::process::exit(0);
     });

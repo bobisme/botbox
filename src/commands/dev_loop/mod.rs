@@ -662,6 +662,11 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     // Kill child workers
     kill_child_workers(agent);
 
+    // All subprocess spawns below use .new_process_group() so they run in their
+    // own process group and survive the SIGTERM that triggered this cleanup
+    // (botty kill sends SIGTERM to the parent's process group, which would
+    // otherwise kill these children before they complete).
+
     // Sign off
     let _ = Tool::new("bus")
         .args(&[
@@ -669,11 +674,13 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
             &format!("Dev agent {agent} signing off."),
             "-L", "agent-idle",
         ])
+        .new_process_group()
         .run();
 
     // Clear status
     let _ = Tool::new("bus")
         .args(&["statuses", "clear", "--agent", agent])
+        .new_process_group()
         .run();
 
     // Release merge mutex if held
@@ -682,6 +689,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
             "claims", "release", "--agent", agent,
             &format!("workspace://{project}/default"),
         ])
+        .new_process_group()
         .run();
 
     // Release agent claim
@@ -690,11 +698,13 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
             "claims", "release", "--agent", agent,
             &format!("agent://{agent}"),
         ])
+        .new_process_group()
         .run();
 
     // Release all remaining claims
     let _ = Tool::new("bus")
         .args(&["claims", "release", "--agent", agent, "--all"])
+        .new_process_group()
         .run();
 
     // Sync beads
@@ -702,7 +712,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
         .args(&["sync", "--flush-only"])
         .in_workspace("default")
         .ok()
-        .and_then(|t| t.run().ok());
+        .and_then(|t| t.new_process_group().run().ok());
 
     eprintln!("Cleanup complete for {agent}.");
     Ok(())
