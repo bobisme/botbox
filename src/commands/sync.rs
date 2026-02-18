@@ -506,6 +506,14 @@ impl SyncArgs {
             Some(project_root),
         )?;
 
+        // Finalize: create new empty commit and advance main bookmark
+        run_command("jj", &["new", "-m", ""], Some(project_root))?;
+        run_command(
+            "jj",
+            &["bookmark", "set", "main", "-r", "@-"],
+            Some(project_root),
+        )?;
+
         Ok(())
     }
 }
