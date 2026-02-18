@@ -1061,7 +1061,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             let claim_result = Tool::new("bus")
                 .args(&[
                     "claims", "stake", "--agent", &lead_name,
-                    &claim_uri, "--ttl", "900", "-m", &format!("lead slot {slot}"),
+                    &claim_uri, "--ttl", "120", "-m", &format!("lead slot {slot}"),
                 ])
                 .run();
 
