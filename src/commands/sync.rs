@@ -123,7 +123,7 @@ impl SyncArgs {
         let docs_stale = self.check_docs_staleness(&agents_dir)?;
         let managed_stale = self.check_managed_section_staleness(&project_root, &config)?;
         let prompts_stale = self.check_prompts_staleness(&agents_dir)?;
-        let hooks_stale = self.check_hooks_staleness(&agents_dir)?;
+        let hooks_stale = self.check_hooks_staleness(&project_root)?;
         let design_docs_stale = self.check_design_docs_staleness(&agents_dir)?;
 
         let any_stale =
@@ -381,9 +381,18 @@ impl SyncArgs {
         Ok(installed != current)
     }
 
-    fn check_hooks_staleness(&self, _agents_dir: &Path) -> Result<bool> {
-        // For now, hooks are always considered fresh since we don't have shell scripts
-        // In the future, this will check .claude/settings.json hash
+    fn check_hooks_staleness(&self, project_root: &Path) -> Result<bool> {
+        // Check if Pi extension exists — if not, hooks need deploying
+        let pi_ext = project_root.join(".pi/extensions/botbox-hooks.ts");
+        if !pi_ext.exists() {
+            return Ok(true);
+        }
+        // Check if content matches current template
+        if let Ok(current) = fs::read_to_string(&pi_ext) {
+            if current != super::hooks::PI_BOTBOX_HOOKS_EXTENSION {
+                return Ok(true);
+            }
+        }
         Ok(false)
     }
 
