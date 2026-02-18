@@ -460,7 +460,6 @@ impl SyncArgs {
         let settings_path = claude_dir.join("settings.json");
         let project_root_str = project_root.display().to_string();
 
-        // Use command arrays (not shell strings) to prevent command injection
         let botbox_hooks = serde_json::json!({
             "hooks": {
                 "SessionStart": [{
@@ -468,11 +467,11 @@ impl SyncArgs {
                     "hooks": [
                         {
                             "type": "command",
-                            "command": ["botbox", "hooks", "run", "init-agent", "--project-root", &project_root_str]
+                            "command": format!("botbox hooks run init-agent --project-root {project_root_str}")
                         },
                         {
                             "type": "command",
-                            "command": ["botbox", "hooks", "run", "check-jj", "--project-root", &project_root_str]
+                            "command": format!("botbox hooks run check-jj --project-root {project_root_str}")
                         }
                     ]
                 }],
@@ -480,7 +479,7 @@ impl SyncArgs {
                     "matcher": "",
                     "hooks": [{
                         "type": "command",
-                        "command": ["botbox", "hooks", "run", "check-bus-inbox", "--project-root", &project_root_str]
+                        "command": format!("botbox hooks run check-bus-inbox --project-root {project_root_str}")
                     }]
                 }]
             }
