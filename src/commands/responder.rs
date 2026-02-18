@@ -1146,7 +1146,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
     /// After processing the trigger message, drain any queued actionable messages
     /// (!mission, !dev, !leads) from the inbox and process them.
-    fn drain_actionable_messages(&self) -> anyhow::Result<()> {
+    /// `trigger_id` is the ID of the message that was already processed — skip it.
+    fn drain_actionable_messages(&self, trigger_id: Option<&str>) -> anyhow::Result<()> {
         let output = Tool::new("bus")
             .args(&[
                 "inbox", "--agent", &self.agent, "--channels", &self.channel,
@@ -1168,6 +1169,12 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 continue;
             }
             for msg in &ch.messages {
+                // Skip the trigger message (already processed)
+                if let Some(tid) = trigger_id {
+                    if msg.id.as_deref() == Some(tid) {
+                        continue;
+                    }
+                }
                 // Skip self-messages
                 if msg.agent == self.agent {
                     continue;
@@ -1346,7 +1353,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         }
 
         // Drain pattern: process queued actionable messages after primary handler
-        if let Err(e) = self.drain_actionable_messages() {
+        if let Err(e) = self.drain_actionable_messages(trigger_message.id.as_deref()) {
             eprintln!("Warning: drain failed: {e}");
         }
 

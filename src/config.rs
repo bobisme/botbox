@@ -291,6 +291,15 @@ impl Config {
     /// Resolve a model string: if it matches a tier name (fast/balanced/strong),
     /// randomly pick from that tier's pool. Otherwise pass through as-is.
     pub fn resolve_model(&self, model: &str) -> String {
+        // Legacy short names → specific Anthropic models (deterministic)
+        match model {
+            "opus" => return "anthropic/claude-opus-4-6:high".to_string(),
+            "sonnet" => return "anthropic/claude-sonnet-4-6:medium".to_string(),
+            "haiku" => return "anthropic/claude-haiku-4-5:low".to_string(),
+            _ => {}
+        }
+
+        // Tier names → random pool selection
         let pool = match model {
             "fast" => &self.models.fast,
             "balanced" => &self.models.balanced,
@@ -419,10 +428,14 @@ mod tests {
             "project": { "name": "test" }
         }"#).unwrap();
 
-        // Non-tier names pass through unchanged
+        // Explicit provider/model strings pass through unchanged
         assert_eq!(config.resolve_model("anthropic/claude-sonnet-4-6:medium"), "anthropic/claude-sonnet-4-6:medium");
-        assert_eq!(config.resolve_model("haiku"), "haiku");
-        assert_eq!(config.resolve_model("opus"), "opus");
+        assert_eq!(config.resolve_model("some-unknown-model"), "some-unknown-model");
+
+        // Legacy short names resolve to specific Anthropic models (deterministic)
+        assert_eq!(config.resolve_model("opus"), "anthropic/claude-opus-4-6:high");
+        assert_eq!(config.resolve_model("sonnet"), "anthropic/claude-sonnet-4-6:medium");
+        assert_eq!(config.resolve_model("haiku"), "anthropic/claude-haiku-4-5:low");
     }
 
     #[test]
