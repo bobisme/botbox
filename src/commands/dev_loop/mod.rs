@@ -356,14 +356,17 @@ fn resolve_model(config: &Config, model_override: Option<&str>) -> String {
     if raw.is_empty() { raw } else { config.resolve_model(&raw) }
 }
 
-/// Resolve the default worker model, expanding tier names.
+/// Get the raw worker model config value (tier name or explicit model).
+///
+/// Returns the unresolved value so the lead prompt can show tier names
+/// like "fast"/"balanced"/"strong". The worker loop resolves them at runtime
+/// through the tier pool for cross-provider load balancing.
 fn resolve_worker_model(config: &Config) -> String {
-    let raw = config
+    config
         .agents
         .worker
         .as_ref()
-        .map_or_else(String::new, |w| w.model.clone());
-    if raw.is_empty() { raw } else { config.resolve_model(&raw) }
+        .map_or_else(String::new, |w| w.model.clone())
 }
 
 /// Check if there is any work to do (inbox, claims, ready beads).

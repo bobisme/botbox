@@ -481,7 +481,10 @@ fn handle_pi_event(event: &Value, style: &Style) -> bool {
                     "text_end" => print_pi_text_end(ae, style),
                     "toolcall_start" => print_pi_toolcall_start(ae, style),
                     "toolcall_end" => print_pi_toolcall_end(ae, style),
-                    _ => {} // thinking_*, text_start, toolcall_delta
+                    "thinking_start" => print_pi_thinking_start(style),
+                    "thinking_delta" => print_pi_thinking_delta(ae, style),
+                    "thinking_end" => print_pi_thinking_end(style),
+                    _ => {} // text_start, toolcall_delta
                 }
             }
         }
@@ -582,6 +585,28 @@ fn print_pi_tool_result(event: &Value, style: &Style) {
             style.green, style.checkmark, style.reset, tool_name, style.dim, truncated, style.reset
         );
     }
+}
+
+fn print_pi_thinking_start(style: &Style) {
+    print!("{}  [thinking] {}", style.dim, style.reset);
+    use std::io::Write;
+    let _ = std::io::stdout().flush();
+}
+
+fn print_pi_thinking_delta(ae: &Value, style: &Style) {
+    if let Some(delta) = ae.get("delta").and_then(|d| d.as_str()) {
+        if delta.is_empty() {
+            return;
+        }
+        // Show a dot per chunk to indicate thinking progress without dumping full reasoning
+        print!("{}.", style.dim);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    }
+}
+
+fn print_pi_thinking_end(style: &Style) {
+    println!("{}", style.reset);
 }
 
 // --- Shared utilities ---

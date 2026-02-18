@@ -375,9 +375,9 @@ Process each message:
 
 ## 4. TRIAGE
 
-Check CURRENT STATUS above for READY BEADS. If needed, fetch full details: maw exec default -- br ready --json
-
-Count ready beads. If 0 and inbox created none: output <promise>COMPLETE</promise> and stop.
+Run: botbox triage
+This gives you scored top picks, blockers, quick wins, and project health in one command.
+If no actionable beads and inbox created none: output <promise>COMPLETE</promise> and stop.
 {mission_triage}
 GROOM each ready bead:
 - maw exec default -- br show <id> — ensure clear title, description, acceptance criteria, priority, and risk label
@@ -466,15 +466,15 @@ If REVIEW is false:
 For EACH independent ready bead, assess and dispatch:
 
 ### Model Selection
-Read each bead (maw exec default -- br show <id>) and select a model based on complexity:
-- **fast**: Small scope, clear criteria. Maps to haiku/flash/spark tier. E.g., add endpoint, fix typo, update config.
-- **balanced**: Multiple files, moderate complexity. Maps to sonnet/gemini-pro/codex tier. E.g., refactor module, add feature with tests.
-- **strong**: Deep debugging, architecture. Maps to opus/codex-xhigh tier. E.g., fix race condition, redesign data flow.
-- **{worker_model}** (from config): Use for most tasks unless signals suggest otherwise.
+Read each bead (maw exec default -- br show <id>) and select a tier based on complexity:
+- **fast**: Small scope, clear criteria. E.g., add endpoint, fix typo, update config, simple test.
+- **balanced**: Multiple files, moderate complexity. E.g., refactor module, add feature with tests, wire up integration.
+- **strong**: Deep debugging, architecture, complex algorithms. E.g., fix race condition, redesign data flow.
 
-Or use explicit provider/model:thinking format for specific models:
-- **anthropic/claude-sonnet-4-6:medium**, **openai-codex/gpt-5.3-codex:medium**, etc.
-- Full list: run `pi --list-models` to see all available models and providers.
+Default from config: **{worker_model}**. Override per-bead based on your complexity assessment.
+
+IMPORTANT: Always pass the tier name (fast, balanced, strong) as `--model`, NOT a specific provider/model string.
+The worker resolves tier names to a provider pool at runtime for cross-provider load balancing.
 
 ### For each bead being dispatched:
 1. maw ws create --random — note NAME and PATH
@@ -735,7 +735,7 @@ mod tests {
             agent: "test-dev".to_string(),
             project: "testproject".to_string(),
             model: "opus".to_string(),
-            worker_model: "haiku".to_string(),
+            worker_model: "fast".to_string(),
             worker_timeout: 900,
             review_enabled: true,
             push_main: false,

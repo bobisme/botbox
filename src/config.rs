@@ -154,7 +154,7 @@ pub struct AgentsConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DevAgentConfig {
-    #[serde(default = "default_model_opus")]
+    #[serde(default = "default_model_dev")]
     pub model: String,
     #[serde(default = "default_max_loops")]
     pub max_loops: u32,
@@ -171,7 +171,7 @@ pub struct DevAgentConfig {
 impl Default for DevAgentConfig {
     fn default() -> Self {
         Self {
-            model: default_model_opus(),
+            model: default_model_dev(),
             max_loops: default_max_loops(),
             pause: default_pause(),
             timeout: default_timeout_1800(),
@@ -208,7 +208,7 @@ pub struct MultiLeadConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkerAgentConfig {
-    #[serde(default = "default_model_haiku")]
+    #[serde(default = "default_model_worker")]
     pub model: String,
     #[serde(default = "default_timeout_900")]
     pub timeout: u64,
@@ -217,7 +217,7 @@ pub struct WorkerAgentConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReviewerAgentConfig {
-    #[serde(default = "default_model_opus")]
+    #[serde(default = "default_model_reviewer")]
     pub model: String,
     #[serde(default = "default_max_loops")]
     pub max_loops: u32,
@@ -230,7 +230,7 @@ pub struct ReviewerAgentConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResponderAgentConfig {
-    #[serde(default = "default_model_sonnet")]
+    #[serde(default = "default_model_responder")]
     pub model: String,
     #[serde(default = "default_timeout_300")]
     pub timeout: u64,
@@ -241,9 +241,10 @@ pub struct ResponderAgentConfig {
 }
 
 // Default value functions for serde
-fn default_model_opus() -> String { "strong".into() }
-fn default_model_haiku() -> String { "fast".into() }
-fn default_model_sonnet() -> String { "balanced".into() }
+fn default_model_dev() -> String { "opus".into() }
+fn default_model_worker() -> String { "balanced".into() }
+fn default_model_reviewer() -> String { "strong".into() }
+fn default_model_responder() -> String { "balanced".into() }
 fn default_max_loops() -> u32 { 100 }
 fn default_pause() -> u32 { 2 }
 fn default_timeout_300() -> u64 { 300 }
