@@ -11,6 +11,8 @@ use crate::error::ExitError;
 use crate::hooks::HookRegistry;
 use crate::subprocess::run_command;
 
+const PI_BOTBOX_HOOKS_EXTENSION: &str = include_str!("../templates/extensions/botbox-hooks.ts");
+
 #[derive(Debug, Subcommand)]
 pub enum HooksCommand {
     /// Install/update botbus and Claude Code hooks
@@ -35,6 +37,9 @@ pub enum HooksCommand {
         /// Project root directory
         #[arg(long)]
         project_root: Option<PathBuf>,
+        /// Release claim-agent resources (for Pi session shutdown)
+        #[arg(long)]
+        release: bool,
     },
 }
 
@@ -42,13 +47,15 @@ impl HooksCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
             HooksCommand::Install { project_root } => install_hooks(project_root.as_deref()),
-            HooksCommand::Audit { project_root, format } => {
-                audit_hooks(project_root.as_deref(), *format)
-            }
+            HooksCommand::Audit {
+                project_root,
+                format,
+            } => audit_hooks(project_root.as_deref(), *format),
             HooksCommand::Run {
                 hook_name,
                 project_root,
-            } => run_hook(hook_name, project_root.as_deref()),
+                release,
+            } => run_hook(hook_name, project_root.as_deref(), *release),
         }
     }
 }
@@ -71,6 +78,10 @@ fn install_hooks(project_root: Option<&Path>) -> Result<()> {
 
     // Register botbus hooks (router + reviewers)
     register_botbus_hooks(&root, &config)?;
+
+    // Deploy Pi extension equivalent of Claude hooks
+    let pi_extension_path = deploy_pi_hooks_extension(&root)?;
+    println!("Generated {}", pi_extension_path.display());
 
     println!("Hooks installed successfully");
     Ok(())
@@ -169,7 +180,7 @@ fn audit_hooks(project_root: Option<&Path>, format: super::doctor::OutputFormat)
     Ok(())
 }
 
-fn run_hook(hook_name: &str, project_root: Option<&Path>) -> Result<()> {
+fn run_hook(hook_name: &str, project_root: Option<&Path>, release: bool) -> Result<()> {
     // For hook run, resolve_project_root checks .botbox.json — but hooks
     // may run before init. Use a simpler resolution that just canonicalizes.
     let root = match project_root {
@@ -180,13 +191,17 @@ fn run_hook(hook_name: &str, project_root: Option<&Path>) -> Result<()> {
     };
 
     // Read stdin with a size limit (64KB) for defense-in-depth
-    let stdin_input = {
+    let mut stdin_input = {
         use std::io::Read;
         let mut buf = String::new();
         let mut handle = std::io::stdin().take(64 * 1024);
         handle.read_to_string(&mut buf).ok();
         if buf.is_empty() { None } else { Some(buf) }
     };
+
+    if hook_name == "claim-agent" && release {
+        stdin_input = Some(r#"{"hook_event_name":"SessionEnd"}"#.to_string());
+    }
 
     match hook_name {
         "init-agent" => crate::hooks::run_init_agent(&root),
@@ -230,6 +245,19 @@ fn load_config(root: &Path) -> Result<Config> {
         return Config::load(&ws_default_path);
     }
     Err(ExitError::Config("no .botbox.json found".into()).into())
+}
+
+fn deploy_pi_hooks_extension(root: &Path) -> Result<PathBuf> {
+    let extension_path = root.join(".pi/extensions/botbox-hooks.ts");
+
+    if let Some(parent) = extension_path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+
+    fs::write(&extension_path, PI_BOTBOX_HOOKS_EXTENSION)
+        .with_context(|| format!("writing {}", extension_path.display()))?;
+
+    Ok(extension_path)
 }
 
 fn generate_settings_json(
@@ -276,10 +304,7 @@ fn generate_settings_json(
     };
 
     // Merge hooks config per-event, preserving non-botbox hooks
-    let existing_hooks = settings
-        .get("hooks")
-        .cloned()
-        .unwrap_or_else(|| json!({}));
+    let existing_hooks = settings.get("hooks").cloned().unwrap_or_else(|| json!({}));
     let mut merged_hooks = existing_hooks.as_object().cloned().unwrap_or_default();
 
     for (event, new_entries) in &hooks_config {
@@ -318,8 +343,7 @@ fn generate_settings_json(
 
     // Ensure parent directory exists
     if let Some(parent) = settings_path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("creating {}", parent.display()))?;
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
 
     // Write settings.json
@@ -337,9 +361,7 @@ fn validate_name(name: &str, label: &str) -> Result<()> {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
         || name.starts_with('-')
     {
-        anyhow::bail!(
-            "invalid {label} {name:?}: must match [a-z0-9][a-z0-9-]*"
-        );
+        anyhow::bail!("invalid {label} {name:?}: must match [a-z0-9][a-z0-9-]*");
     }
     Ok(())
 }
@@ -371,19 +393,31 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
     match crate::subprocess::ensure_bus_hook(
         &description,
         &[
-            "--agent", &agent,
-            "--channel", &channel,
-            "--claim", &router_claim,
-            "--claim-owner", &agent,
-            "--cwd", &root_str,
-            "--ttl", "600",
+            "--agent",
+            &agent,
+            "--channel",
+            &channel,
+            "--claim",
+            &router_claim,
+            "--claim-owner",
+            &agent,
+            "--cwd",
+            &root_str,
+            "--ttl",
+            "600",
             "--",
-            "botty", "spawn",
-            "--env-inherit", env_inherit,
-            "--name", &spawn_name,
-            "--cwd", &root_str,
+            "botty",
+            "spawn",
+            "--env-inherit",
+            env_inherit,
+            "--name",
+            &spawn_name,
+            "--cwd",
+            &root_str,
             "--",
-            "botbox", "run", "responder",
+            "botbox",
+            "run",
+            "responder",
         ],
     ) {
         Ok((action, _)) => println!("Router hook {action} for #{channel}"),
@@ -399,26 +433,43 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
         match crate::subprocess::ensure_bus_hook(
             &desc,
             &[
-                "--agent", &agent,
-                "--channel", &channel,
-                "--mention", &reviewer_agent,
-                "--claim", &claim_uri,
-                "--claim-owner", &reviewer_agent,
-                "--ttl", "600",
-                "--priority", "1",
-                "--cwd", &root_str,
+                "--agent",
+                &agent,
+                "--channel",
+                &channel,
+                "--mention",
+                &reviewer_agent,
+                "--claim",
+                &claim_uri,
+                "--claim-owner",
+                &reviewer_agent,
+                "--ttl",
+                "600",
+                "--priority",
+                "1",
+                "--cwd",
+                &root_str,
                 "--",
-                "botty", "spawn",
-                "--env-inherit", env_inherit,
-                "--name", &reviewer_agent,
-                "--cwd", &root_str,
+                "botty",
+                "spawn",
+                "--env-inherit",
+                env_inherit,
+                "--name",
+                &reviewer_agent,
+                "--cwd",
+                &root_str,
                 "--",
-                "botbox", "run", "reviewer-loop",
-                "--agent", &reviewer_agent,
+                "botbox",
+                "run",
+                "reviewer-loop",
+                "--agent",
+                &reviewer_agent,
             ],
         ) {
             Ok((action, _)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
-            Err(e) => eprintln!("Warning: failed to register reviewer hook for @{reviewer_agent}: {e}"),
+            Err(e) => {
+                eprintln!("Warning: failed to register reviewer hook for @{reviewer_agent}: {e}")
+            }
         }
     }
 
@@ -452,7 +503,9 @@ fn check_botbus_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) ->
     });
 
     if !has_router {
-        issues.push(format!("Missing botbus router hook (claim: {router_claim})"));
+        issues.push(format!(
+            "Missing botbus router hook (claim: {router_claim})"
+        ));
     }
 
     // Check reviewer hooks
@@ -466,9 +519,7 @@ fn check_botbus_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) ->
         });
 
         if !has_reviewer {
-            issues.push(format!(
-                "Missing botbus reviewer hook for @{mention_name}"
-            ));
+            issues.push(format!("Missing botbus reviewer hook for @{mention_name}"));
         }
     }
 
@@ -572,9 +623,11 @@ mod tests {
             "my-custom-hook"
         );
         // Second should be the new botbox hook
-        assert!(session_start[1]["hooks"][0]["command"]
-            .as_str()
-            .unwrap()
-            .contains("botbox hooks run"));
+        assert!(
+            session_start[1]["hooks"][0]["command"]
+                .as_str()
+                .unwrap()
+                .contains("botbox hooks run")
+        );
     }
 }
