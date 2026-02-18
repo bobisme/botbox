@@ -534,7 +534,6 @@ pub fn run_reviewer_loop(
             timeout,
             Some("text"),
             false,
-            "off",
         );
 
         match run_agent_result {

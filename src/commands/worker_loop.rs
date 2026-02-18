@@ -482,27 +482,13 @@ fn run_agent(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> 
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
 
-    // Parse thinking level from model string if present (e.g. "anthropic/claude-sonnet-4-6:medium")
-    let (effective_model, thinking) = if let Some((m, t)) = model.rsplit_once(':') {
-        (m.to_string(), t.to_string())
-    } else {
-        (model.to_string(), "off".to_string())
-    };
-
     let timeout_string = timeout.to_string();
-    let mut args = vec![
-        "run",
-        "agent",
-        prompt,
-        "-t",
-        &timeout_string,
-        "--thinking",
-        &thinking,
-    ];
+    let mut args = vec!["run", "agent", prompt, "-t", &timeout_string];
 
-    if !effective_model.is_empty() {
+    // Pass the full model string (e.g. "anthropic/claude-sonnet-4-6:medium") — Pi handles :suffix natively
+    if !model.is_empty() {
         args.push("-m");
-        args.push(&effective_model);
+        args.push(model);
     }
 
     let mut child = Command::new("botbox")

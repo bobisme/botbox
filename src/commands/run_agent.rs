@@ -104,7 +104,6 @@ pub fn run_agent(
     timeout_secs: u64,
     format: Option<&str>,
     skip_permissions: bool,
-    thinking: &str,
 ) -> anyhow::Result<()> {
     let format = OutputFormat::detect(format);
     let style = match format {
@@ -114,7 +113,7 @@ pub fn run_agent(
 
     let (mut child, tool_name) = match runner {
         "claude" => (spawn_claude(prompt, model, skip_permissions)?, "claude"),
-        "pi" => (spawn_pi(prompt, model, thinking)?, "pi"),
+        "pi" => (spawn_pi(prompt, model)?, "pi"),
         _ => {
             return Err(anyhow!(
                 "Unsupported runner: {}. Supported: 'pi', 'claude'.",
@@ -213,7 +212,7 @@ fn spawn_claude(
 /// Pi is a multi-provider agent harness supporting Anthropic, OpenAI, Google, etc.
 /// Model format: "provider/model-id" (e.g. "openai/gpt-4o", "google/gemini-2.5-pro")
 /// or just "model-id" with --provider flag.
-fn spawn_pi(prompt: &str, model: Option<&str>, thinking: &str) -> anyhow::Result<Child> {
+fn spawn_pi(prompt: &str, model: Option<&str>) -> anyhow::Result<Child> {
     let mut args = vec![
         "--print",
         "--no-skills",
@@ -222,12 +221,9 @@ fn spawn_pi(prompt: &str, model: Option<&str>, thinking: &str) -> anyhow::Result
         "--mode",
         "json",
         "--no-session",
-        "--thinking",
     ];
-    let thinking_owned = thinking.to_string();
-    args.push(&thinking_owned);
 
-    // Model can be "provider/model" or just "model"
+    // Model can be "provider/model" or "provider/model:thinking" — Pi handles the :suffix natively
     let model_arg;
     if let Some(m) = model {
         model_arg = m.to_string();
@@ -761,7 +757,7 @@ mod tests {
 
     #[test]
     fn unsupported_runner_error() {
-        let result = run_agent("foobar", "test", None, 10, Some("text"), false, "off");
+        let result = run_agent("foobar", "test", None, 10, Some("text"), false);
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Unsupported runner"));

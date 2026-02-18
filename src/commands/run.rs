@@ -23,9 +23,6 @@ pub enum RunCommand {
         /// Skip Claude Code permission checks (only for --runner claude)
         #[arg(long)]
         skip_permissions: bool,
-        /// Thinking level for Pi agents (off, minimal, low, medium, high, xhigh)
-        #[arg(long, default_value = "off")]
-        thinking: String,
     },
     /// Run the dev-loop (lead agent)
     DevLoop {
@@ -95,8 +92,8 @@ pub enum RunCommand {
 impl RunCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
-            RunCommand::Agent { prompt, model, timeout, format, runner, skip_permissions, thinking } => {
-                crate::commands::run_agent::run_agent(runner, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions, thinking)
+            RunCommand::Agent { prompt, model, timeout, format, runner, skip_permissions } => {
+                crate::commands::run_agent::run_agent(runner, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions)
             }
             RunCommand::DevLoop { project_root, agent, model } => {
                 crate::commands::dev_loop::run(

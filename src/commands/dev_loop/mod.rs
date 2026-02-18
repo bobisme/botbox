@@ -575,26 +575,17 @@ fn discover_sibling_leads(agent: &str) -> anyhow::Result<Vec<SiblingLead>> {
 
 /// Run agent via `botbox run agent` (Pi by default).
 fn run_agent_subprocess(prompt: &str, model: &str, timeout_secs: u64) -> anyhow::Result<String> {
-    // Parse thinking level from model string if present
-    let (effective_model, thinking) = if let Some((m, t)) = model.rsplit_once(':') {
-        (m.to_string(), t.to_string())
-    } else {
-        (model.to_string(), "off".to_string())
-    };
-
     let mut args = vec!["run", "agent", prompt];
 
-    if !effective_model.is_empty() {
+    // Pass the full model string (e.g. "anthropic/claude-sonnet-4-6:medium") — Pi handles :suffix natively
+    if !model.is_empty() {
         args.push("-m");
-        args.push(&effective_model);
+        args.push(model);
     }
 
     let timeout_str = timeout_secs.to_string();
     args.push("-t");
     args.push(&timeout_str);
-
-    args.push("--thinking");
-    args.push(&thinking);
 
     // Spawn the process, streaming stdout through
     use std::io::{BufRead, BufReader};
