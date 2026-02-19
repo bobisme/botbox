@@ -477,12 +477,21 @@ fn run_agent_with_fallback(prompt: &str, model_pool: &[String], timeout: u64) ->
                     eprintln!("Rate limited on {} (detected in output), trying next model...", model);
                     continue;
                 }
+                // Empty or near-empty output means the model hung/crashed without
+                // producing useful work (e.g., Pi killed a hung Gemini process).
+                // Try the next model if available.
+                if output.trim().is_empty() && i + 1 < model_pool.len() {
+                    eprintln!("Empty output from {} (process likely hung), trying next model...", model);
+                    continue;
+                }
                 return Ok(output);
             }
             Err(e) => {
                 let err_str = format!("{e:#}");
-                if is_rate_limit_error(&err_str) && i + 1 < model_pool.len() {
-                    eprintln!("Rate limited on {} (exit error), trying next model...", model);
+                if (is_rate_limit_error(&err_str) || err_str.contains("exited with code"))
+                    && i + 1 < model_pool.len()
+                {
+                    eprintln!("Failed on {} ({}), trying next model...", model, err_str.lines().next().unwrap_or("error"));
                     continue;
                 }
                 return Err(e);
