@@ -11,7 +11,7 @@ pub struct WorkerLoop {
     project_root: PathBuf,
     agent: String,
     project: String,
-    model: String,
+    model_pool: Vec<String>,
     timeout: u64,
     review_enabled: bool,
     critical_approvers: Vec<String>,
@@ -43,12 +43,12 @@ impl WorkerLoop {
         // Project name from config
         let project = config.channel();
 
-        // Model: CLI arg > config > default, then resolve tier names
+        // Model: CLI arg > config > default, then resolve to pool for fallback
         let worker_config = config.agents.worker.as_ref();
         let model_raw = model
             .or_else(|| worker_config.map(|w| w.model.clone()))
             .unwrap_or_default();
-        let model = config.resolve_model(&model_raw);
+        let model_pool = config.resolve_model_pool(&model_raw);
 
         let timeout = worker_config.map(|w| w.timeout).unwrap_or(900);
         let review_enabled = config.review.enabled;
@@ -84,7 +84,7 @@ impl WorkerLoop {
             project_root,
             agent,
             project,
-            model,
+            model_pool,
             timeout,
             review_enabled,
             critical_approvers,
@@ -105,8 +105,8 @@ impl WorkerLoop {
         // Build prompt for Claude
         let prompt = self.build_prompt();
 
-        // Run agent via botbox run agent (Pi by default)
-        let output = run_agent(&prompt, &self.model, self.timeout)?;
+        // Run agent via botbox run agent (Pi by default), with rate limit fallback
+        let output = run_agent_with_fallback(&prompt, &self.model_pool, self.timeout)?;
 
         // Parse completion signal
         let status = parse_completion_signal(&output);
@@ -461,11 +461,63 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
     Config::load(&config_path)
 }
 
+/// Run an agent with rate limit fallback across the model pool.
+///
+/// Tries each model in the pool sequentially. If a model returns a rate limit error (429),
+/// logs a warning and tries the next model. Returns error only when all models are exhausted
+/// or a non-rate-limit error occurs.
+fn run_agent_with_fallback(prompt: &str, model_pool: &[String], timeout: u64) -> anyhow::Result<String> {
+    for (i, model) in model_pool.iter().enumerate() {
+        if model_pool.len() > 1 {
+            eprintln!("Trying model {}/{}: {}", i + 1, model_pool.len(), model);
+        }
+        match try_run_agent(prompt, model, timeout) {
+            Ok(output) => {
+                if is_rate_limit_output(&output) {
+                    eprintln!("Rate limited on {} (detected in output), trying next model...", model);
+                    continue;
+                }
+                return Ok(output);
+            }
+            Err(e) => {
+                let err_str = format!("{e:#}");
+                if is_rate_limit_error(&err_str) && i + 1 < model_pool.len() {
+                    eprintln!("Rate limited on {} (exit error), trying next model...", model);
+                    continue;
+                }
+                return Err(e);
+            }
+        }
+    }
+    anyhow::bail!("All {} models in pool exhausted (rate limited)", model_pool.len())
+}
+
+/// Check if output text indicates a rate limit error.
+fn is_rate_limit_output(output: &str) -> bool {
+    let lower = output.to_lowercase();
+    lower.contains("429")
+        && (lower.contains("rate limit")
+            || lower.contains("rate_limit")
+            || lower.contains("quota")
+            || lower.contains("exhausted your capacity")
+            || lower.contains("resource_exhausted"))
+}
+
+/// Check if an error message indicates a rate limit error.
+fn is_rate_limit_error(err: &str) -> bool {
+    let lower = err.to_lowercase();
+    lower.contains("429")
+        || lower.contains("rate limit")
+        || lower.contains("rate_limit")
+        || lower.contains("quota")
+        || lower.contains("resource_exhausted")
+}
+
 /// Run an agent via `botbox run agent` (Pi by default).
 ///
 /// Supports `provider/model:thinking` syntax for thinking levels.
 /// Echoes output to stderr for visibility in botty while capturing stdout for parsing.
-fn run_agent(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
+fn try_run_agent(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
 
@@ -676,7 +728,7 @@ mod tests {
             project_root: PathBuf::from("/test"),
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
-            model: "haiku".to_string(),
+            model_pool: vec!["haiku".to_string()],
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
@@ -707,7 +759,7 @@ mod tests {
             project_root: PathBuf::from("/test"),
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
-            model: "haiku".to_string(),
+            model_pool: vec!["haiku".to_string()],
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
@@ -737,7 +789,7 @@ mod tests {
             project_root: PathBuf::from("/test"),
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
-            model: "haiku".to_string(),
+            model_pool: vec!["haiku".to_string()],
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
@@ -785,7 +837,7 @@ mod tests {
             project_root: PathBuf::from("/test"),
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
-            model: "haiku".to_string(),
+            model_pool: vec!["haiku".to_string()],
             timeout: 900,
             review_enabled: false,
             critical_approvers: vec![],
@@ -814,7 +866,7 @@ mod tests {
             project_root: PathBuf::from("/test"),
             agent: "test-worker".to_string(),
             project: "testproject".to_string(),
-            model: "haiku".to_string(),
+            model_pool: vec!["haiku".to_string()],
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
@@ -859,5 +911,27 @@ mod tests {
                 step_name
             );
         }
+    }
+
+    #[test]
+    fn rate_limit_detection_output() {
+        assert!(is_rate_limit_output("Error 429: rate limit exceeded"));
+        assert!(is_rate_limit_output("HTTP 429 - quota exceeded"));
+        assert!(is_rate_limit_output("429 resource_exhausted"));
+        assert!(is_rate_limit_output("Got 429: You have exhausted your capacity"));
+        assert!(!is_rate_limit_output("Everything is fine"));
+        assert!(!is_rate_limit_output("Error 500: server error"));
+        // 429 alone without rate limit keywords should not match
+        assert!(!is_rate_limit_output("429"));
+    }
+
+    #[test]
+    fn rate_limit_detection_error() {
+        assert!(is_rate_limit_error("429 Too Many Requests"));
+        assert!(is_rate_limit_error("rate limit exceeded"));
+        assert!(is_rate_limit_error("quota exhausted"));
+        assert!(is_rate_limit_error("resource_exhausted"));
+        assert!(!is_rate_limit_error("normal error"));
+        assert!(!is_rate_limit_error("exit code 1"));
     }
 }

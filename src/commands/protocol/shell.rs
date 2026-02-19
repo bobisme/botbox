@@ -26,20 +26,22 @@ pub fn shell_escape(s: &str) -> String {
     out
 }
 
-/// Validate a bead ID (e.g., `bd-3cqv`).
+/// Validate a bead ID (e.g., `bd-3cqv`, `bn-m80`).
+///
+/// Bead ID prefixes vary by project, so we validate the format
+/// (short alphanumeric with hyphens) without hardcoding a prefix.
 pub fn validate_bead_id(id: &str) -> Result<(), ValidationError> {
     if id.is_empty() {
         return Err(ValidationError::Empty("bead ID"));
     }
-    // bd- prefix followed by alphanumeric
-    let valid = id.starts_with("bd-")
-        && id.len() > 3
-        && id[3..].chars().all(|c| c.is_ascii_alphanumeric());
+    let valid = id.len() <= 20
+        && id.contains('-')
+        && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !valid {
         return Err(ValidationError::InvalidFormat {
             field: "bead ID",
             value: id.to_string(),
-            expected: "bd-[a-z0-9]+",
+            expected: "<prefix>-[a-z0-9]+",
         });
     }
     Ok(())
@@ -556,6 +558,10 @@ mod tests {
         assert!(validate_bead_id("bd-3cqv").is_ok());
         assert!(validate_bead_id("bd-abc123").is_ok());
         assert!(validate_bead_id("bd-a").is_ok());
+        // Other project prefixes
+        assert!(validate_bead_id("bn-m80").is_ok());
+        assert!(validate_bead_id("bm-xyz").is_ok());
+        assert!(validate_bead_id("xx-3cqv").is_ok());
     }
 
     #[test]
@@ -564,16 +570,16 @@ mod tests {
     }
 
     #[test]
-    fn invalid_bead_id_no_prefix() {
+    fn invalid_bead_id_no_hyphen() {
         assert!(validate_bead_id("3cqv").is_err());
-        assert!(validate_bead_id("xx-3cqv").is_err());
+        assert!(validate_bead_id("abcdef").is_err());
     }
 
     #[test]
     fn invalid_bead_id_special_chars() {
-        assert!(validate_bead_id("bd-abc-def").is_err());
         assert!(validate_bead_id("bd-abc def").is_err());
-        assert!(validate_bead_id("bd-").is_err());
+        assert!(validate_bead_id("bd-abc;rm").is_err());
+        assert!(validate_bead_id("bd-abc/def").is_err());
     }
 
     // --- validate_review_id tests ---

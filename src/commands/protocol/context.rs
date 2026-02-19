@@ -188,9 +188,17 @@ impl ProtocolContext {
         Ok(None)
     }
 
-    /// Validate that a bead ID matches the expected pattern (bd-xxxx).
+    /// Validate that a bead ID is safe for subprocess use.
+    ///
+    /// Bead ID prefixes vary by project (e.g., `bd-`, `bn-`, `bm-`).
+    /// We validate the format (short alphanumeric with hyphens) without
+    /// hardcoding a specific prefix.
     fn validate_bead_id(id: &str) -> Result<(), ContextError> {
-        if id.starts_with("bd-") && id.len() <= 20 && id[3..].chars().all(|c| c.is_ascii_alphanumeric()) {
+        if !id.is_empty()
+            && id.len() <= 20
+            && id.contains('-')
+            && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
             Ok(())
         } else {
             Err(ContextError::ParseFailed(format!("invalid bead ID: {id}")))

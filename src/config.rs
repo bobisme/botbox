@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
-use rand::seq::IndexedRandom;
+use rand::seq::{IndexedRandom, SliceRandom};
 use serde::{Deserialize, Serialize};
 
 use crate::error::ExitError;
@@ -415,6 +415,35 @@ impl Config {
             .unwrap_or_else(|| self.project.name.clone())
     }
 
+    /// Resolve a model string to the full pool of models for that tier.
+    /// Tier names (fast/balanced/strong) return a shuffled Vec of all models in the pool.
+    /// Legacy short names (opus/sonnet/haiku) and explicit model strings return a single-element Vec.
+    pub fn resolve_model_pool(&self, model: &str) -> Vec<String> {
+        // Legacy short names -> specific Anthropic models (no fallback pool)
+        match model {
+            "opus" => return vec!["anthropic/claude-opus-4-6:high".to_string()],
+            "sonnet" => return vec!["anthropic/claude-sonnet-4-6:medium".to_string()],
+            "haiku" => return vec!["anthropic/claude-haiku-4-5:low".to_string()],
+            _ => {}
+        }
+
+        // Tier names -> shuffled pool
+        let pool = match model {
+            "fast" => &self.models.fast,
+            "balanced" => &self.models.balanced,
+            "strong" => &self.models.strong,
+            _ => return vec![model.to_string()],
+        };
+
+        if pool.is_empty() {
+            return vec![model.to_string()];
+        }
+
+        let mut pool = pool.clone();
+        pool.shuffle(&mut rand::rng());
+        pool
+    }
+
     /// Resolve a model string: if it matches a tier name (fast/balanced/strong),
     /// randomly pick from that tier's pool. Otherwise pass through as-is.
     pub fn resolve_model(&self, model: &str) -> String {
@@ -657,6 +686,46 @@ name = "test"
         assert!(!config.models.fast.is_empty());
         assert!(!config.models.balanced.is_empty());
         assert!(!config.models.strong.is_empty());
+    }
+
+    #[test]
+    fn resolve_model_pool_tiers() {
+        let config = Config::parse_toml(r#"
+version = "1.0.0"
+[project]
+name = "test"
+"#).unwrap();
+
+        let pool = config.resolve_model_pool("balanced");
+        assert_eq!(pool.len(), 3, "balanced tier should have 3 models");
+        assert!(pool.iter().all(|m| m.contains('/')), "all models should be provider/model format");
+    }
+
+    #[test]
+    fn resolve_model_pool_legacy_names() {
+        let config = Config::parse_toml(r#"
+version = "1.0.0"
+[project]
+name = "test"
+"#).unwrap();
+
+        assert_eq!(config.resolve_model_pool("opus"), vec!["anthropic/claude-opus-4-6:high"]);
+        assert_eq!(config.resolve_model_pool("sonnet"), vec!["anthropic/claude-sonnet-4-6:medium"]);
+        assert_eq!(config.resolve_model_pool("haiku"), vec!["anthropic/claude-haiku-4-5:low"]);
+    }
+
+    #[test]
+    fn resolve_model_pool_explicit_model() {
+        let config = Config::parse_toml(r#"
+version = "1.0.0"
+[project]
+name = "test"
+"#).unwrap();
+
+        assert_eq!(
+            config.resolve_model_pool("anthropic/claude-sonnet-4-6:medium"),
+            vec!["anthropic/claude-sonnet-4-6:medium"]
+        );
     }
 
     #[test]

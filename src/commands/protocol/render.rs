@@ -451,7 +451,7 @@ mod tests {
     fn validate_guidance_invalid_bead_id() {
         let mut g = ProtocolGuidance::new("start");
         g.bead = Some(BeadRef {
-            id: "invalid-id".to_string(),
+            id: "has spaces; rm -rf".to_string(),
             title: "test".to_string(),
         });
         assert!(validate_guidance(&g).is_err());
