@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
 use anyhow::{anyhow, Context};
@@ -403,13 +403,10 @@ struct Responder {
 
 impl Responder {
     fn new(project_root: PathBuf, agent: Option<String>, model: Option<String>) -> anyhow::Result<Self> {
-        // Load config
-        let config_path = find_config_path(&project_root);
-        let config = if let Some(ref p) = config_path {
-            Config::load(p).ok()
-        } else {
-            None
-        };
+        // Load config using canonical priority order
+        let config = crate::config::find_config_in_project(&project_root)
+            .ok()
+            .and_then(|(p, _)| Config::load(&p).ok());
 
         let project = config.as_ref()
             .map(|c| c.channel())
@@ -1368,13 +1365,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn find_config_path(project_root: &Path) -> Option<PathBuf> {
-    if let Some(path) = crate::config::find_config(project_root) {
-        return Some(path);
-    }
-    let ws_default = project_root.join("ws/default");
-    crate::config::find_config(&ws_default)
-}
+// Config discovery uses crate::config::find_config_in_project() for canonical priority.
 
 fn extract_bead_id(output: &str) -> Option<String> {
     // Find bd-XXXX pattern in output

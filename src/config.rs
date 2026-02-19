@@ -26,14 +26,44 @@ pub fn find_config(dir: &Path) -> Option<PathBuf> {
 
 /// Find config in the standard locations: direct path, then ws/default/.
 /// Returns (config_path, config_dir) or an error.
+///
+/// Priority order (highest first):
+/// 1. Root `.botbox.toml` — explicit root-level TOML (non-bare repos or intentional)
+/// 2. `ws/default/.botbox.toml` — maw v2 bare repo authoritative config (beats stale root JSON)
+/// 3. Root `.botbox.json` — legacy pre-migration config
+/// 4. `ws/default/.botbox.json` — maw v2 not yet migrated to TOML
+///
+/// In maw v2 bare repos, the TOML migration runs inside ws/default. This can leave a
+/// stale `.botbox.json` at the bare root (with wrong project name / agent identity) that
+/// would previously shadow the correct ws/default TOML. By checking ws/default TOML before
+/// root JSON we ensure agents always load the current, migrated config.
 pub fn find_config_in_project(root: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
-    if let Some(path) = find_config(root) {
-        return Ok((path, root.to_path_buf()));
-    }
     let ws_default = root.join("ws/default");
-    if let Some(path) = find_config(&ws_default) {
-        return Ok((path, ws_default));
+
+    // 1. Root TOML — always authoritative when present
+    let root_toml = root.join(CONFIG_TOML);
+    if root_toml.exists() {
+        return Ok((root_toml, root.to_path_buf()));
     }
+
+    // 2. ws/default TOML — maw v2 bare repo (preferred over stale root JSON)
+    let ws_toml = ws_default.join(CONFIG_TOML);
+    if ws_toml.exists() {
+        return Ok((ws_toml, ws_default));
+    }
+
+    // 3. Root JSON — legacy single-workspace layout or pre-migration bare repo
+    let root_json = root.join(CONFIG_JSON);
+    if root_json.exists() {
+        return Ok((root_json, root.to_path_buf()));
+    }
+
+    // 4. ws/default JSON — maw v2 with JSON config not yet migrated to TOML
+    let ws_json = ws_default.join(CONFIG_JSON);
+    if ws_json.exists() {
+        return Ok((ws_json, ws_default));
+    }
+
     anyhow::bail!(
         "no .botbox.toml or .botbox.json found in {} or ws/default/",
         root.display()
@@ -727,6 +757,69 @@ botty = true
     fn find_config_returns_none_when_missing() {
         let dir = tempfile::tempdir().unwrap();
         assert!(find_config(dir.path()).is_none());
+    }
+
+    // --- find_config_in_project tests ---
+
+    #[test]
+    fn find_config_in_project_root_toml_preferred() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".botbox.toml"), "").unwrap();
+        std::fs::write(dir.path().join(".botbox.json"), "").unwrap();
+
+        let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
+        assert!(path.to_string_lossy().ends_with(".botbox.toml"));
+        assert_eq!(config_dir, dir.path());
+    }
+
+    #[test]
+    fn find_config_in_project_ws_toml_beats_root_json() {
+        // maw v2 scenario: stale .botbox.json at bare root, migrated .botbox.toml in ws/default
+        let dir = tempfile::tempdir().unwrap();
+        let ws_default = dir.path().join("ws/default");
+        std::fs::create_dir_all(&ws_default).unwrap();
+
+        std::fs::write(dir.path().join(".botbox.json"), "").unwrap(); // stale root JSON
+        std::fs::write(ws_default.join(".botbox.toml"), "").unwrap(); // current ws/default TOML
+
+        let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
+        assert!(
+            path.to_string_lossy().ends_with(".botbox.toml"),
+            "ws/default TOML should beat stale root JSON, got: {path:?}"
+        );
+        assert_eq!(config_dir, ws_default);
+    }
+
+    #[test]
+    fn find_config_in_project_root_json_fallback() {
+        // Legacy single-workspace: root JSON only
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".botbox.json"), "").unwrap();
+
+        let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
+        assert!(path.to_string_lossy().ends_with(".botbox.json"));
+        assert_eq!(config_dir, dir.path());
+    }
+
+    #[test]
+    fn find_config_in_project_ws_json_fallback() {
+        // maw v2 with JSON not yet migrated
+        let dir = tempfile::tempdir().unwrap();
+        let ws_default = dir.path().join("ws/default");
+        std::fs::create_dir_all(&ws_default).unwrap();
+        std::fs::write(ws_default.join(".botbox.json"), "").unwrap();
+
+        let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
+        assert!(path.to_string_lossy().ends_with(".botbox.json"));
+        assert_eq!(config_dir, ws_default);
+    }
+
+    #[test]
+    fn find_config_in_project_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        let result = find_config_in_project(dir.path());
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("no .botbox.toml or .botbox.json"));
     }
 
     #[test]

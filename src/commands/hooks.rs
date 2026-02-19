@@ -221,23 +221,19 @@ fn resolve_project_root(project_root: Option<&Path>) -> Result<PathBuf> {
     let canonical = path
         .canonicalize()
         .with_context(|| format!("resolving project root: {}", path.display()))?;
-    // Check config at root, then ws/default/ (maw v2 bare repo)
-    if crate::config::find_config(&canonical).is_some() {
-        return Ok(canonical);
+    // Use canonical priority: find_config_in_project returns (config_path, config_dir)
+    match crate::config::find_config_in_project(&canonical) {
+        Ok((_config_path, config_dir)) => Ok(config_dir),
+        Err(_) => anyhow::bail!(
+            "no .botbox.toml or .botbox.json found at {} or ws/default/ — is this a botbox project?",
+            canonical.display()
+        ),
     }
-    let ws_default = canonical.join("ws/default");
-    if crate::config::find_config(&ws_default).is_some() {
-        return Ok(ws_default);
-    }
-    anyhow::bail!(
-        "no .botbox.toml or .botbox.json found at {} or ws/default/ — is this a botbox project?",
-        canonical.display()
-    );
 }
 
 fn load_config(root: &Path) -> Result<Config> {
-    let config_path = crate::config::find_config(root)
-        .ok_or_else(|| ExitError::Config("no .botbox.toml or .botbox.json found".into()))?;
+    let (config_path, _config_dir) = crate::config::find_config_in_project(root)
+        .map_err(|_| ExitError::Config("no .botbox.toml or .botbox.json found".into()))?;
     Config::load(&config_path)
 }
 

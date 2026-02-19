@@ -454,19 +454,10 @@ pub enum LoopStatus {
     Unknown,
 }
 
-/// Find config file (.botbox.toml or .botbox.json).
-fn find_config_path(root: &Path) -> Option<PathBuf> {
-    if let Some(path) = crate::config::find_config(root) {
-        return Some(path);
-    }
-    let ws_default = root.join("ws/default");
-    crate::config::find_config(&ws_default)
-}
-
-/// Load config from .botbox.toml or .botbox.json.
+/// Load config from .botbox.toml or .botbox.json using the canonical priority
+/// (root TOML > ws/default TOML > root JSON > ws/default JSON).
 fn load_config(root: &Path) -> anyhow::Result<Config> {
-    let config_path = find_config_path(root)
-        .context("no .botbox.toml or .botbox.json found in project root or ws/default/")?;
+    let (config_path, _config_dir) = crate::config::find_config_in_project(root)?;
     Config::load(&config_path)
 }
 

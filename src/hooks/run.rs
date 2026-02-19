@@ -7,7 +7,9 @@ use crate::subprocess::run_command;
 
 /// Run the init-agent hook: display agent identity from config
 pub fn run_init_agent(project_root: &Path) -> Result<()> {
-    let config_path = crate::config::find_config(project_root);
+    let config_path = crate::config::find_config_in_project(project_root)
+        .ok()
+        .map(|(p, _)| p);
 
     // Prefer AGENT env var (set by --env-inherit when spawned by hooks),
     // then fall back to BOTBUS_AGENT (backwards compat), then config defaultAgent, then bus whoami
@@ -75,7 +77,9 @@ fn validate_agent_name(name: &str) -> bool {
 
 /// Run the check-bus-inbox hook: check for unread bus messages
 pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Result<()> {
-    let config_path = crate::config::find_config(project_root);
+    let config_path = crate::config::find_config_in_project(project_root)
+        .ok()
+        .map(|(p, _)| p);
 
     // Read channel from config
     let channel = if let Some(ref cp) = config_path {

@@ -236,6 +236,41 @@ impl SyncArgs {
 
         run_command("maw", &args, Some(&project_root))?;
 
+        // Clean up stale .botbox.json at bare repo root.
+        //
+        // After TOML migration runs inside ws/default/, the bare root may still have an
+        // old .botbox.json (e.g., from before the project was converted to a maw v2 bare
+        // repo). Agents that resolve config from the project root would previously find
+        // this stale JSON before ws/default/.botbox.toml, loading wrong identity/channel.
+        //
+        // We only remove the root JSON when ws/default has a config (TOML or JSON),
+        // ensuring the authoritative config is safely in place first.
+        let root_json = project_root.join(crate::config::CONFIG_JSON);
+        if root_json.exists()
+            && crate::config::find_config(&project_root.join("ws/default")).is_some()
+        {
+            if self.check {
+                eprintln!(
+                    "Stale .botbox.json at bare repo root (will be removed on sync)"
+                );
+                return Err(ExitError::new(
+                    1,
+                    "Stale .botbox.json at bare repo root".to_string(),
+                )
+                .into());
+            } else {
+                match fs::remove_file(&root_json) {
+                    Ok(()) => println!(
+                        "Removed stale .botbox.json from bare repo root \
+                         (authoritative config lives in ws/default/)"
+                    ),
+                    Err(e) => eprintln!(
+                        "Warning: failed to remove stale .botbox.json at bare root: {e}"
+                    ),
+                }
+            }
+        }
+
         // Create stubs at bare root
         let stub_agents = project_root.join("AGENTS.md");
         let stub_claude = project_root.join("CLAUDE.md");
