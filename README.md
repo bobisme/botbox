@@ -138,9 +138,9 @@ Botbox coordinates five specialized Rust tools that work together to enable mult
 | ---------- | ------------------------------- | --------------------------------------------- | ---------- |
 | **[botbus](https://github.com/bobisme/botbus)** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` | Pub/sub messaging, resource locking, agent registry |
 | **[maw](https://github.com/bobisme/maw)**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         | Concurrent work isolation with Jujutsu VCS |
-| **[beads](https://github.com/bobisme/beads)**  | Work tracking (`br`)            | `ready`, `create`, `close`, `update`          | Issue tracker optimized for agent triage |
-| **[beads-tui](https://github.com/Dicklesworthstone/beads_viewer)** | Triage interface (`bv`)         | `--robot-triage`, `--robot-next`              | PageRank-based prioritization, graph analysis |
-| **[crit](https://github.com/bobisme/crit)**   | Code review                     | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow |
+| **[beads](https://github.com/Dicklesworthstone/beads_rust)**  | Work tracking (`br`)            | `ready`, `create`, `close`, `update`          | Issue tracker optimized for agent triage |
+| **[beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)** | Triage interface (`bv`)         | `--robot-triage`, `--robot-next`              | PageRank-based prioritization, graph analysis |
+| **[crit](https://github.com/bobisme/botcrit)**   | Code review                     | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow |
 | **[botty](https://github.com/bobisme/botty)**  | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops |
 
 ### Flywheel connection
