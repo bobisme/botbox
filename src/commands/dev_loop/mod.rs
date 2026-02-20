@@ -212,7 +212,8 @@ pub fn run(
             Ok(output) => {
                 // Check completion signals in the tail of the output
                 let signal_region = if output.len() > 1000 {
-                    &output[output.len() - 1000..]
+                    let start = output.floor_char_boundary(output.len() - 1000);
+                    &output[start..]
                 } else {
                     &output
                 };
