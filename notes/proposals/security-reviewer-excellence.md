@@ -483,3 +483,39 @@ Secondary KPIs:
 - CycloneDX/SPDX for SBOM interoperability.
 - OSV for vulnerability matching on dependency changes.
 - Sigstore/cosign patterns for signed policy-pack verification.
+
+## Appendix A: Review Recommendation Disposition
+
+### Source: `security-reviewer-excellence.review.1.md`
+
+| Recommendation | Disposition | Reason |
+|---|---|---|
+| Evidence Graph + canonical IR + SARIF export | Accepted | Added AegisGraph, AegisIR, and `aegis.sarif`/`aegis-review.json` outputs for explainability and interop. |
+| Policy packs with ownership/tests/suppressions | Accepted | Added schema/fixtures, rule ownership/status fields, and suppression model with expiry/approver. |
+| Scoring consistency and clear vote gates | Accepted | Normalized scoring semantics and explicit BLOCK/NEEDS_HUMAN_REVIEW/LGTM gating. |
+| Explicit adversarial/safety model | Accepted | Added threat model, trust boundaries, and fail-safe behavior for incomplete analysis. |
+| Stronger evals with standardized corpora | Accepted | Added OWASP Benchmark + NIST SARD/Juliet and calibration-focused replay metrics. |
+| Stronger supply-chain analysis (SBOM/OSV/provenance) | Accepted | Expanded capability matrix, rule taxonomy, and detector phases for SBOM and provenance hooks. |
+| Better developer UX (dedup/fix-it) | Accepted | Added stable finding IDs, dedup semantics, and opt-in fix-it mode. |
+| Performance/reliability budgets and caching | Accepted | Added execution controls, bounded analysis, caching keys, and explicit failure semantics. |
+| Roadmap sequencing toward safer early value | Accepted | Reworked phases to start with safety/reproducibility/coverage artifacts before stricter gating. |
+| Clarify BLOCK ownership and exception path | Accepted | Added governance section with decision owner, override flow, and SLA expectations. |
+
+### Source: `security-reviewer-excellence.review.2.md`
+
+| Recommendation | Disposition | Reason |
+|---|---|---|
+| Add explicit threat model + review contract invariants | Accepted | Added "Threat Model and Review Contract" with assets, adversaries, trust boundaries, and hard invariants. |
+| Add execution plane (sandboxing/budgets/reproducibility) | Accepted | Added "Execution Plane" and phase-0 safety rails (wrapper, budgets, pinned versions). |
+| Make graph pragmatic (semantic ROI, pluggable parsing, bounded deep analysis) | Accepted | Updated analysis plane with semantic ROI, language-pluggable graph enrichment, and bounded escalation. |
+| Treat policy packs as supply-chain artifacts | Accepted | Added manifest/signing/lockfile concepts and repo overlay governance. |
+| Add run-level assurance gating to avoid false-negative LGTMs | Accepted | Added `assurance` model and vote requirement for adequate coverage/completeness. |
+| Add context-aware scoring for exposure/criticality | Accepted | Added `risk_adjusted` with exposure and asset-criticality multipliers. |
+| Add baseline + triage states for noise control | Accepted | Added triage states plus `aegis-baseline.json`/`aegis-coverage.json` and posting policy. |
+| Enforce two-pass LLM synthesis + deterministic verification | Accepted | Added two-pass contract and counterexample search for absence claims. |
+| Add explicit data governance controls | Accepted | Added retention, access control, encryption, and model-boundary policy. |
+| Expand evals with backtests/adversarial/calibration | Accepted | Added historical replay, adversarial suites, and stronger calibration/tool-health metrics. |
+| Add auditable repo-level profile (`aegis.yaml`) | Accepted | Added `aegis.yaml` profile and profile-driven pack resolution in the phased plan. |
+| Harden tool execution (allowlist wrapper, no auto-fetch/build) | Accepted | Added tool-safety principle and sandbox wrapper requirements in architecture/phase 0. |
+| Update implementation sequencing for safety/noise prerequisites | Accepted | Updated implementation phases to include coverage artifacts, baseline controls, and gating prerequisites early. |
+| Expand open questions around governance/keys/allowlists/baselines | Accepted | Added open questions covering signing, policy ownership, retention defaults, allowlist drift, and baseline workflow. |
