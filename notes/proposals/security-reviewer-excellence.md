@@ -29,8 +29,10 @@ Current prompt-only review is strong for obvious issues but weak in consistency 
 
 - Cross-file exploit chains are easy to miss without structured source/sink modeling.
 - Domain-specific standards (OIDC, token validation, key rotation, mTLS) are not encoded as reusable policy.
-- Findings are not scored by confidence/reachability in a repeatable way.
+- Findings are not scored by confidence/reachability in a fully consistent, repeatable way.
 - We do not have benchmark-driven precision/recall tracking for security reviewer quality.
+- Policy packs without schema-validated tests will drift and become noisy over time.
+- We do not yet treat repository content as adversarial input to the reviewer.
 
 ## Goals
 
@@ -53,6 +55,16 @@ Current prompt-only review is strong for obvious issues but weak in consistency 
 - **Policy as data**: store security knowledge in versioned YAML/JSON packs.
 - **Risk-aware voting**: tie BLOCK/LGTM decisions to severity + confidence + exploitability.
 - **Continuously evaluated**: no policy change ships without benchmark impact data.
+- **Treat repo content as adversarial**: code, docs, and comments may contain prompt injection attempts.
+- **Data minimization**: provide only the minimum code slices needed to reason; redact secrets and PII before model calls.
+
+## Aegis Safety Model (LLM + Tooling)
+
+- **Untrusted inputs**: PR content, repository files, comments, generated artifacts.
+- **Prompt injection defense**: ignore in-repo instructions; rely only on runtime policy + EvidenceFacts.
+- **Secret/PII handling**: pre-scan and redact secrets in context and logs; never echo secrets in crit comments.
+- **No implicit execution**: schema-validate model outputs; do not execute model-suggested commands.
+- **Fail safely**: when parts of analysis fail, emit partial deterministic findings with an explicit `incomplete_analysis` flag (never silent LGTM).
 
 ## Target Capability Matrix
 
@@ -64,7 +76,7 @@ Minimum domain coverage for v1-v2:
 - Injection: SQL/NoSQL/command/template/deserialization injection.
 - Web/API: SSRF, path traversal, XSS, CSRF, header/cookie/session issues.
 - Crypto: insecure algorithms/modes, key management, cert validation gaps.
-- Supply chain: dependency risk, malicious package indicators, lockfile drift.
+- Supply chain: dependency risk, malicious package indicators, lockfile drift, SBOM generation/diffing, vulnerability matching (OSV), and optional provenance/signature verification hooks.
 - Cloud/IaC: public exposure, weak IAM, secrets in infra/config, network policy gaps.
 - Runtime abuse: DoS/ReDoS, unbounded resource growth, queue poisoning patterns.
 
@@ -77,27 +89,36 @@ Add versioned policy data under a security knowledge directory, for example:
 - `src/security/rules/*.yaml`
 - `src/security/profiles/*.yaml`
 - `src/security/mappings/*.yaml`
+- `src/security/schemas/*.json` (rule + AegisIR schema validation)
+- `src/security/rule-tests/**` (per-rule positive/negative fixtures)
 
 Each rule should include:
 
-- `id`, `title`, `category`, `cwe`, `owasp`, `severity_default`
+- `id`, `version`, `title`, `category`, `cwe`, `owasp`, `severity_default`
+- `owner`, `tags`, `status` (`experimental` | `stable` | `deprecated`)
 - `languages`, `frameworks`, `applies_if` (repo fingerprint conditions)
 - `sources`, `sinks`, `sanitizers` (where relevant)
-- `detectors` (regex/AST/heuristic hooks)
+- `detectors` (regex/AST/heuristic hooks and/or tool-query hooks)
 - `evidence_requirements`
-- `confidence_model`
+- `confidence_model` (explicit calibration assumptions)
+- `precision_target` / `recall_target` (optional)
 - `remediation_patterns`
+- `examples` (minimal positive/negative snippets)
+- `tests` (fixture references; must pass in CI)
+- `suppressions` model (reason + expiry + approver)
 - `references` (standards/RFC/CWE links)
 
 Example shape:
 
 ```yaml
 id: OIDC-001
+version: 1
 title: Missing issuer/audience verification on ID token
 category: identity
 cwe: [CWE-347]
 owasp: [A07:2021]
 severity_default: high
+owner: security-identity
 languages: [typescript, rust, go]
 frameworks: [oidc, oauth2]
 applies_if:
@@ -108,6 +129,9 @@ evidence_requirements:
   must_show: ["token accepted", "no aud/iss check"]
 confidence_model:
   high_if: ["token parse present", "claims used for authz", "aud/iss check absent"]
+tests:
+  positive_fixtures: ["fixtures/oidc/missing_aud_iss/*"]
+  negative_fixtures: ["fixtures/oidc/valid_aud_iss/*"]
 remediation_patterns:
   - "Validate iss, aud, exp, nonce, and signature against trusted JWKS"
 references:
@@ -119,10 +143,33 @@ references:
 Reviewer runtime performs:
 
 1. **Repo fingerprinting**: detect languages, frameworks, auth stack, cloud stack.
-2. **Diff expansion**: inspect changed files + nearby trust boundaries (auth middleware, serializers, gateways).
-3. **Deterministic checks**: run rule detectors first and emit candidate findings.
-4. **Path reasoning**: infer source-to-sink exploit chains (best-effort taint-like graph).
-5. **LLM adjudication**: synthesize candidate findings, remove weak signals, enrich exploit/fix narrative.
+2. **Diff expansion + ROI selection**: inspect changed files and a bounded region of influence around trust boundaries (auth middleware, serializers, gateways, policy code, IaC).
+3. **Build an Evidence Graph (AegisGraph)**:
+   - Incremental graph over changed files + ROI:
+     - code symbols (functions/types), calls, basic dataflow edges (best-effort)
+     - web/API endpoints -> handlers -> authn/authz middleware
+     - config/IaC resources -> IAM/network exposure edges
+     - dependency changes -> package/SBOM nodes
+   - Cache by `(repo, commit, file_hash)` to avoid re-parsing stable files.
+4. **Deterministic signal collection (rule + tool plugins)**:
+   - Run policy detectors (regex/AST/heuristic) and optional external analyzers in workspace context.
+   - Normalize outputs into `EvidenceFacts` attached to AegisGraph nodes/edges.
+5. **Reachability + exploit-chain reasoning**:
+   - Query AegisGraph for source -> sink paths and privilege-boundary crossings.
+   - Mark unknown edges explicitly instead of guessing.
+6. **LLM synthesis + verification pass**:
+   - Prompt with minimal code slices + EvidenceFacts + policy references.
+   - Require evidence citations for each claim.
+   - Re-run cheap deterministic checks for absence claims (for example, "no issuer check").
+
+#### 2a) Canonical Intermediate Representation (AegisIR)
+
+Define a stable internal schema for downstream processing:
+
+- `AegisIR.ReviewRun`: repo/commit/diff metadata, timing, budgets, tool versions.
+- `AegisIR.Finding`: stable finding id, rule id, severity, confidence, score breakdown.
+- `AegisIR.Evidence`: code locations, traces/paths, normalized tool outputs.
+- `AegisIR.Dedup`: fingerprints so reruns update existing findings instead of spamming duplicates.
 
 ### 3) Decision Plane (Risk Scoring)
 
@@ -130,29 +177,45 @@ Compute per-finding score:
 
 `risk = impact * exploitability * reachability * confidence`
 
-Where each component is 1-5. Voting policy:
+Where:
 
-- BLOCK if any finding has `severity >= medium` and `confidence >= 0.7`, or any critical/high.
-- BLOCK if aggregate risk score crosses threshold.
-- LGTM only when no blocking findings remain.
+- `impact`, `exploitability`, `reachability` are integers in `[1, 5]`
+- `confidence` is a calibrated probability in `[0.0, 1.0]`
+- risk range is `[0, 125]` and is used for ordering and gating
+
+Voting policy (default profile; overridable per repo):
+
+- **BLOCK** if any finding is `severity in {critical, high}` and `confidence >= 0.8`
+- **BLOCK** if any finding has `risk >= 60` (including medium findings)
+- **NEEDS_HUMAN_REVIEW** if severity is high/critical but confidence is below block threshold
+- **LGTM** only when no blocking findings remain
+
+Each finding includes the breakdown:
+`impact/exploitability/reachability/confidence -> risk -> vote rationale`.
 
 ### 4) Explainability Plane (Structured Output)
 
 For each finding, generate:
 
-- short title + severity + confidence
+- short title + severity + confidence + stable finding id
 - exact evidence (file, line, code path)
 - exploit scenario (realistic attacker path)
 - remediation guidance (minimal safe patch strategy)
 - optional verification test (unit/integration/security test idea)
+- optional fix-it patch (small diff) when confidence is high and change risk is low
 
-Post human-readable crit comments and persist machine-readable JSON artifact for later analytics.
+Post human-readable crit comments and persist:
+
+- `aegis-review.json` (AegisIR; stable for analytics and replay)
+- `aegis.sarif` (SARIF export for interoperability and multi-tool aggregation)
 
 ### 5) Learning Plane (Continuous Improvement)
 
-- Benchmark corpus of seeded vulnerabilities and known-safe code.
-- Replay framework in evals to score precision/recall/F1 and time-to-review.
-- False-positive triage queue; promoted improvements update rule packs.
+- Benchmark corpora:
+  - internal seeded vulnerabilities and known-safe controls
+  - standardized suites (for example OWASP Benchmark and NIST SARD/Juliet)
+- Replay framework in evals to score precision/recall/F1, calibration, and time-to-review.
+- False-positive triage queue with root-cause tags; promoted improvements update rule packs and tests.
 
 ## Integration with Botbox Runtime
 
@@ -165,13 +228,22 @@ No workflow disruption: keep the current trigger and transport flow.
 
 Enhancement is additive: security reviewer-loop loads policy packs, runs analysis pipeline, then comments/votes through existing crit and bus commands.
 
+## Governance and Ownership
+
+If Aegis produces a BLOCK, ownership and exception path must be explicit:
+
+- **Decision owner**: repository owner + designated security approver.
+- **Override flow**: explicit override reason, expiry date, and audit trail in review artifacts.
+- **SLA**: define response targets for high/critical findings and override requests.
+
 ## Implementation Plan
 
 ### Phase 0: Baseline and Instrumentation
 
 1. Define metrics schema (precision, recall proxy, false-positive rate, review latency).
-2. Add structured run artifact (`security-review.json`) for each security review cycle.
-3. Add minimal telemetry summary to reviewer-loop journal.
+2. Define and validate AegisIR schema; persist `aegis-review.json` per cycle.
+3. Emit optional `aegis.sarif` for interoperability.
+4. Add telemetry summary to reviewer-loop journal (latency, token/cost budget, tool versions).
 
 ### Phase 1: Policy Data Foundation
 
@@ -183,30 +255,39 @@ Enhancement is additive: security reviewer-loop loads policy packs, runs analysi
    - crypto core
    - supply-chain/cloud core
 3. Add profile mapping (repo fingerprint -> active rule packs).
+4. Add per-rule positive/negative test fixtures and CI enforcement.
 
 ### Phase 2: Deterministic Detectors
 
-1. Implement detector runner for regex/heuristic checks.
+1. Implement detector runner for regex/heuristic checks + tool plugin harness normalized into EvidenceFacts/AegisIR.
 2. Add framework-aware detectors (JWT misuse, unsafe deserialization, shell exec with tainted input).
-3. Emit evidence packets with line-level references.
+3. Add deterministic supply-chain checks:
+   - SBOM generation and diff on dependency changes
+   - vulnerability matching (OSV)
+   - optional signature/provenance verification hooks
+4. Emit evidence packets with line-level references.
 
 ### Phase 3: Expert LLM Synthesis
 
-1. Prompt LLM with detector evidence + policy refs (not raw checklist only).
-2. Require exploitability and remediation fields in output contract.
-3. Add confidence calibration heuristics.
+1. Prompt LLM with EvidenceFacts + policy refs + minimal code slices.
+2. Require evidence citations, exploitability, remediation, and verification ideas in output contract.
+3. Add absence-claim verification pass and confidence calibration heuristics.
 
 ### Phase 4: Scoring, Voting, and UX
 
 1. Implement risk scoring policy and BLOCK/LGTM gating.
 2. Standardize crit comment template for readability.
 3. Add "top risks" channel summary after review completion.
+4. Add dedup semantics so reruns update/resolve prior findings.
+5. Add opt-in fix-it mode for high-confidence findings.
 
 ### Phase 5: Data-Driven Eval Program
 
-1. Build security benchmark suites (seeded vulnerable repos + clean controls).
-2. Run nightly replay and trend metrics.
-3. Add regression gate for policy or prompt changes.
+1. Build benchmark suites:
+   - seeded vulnerable repos + clean controls
+   - standardized suites (OWASP Benchmark; NIST SARD/Juliet)
+2. Run nightly replay and trend metrics (precision/recall/F1 + calibration + latency).
+3. Add regression gates for policy/rule/prompt/tool changes (no merge without eval delta review).
 
 ## Suggested Rule Pack Taxonomy
 
@@ -217,6 +298,8 @@ Enhancement is additive: security reviewer-loop loads policy packs, runs analysi
 - `injection.yaml` (SQL/OS/templating/deserialization)
 - `transport-crypto.yaml` (TLS validation, crypto agility, key lifecycle)
 - `supply-chain.yaml` (dependency trust, lock hygiene, install scripts)
+- `sbom-vex.yaml` (SBOM generation/diff, vulnerability matching, and not-affected rationale)
+- `provenance-signing.yaml` (optional signature/provenance verification hooks)
 - `cloud-iac.yaml` (public exposure, IAM blast radius, secret leakage)
 
 ## Evaluation Strategy
@@ -233,13 +316,18 @@ Secondary KPIs:
 - Evidence completeness score
 - Remediation usefulness score (human-rated)
 - Domain coverage score (how many vulnerability families detected)
+- Confidence calibration error (do confidence values match observed truth rates)
+- Finding dedup rate (do reruns avoid duplicate noise)
 
 ## Risks and Mitigations
 
 - **Rule bloat / maintenance burden**: use strict schema + ownership + linting for rule packs.
 - **High false positives**: confidence thresholds + regression benchmarks before rollout.
-- **Latency increase**: two-tier mode (fast scan by default, deep scan for risk labels).
+- **Latency increase**: two-tier mode (fast scan by default, deep scan for risk labels), ROI bounding, and caching.
 - **Prompt overfitting**: separate deterministic evidence generation from narrative generation.
+- **Prompt injection / adversarial content**: treat repo content as untrusted, verify absence claims, never follow in-repo instructions.
+- **Sensitive data exposure**: context minimization + secret redaction in prompts and artifacts.
+- **Tool or LLM flakiness**: bounded retries, explicit partial-result artifacts, and no silent success.
 
 ## Rollout Strategy
 
@@ -253,6 +341,9 @@ Secondary KPIs:
 2. Should we support project-local override packs for domain-specific threat models?
 3. Do we want separate reviewer roles (`security-app`, `security-cloud`, `security-identity`) for very high-risk repos?
 4. What is the right default scan budget for large monorepos?
+5. What are our SLOs (P95 latency, token/cost budget, max workspace CPU time)?
+6. Which failures are fail-open vs fail-safe (require human review)?
+7. Who owns BLOCK exception approvals and suppressions, and what is the SLA?
 
 ## Immediate Next Beads (Proposed)
 
@@ -261,3 +352,12 @@ Secondary KPIs:
 3. Add reviewer-loop structured security artifact output.
 4. Add benchmark harness for seeded vulnerabilities.
 5. Integrate risk scoring into crit vote policy.
+6. Add rule test harness with positive/negative fixtures and CI gates.
+7. Add AegisIR + SARIF artifact generation and a dedup fingerprint strategy.
+
+## External Standards and Baselines
+
+- SARIF v2.1.0 for findings interchange.
+- OWASP Benchmark and NIST SARD/Juliet for standardized eval corpora.
+- CycloneDX/SPDX for SBOM interoperability.
+- OSV for vulnerability matching on dependency changes.
