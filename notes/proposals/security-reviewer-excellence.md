@@ -11,6 +11,14 @@ Build a data-driven security reviewer that combines structured vulnerability kno
 
 This proposal upgrades security review from a prompt-only checklist to a measurable security system with versioned policy packs, confidence scoring, benchmark evals, and continuous learning.
 
+## Implementation Path: Ward
+
+Implementation of this proposal should follow the standalone Ward tool plan:
+
+- `notes/proposals/ward-standalone-tool.md`
+
+In practice, botbox remains the orchestration layer and consumes Ward via a stable CLI/JSON contract from `reviewer-loop`.
+
 ## Current Security Reviewer in Botbox (Brief Overview)
 
 Today, security review is integrated into the normal botbox review lifecycle:
