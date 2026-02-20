@@ -519,12 +519,12 @@ After dispatching all workers, skip to step 6 (MONITOR).
 IMPORTANT: Do NOT end the iteration early just to poll again. Ending the iteration and starting a new one
 burns a full Claude API call. Instead, WAIT for workers to finish using one of these approaches:
 
-**Preferred: bus wait** — blocks until a worker posts a completion message:
+**Preferred: botty wait --exited** — blocks until any dispatched worker exits (success or crash):
 
-  bus wait -c {project} -L task-done -t 300
+  botty wait --exited <worker-1> <worker-2> <worker-3> -t 300
 
-This blocks until a task-done message arrives (up to 5 minutes). Zero tokens consumed while waiting.
-When it returns, check completions below.
+This detects BOTH clean exits and silent crashes. Zero tokens consumed while waiting.
+When it returns, check which workers exited and whether they succeeded or died.
 
 **Alternative: sleep** — if you want to check periodically:
 
@@ -532,14 +532,17 @@ When it returns, check completions below.
 
 Then check for completions. This is fine — sleep does NOT consume tokens.
 
+**Do NOT use `bus wait -L task-done`** — workers that crash or hang never post a task-done message,
+so the lead hangs until timeout without detecting the failure.
+
 **Do NOT** output END_OF_STORY while workers are still running unless you've done a dead-worker check
 and confirmed all workers are alive. Each unnecessary iteration wastes tokens.
 
 After waiting:
 
-Check for completion messages:
-- bus inbox --agent {agent} --channels {project} -n 20
-- Look for task-done messages from workers
+Check worker results:
+- botty list — which workers are still alive vs exited
+- bus inbox --agent {agent} --channels {project} -n 20 — completion messages
 - Check workspace status: maw ws list
 
 For each completed worker:
