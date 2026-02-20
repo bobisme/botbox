@@ -527,7 +527,7 @@ pub fn run_reviewer_loop(
             &prompt,
             Some(&model),
             timeout,
-            Some("text"),
+            None,
             false,
         );
 
