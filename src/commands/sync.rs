@@ -576,15 +576,19 @@ impl SyncArgs {
     }
 
     fn auto_commit(&self, project_root: &Path, changed_files: &[&str]) -> Result<()> {
-        // Check if this is a jj repo by searching up the directory tree.
-        // In maw v2 bare repos, .jj lives at the bare root (e.g. /repo/.jj)
-        // while project_root is a workspace subdir (e.g. /repo/ws/default/).
-        if find_jj_root(project_root).is_none() {
-            return Ok(()); // Not a jj repo, skip commit
+        // Detect VCS: prefer jj if available, fall back to git
+        let vcs = detect_vcs(project_root);
+        if vcs == Vcs::None {
+            return Ok(()); // No VCS found, skip commit
         }
 
         // Validate changed_files are expected botbox-managed paths
-        let allowed_prefixes = [".agents/botbox/", "AGENTS.md", ".claude/settings.json"];
+        let allowed_prefixes = [
+            ".agents/botbox/",
+            "AGENTS.md",
+            ".claude/settings.json",
+            ".pi/",
+        ];
         let sanitized: Vec<&str> = changed_files
             .iter()
             .filter(|f| allowed_prefixes.iter().any(|p| f.starts_with(p)))
@@ -603,15 +607,26 @@ impl SyncArgs {
             .collect();
         let message = format!("chore: botbox sync (updated {})", files_str);
 
-        run_command("jj", &["describe", "-m", &message], Some(project_root))?;
-
-        // Finalize: create new empty commit and advance main bookmark
-        run_command("jj", &["new", "-m", ""], Some(project_root))?;
-        run_command(
-            "jj",
-            &["bookmark", "set", "main", "-r", "@-"],
-            Some(project_root),
-        )?;
+        match vcs {
+            Vcs::Jj => {
+                run_command("jj", &["describe", "-m", &message], Some(project_root))?;
+                // Finalize: create new empty commit and advance main bookmark
+                run_command("jj", &["new", "-m", ""], Some(project_root))?;
+                run_command(
+                    "jj",
+                    &["bookmark", "set", "main", "-r", "@-"],
+                    Some(project_root),
+                )?;
+            }
+            Vcs::Git => {
+                // Stage only the sanitized files
+                let mut args = vec!["add", "--"];
+                args.extend_from_slice(&sanitized);
+                run_command("git", &args, Some(project_root))?;
+                run_command("git", &["commit", "-m", &message], Some(project_root))?;
+            }
+            Vcs::None => unreachable!(),
+        }
 
         Ok(())
     }
@@ -902,6 +917,31 @@ fn migrate_beads_to_bones(project_root: &Path, config_path: &Path) -> Result<()>
     }
 
     Ok(())
+}
+
+/// Version control system detected in a project.
+#[derive(Debug, PartialEq, Eq)]
+enum Vcs {
+    Jj,
+    Git,
+    None,
+}
+
+/// Detect which VCS manages this project root.
+/// Prefers jj if found (searches ancestors for `.jj/`), falls back to git
+/// (`.git` file or directory at `project_root` or ancestors).
+fn detect_vcs(project_root: &Path) -> Vcs {
+    if find_jj_root(project_root).is_some() {
+        return Vcs::Jj;
+    }
+    // Check for .git file (worktree/maw) or .git directory (regular repo)
+    if project_root
+        .ancestors()
+        .any(|p| p.join(".git").exists())
+    {
+        return Vcs::Git;
+    }
+    Vcs::None
 }
 
 /// Search up the directory tree for a .jj directory (like jj itself does).
