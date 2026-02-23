@@ -3,21 +3,9 @@ opencode.json
 # Rust build artifacts
 target/
 
-# bones local data
-.bones/
-
 # Environment and secrets
 .env
 .env.*
 
 # Logs
 *.log
-
-# Runtime iteration state
-.agents/botbox/last-iteration.txt
-
-# maw agent workspaces
-.workspaces/
-
-# maw agent workspaces
-ws/
