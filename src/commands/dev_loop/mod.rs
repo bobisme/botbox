@@ -48,20 +48,12 @@ pub fn run(
     let push_main = config.push_main;
 
     let missions_config = dev_config.missions.clone();
-    let missions_enabled = missions_config
-        .as_ref()
-        .is_none_or(|m| m.enabled);
+    let missions_enabled = missions_config.as_ref().is_none_or(|m| m.enabled);
     let multi_lead_config = dev_config.multi_lead.clone();
-    let multi_lead_enabled = multi_lead_config
-        .as_ref()
-        .is_some_and(|m| m.enabled);
+    let multi_lead_enabled = multi_lead_config.as_ref().is_some_and(|m| m.enabled);
 
     let check_command = config.project.check_command.clone();
-    let worker_timeout = config
-        .agents
-        .worker
-        .as_ref()
-        .map_or(900, |w| w.timeout);
+    let worker_timeout = config.agents.worker.as_ref().map_or(900, |w| w.timeout);
 
     let ctx = LoopContext {
         agent: agent.clone(),
@@ -83,7 +75,14 @@ pub fn run(
     eprintln!("Project:   {project}");
     eprintln!("Max loops: {max_loops}");
     eprintln!("Pause:     {pause_secs}s");
-    eprintln!("Model:     {}", if ctx.model.is_empty() { "system default" } else { &ctx.model });
+    eprintln!(
+        "Model:     {}",
+        if ctx.model.is_empty() {
+            "system default"
+        } else {
+            &ctx.model
+        }
+    );
     eprintln!("Review:    {review_enabled}");
     if multi_lead_enabled {
         let max_leads = ctx.multi_lead_config.as_ref().map_or(3, |c| c.max_leads);
@@ -99,24 +98,40 @@ pub fn run(
     // Stake agent claim (ignore failure — may already be held)
     let _ = Tool::new("bus")
         .args(&[
-            "claims", "stake", "--agent", &agent,
+            "claims",
+            "stake",
+            "--agent",
+            &agent,
             &format!("agent://{agent}"),
-            "-m", &format!("dev-loop for {project}"),
+            "-m",
+            &format!("dev-loop for {project}"),
         ])
         .run();
 
     // Announce
     Tool::new("bus")
         .args(&[
-            "send", "--agent", &agent, &project,
+            "send",
+            "--agent",
+            &agent,
+            &project,
             &format!("Dev agent {agent} online, starting dev loop"),
-            "-L", "spawn-ack",
+            "-L",
+            "spawn-ack",
         ])
         .run_ok()?;
 
     // Set starting status
     let _ = Tool::new("bus")
-        .args(&["statuses", "set", "--agent", &agent, "Starting loop", "--ttl", "10m"])
+        .args(&[
+            "statuses",
+            "set",
+            "--agent",
+            &agent,
+            "Starting loop",
+            "--ttl",
+            "10m",
+        ])
         .run();
 
     // Capture baseline commits for release tracking
@@ -145,7 +160,13 @@ pub fn run(
 
         // Refresh agent claim TTL
         let _ = Tool::new("bus")
-            .args(&["claims", "refresh", "--agent", &agent, &format!("agent://{agent}")])
+            .args(&[
+                "claims",
+                "refresh",
+                "--agent",
+                &agent,
+                &format!("agent://{agent}"),
+            ])
             .run();
 
         if !has_work(&agent, &project)? {
@@ -165,12 +186,18 @@ pub fn run(
                 break;
             }
             let delay = idle_delays[idle_count.saturating_sub(1) as usize % idle_delays.len()];
-            eprintln!("No work available (idle {idle_count}/{max_idle}). Waiting {delay}s before retrying...");
+            eprintln!(
+                "No work available (idle {idle_count}/{max_idle}). Waiting {delay}s before retrying..."
+            );
             let _ = Tool::new("bus")
                 .args(&[
-                    "statuses", "set", "--agent", &agent,
+                    "statuses",
+                    "set",
+                    "--agent",
+                    &agent,
                     &format!("Idle ({idle_count}/{max_idle})"),
-                    "--ttl", &format!("{delay}s"),
+                    "--ttl",
+                    &format!("{delay}s"),
                 ])
                 .run();
             std::thread::sleep(Duration::from_secs(delay));
@@ -183,9 +210,13 @@ pub fn run(
             eprintln!("Review pending for {pending_bead} — waiting (not running Claude)");
             let _ = Tool::new("bus")
                 .args(&[
-                    "statuses", "set", "--agent", &agent,
+                    "statuses",
+                    "set",
+                    "--agent",
+                    &agent,
                     &format!("Waiting: review for {pending_bead}"),
-                    "--ttl", "10m",
+                    "--ttl",
+                    "10m",
                 ])
                 .run();
             std::thread::sleep(Duration::from_secs(30));
@@ -247,9 +278,13 @@ pub fn run(
                     eprintln!("Fatal error detected, posting to botbus and exiting...");
                     let _ = Tool::new("bus")
                         .args(&[
-                            "send", "--agent", &agent, &project,
+                            "send",
+                            "--agent",
+                            &agent,
+                            &project,
                             &format!("Dev loop error: {err_str}. Agent {agent} going offline."),
-                            "-L", "agent-error",
+                            "-L",
+                            "agent-error",
                         ])
                         .run();
                     break;
@@ -347,7 +382,11 @@ fn resolve_model(config: &Config, model_override: Option<&str>) -> String {
             .as_ref()
             .map_or_else(String::new, |d| d.model.clone())
     };
-    if raw.is_empty() { raw } else { config.resolve_model(&raw) }
+    if raw.is_empty() {
+        raw
+    } else {
+        config.resolve_model(&raw)
+    }
 }
 
 /// Get the raw worker model config value (tier name or explicit model).
@@ -363,55 +402,66 @@ fn resolve_worker_model(config: &Config) -> String {
         .map_or_else(String::new, |w| w.model.clone())
 }
 
-/// Check if there is any work to do (inbox, claims, ready beads).
+/// Check if there is any work to do (inbox, claims, ready bones).
 fn has_work(agent: &str, project: &str) -> anyhow::Result<bool> {
-    // Check claims (bead:// or workspace:// means active work)
+    // Check claims (bone:// or workspace:// means active work)
     if let Ok(output) = Tool::new("bus")
-        .args(&["claims", "list", "--agent", agent, "--mine", "--format", "json"])
+        .args(&[
+            "claims", "list", "--agent", agent, "--mine", "--format", "json",
+        ])
         .run()
         && output.success()
-            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
-                let claims = parsed["claims"].as_array();
-                if let Some(claims) = claims {
-                    let has_work_claims = claims.iter().any(|c| {
-                        c["patterns"].as_array().is_some_and(|patterns| {
-                            patterns.iter().any(|p| {
-                                let s = p.as_str().unwrap_or("");
-                                s.starts_with("bead://") || s.starts_with("workspace://")
-                            })
-                        })
-                    });
-                    if has_work_claims {
-                        return Ok(true);
-                    }
-                }
+        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+    {
+        let claims = parsed["claims"].as_array();
+        if let Some(claims) = claims {
+            let has_work_claims = claims.iter().any(|c| {
+                c["patterns"].as_array().is_some_and(|patterns| {
+                    patterns.iter().any(|p| {
+                        let s = p.as_str().unwrap_or("");
+                        s.starts_with("bone://") || s.starts_with("workspace://")
+                    })
+                })
+            });
+            if has_work_claims {
+                return Ok(true);
             }
+        }
+    }
 
     // Check inbox
     if let Ok(output) = Tool::new("bus")
         .args(&[
-            "inbox", "--agent", agent, "--channels", project,
-            "--count-only", "--format", "json",
+            "inbox",
+            "--agent",
+            agent,
+            "--channels",
+            project,
+            "--count-only",
+            "--format",
+            "json",
         ])
         .run()
-        && output.success() {
-            let count = parse_inbox_count(&output.stdout);
-            if count > 0 {
-                return Ok(true);
-            }
+        && output.success()
+    {
+        let count = parse_inbox_count(&output.stdout);
+        if count > 0 {
+            return Ok(true);
         }
+    }
 
-    // Check ready beads
-    if let Ok(output) = Tool::new("br")
-        .args(&["ready", "--json"])
+    // Check ready bones
+    if let Ok(output) = Tool::new("bn")
+        .args(&["next", "--json"])
         .in_workspace("default")?
         .run()
-        && output.success() {
-            let count = parse_ready_count(&output.stdout);
-            if count > 0 {
-                return Ok(true);
-            }
+        && output.success()
+    {
+        let count = parse_ready_count(&output.stdout);
+        if count > 0 {
+            return Ok(true);
         }
+    }
 
     Ok(false)
 }
@@ -429,7 +479,7 @@ fn parse_inbox_count(json: &str) -> u64 {
     0
 }
 
-/// Parse ready beads count from JSON response.
+/// Parse ready bones count from JSON response.
 fn parse_ready_count(json: &str) -> usize {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
         if let Some(arr) = v.as_array() {
@@ -438,7 +488,7 @@ fn parse_ready_count(json: &str) -> usize {
         if let Some(arr) = v["issues"].as_array() {
             return arr.len();
         }
-        if let Some(arr) = v["beads"].as_array() {
+        if let Some(arr) = v["bones"].as_array() {
             return arr.len();
         }
     }
@@ -447,9 +497,9 @@ fn parse_ready_count(json: &str) -> usize {
 
 /// Check if there's a pending review that should block running Claude.
 fn has_pending_review(agent: &str) -> anyhow::Result<Option<String>> {
-    // Get in-progress beads owned by this agent
-    let output = Tool::new("br")
-        .args(&["list", "--status", "in_progress", "--assignee", agent, "--json"])
+    // Get in-progress bones owned by this agent
+    let output = Tool::new("bn")
+        .args(&["list", "--state", "doing", "--assignee", agent, "--json"])
         .in_workspace("default")?
         .run();
 
@@ -458,7 +508,7 @@ fn has_pending_review(agent: &str) -> anyhow::Result<Option<String>> {
         _ => return Ok(None),
     };
 
-    let beads: Vec<serde_json::Value> = match serde_json::from_str(&output.stdout) {
+    let bones: Vec<serde_json::Value> = match serde_json::from_str(&output.stdout) {
         Ok(v) => {
             if let serde_json::Value::Array(arr) = v {
                 arr
@@ -469,14 +519,14 @@ fn has_pending_review(agent: &str) -> anyhow::Result<Option<String>> {
         Err(_) => return Ok(None),
     };
 
-    for bead in &beads {
-        let id = match bead["id"].as_str() {
+    for bone in &bones {
+        let id = match bone["id"].as_str() {
             Some(id) => id,
             None => continue,
         };
 
-        let comments_output = Tool::new("br")
-            .args(&["comments", id, "--json"])
+        let comments_output = Tool::new("bn")
+            .args(&["bone", "comment", "list", id, "--json"])
             .in_workspace("default")?
             .run();
 
@@ -486,9 +536,9 @@ fn has_pending_review(agent: &str) -> anyhow::Result<Option<String>> {
         };
 
         let comments = parse_comments(&comments_output.stdout);
-        let has_review = comments.iter().any(|c| {
-            c.contains("Review created:") || c.contains("Review requested:")
-        });
+        let has_review = comments
+            .iter()
+            .any(|c| c.contains("Review created:") || c.contains("Review requested:"));
         if !has_review {
             continue;
         }
@@ -629,8 +679,11 @@ fn extract_iteration_summary(output: &str) -> Option<String> {
 fn get_commits_since_origin() -> Vec<String> {
     let output = Tool::new("jj")
         .args(&[
-            "log", "-r", "main@origin..main",
-            "--no-graph", "--template",
+            "log",
+            "-r",
+            "main@origin..main",
+            "--no-graph",
+            "--template",
             "commit_id.short() ++ \" \" ++ description.first_line() ++ \"\\n\"",
         ])
         .in_workspace("default")
@@ -638,12 +691,17 @@ fn get_commits_since_origin() -> Vec<String> {
         .and_then(|t| t.run().ok());
 
     match output {
-        Some(o) if o.success() => o.stdout.lines().filter(|l| !l.is_empty()).map(String::from).collect(),
+        Some(o) if o.success() => o
+            .stdout
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(String::from)
+            .collect(),
         _ => Vec::new(),
     }
 }
 
-/// Cleanup: kill child workers, release claims, sync beads.
+/// Cleanup: kill child workers, release claims.
 fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     eprintln!("Cleaning up...");
 
@@ -658,9 +716,13 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     // Sign off
     let _ = Tool::new("bus")
         .args(&[
-            "send", "--agent", agent, project,
+            "send",
+            "--agent",
+            agent,
+            project,
             &format!("Dev agent {agent} signing off."),
-            "-L", "agent-idle",
+            "-L",
+            "agent-idle",
         ])
         .new_process_group()
         .run();
@@ -674,7 +736,10 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     // Release merge mutex if held
     let _ = Tool::new("bus")
         .args(&[
-            "claims", "release", "--agent", agent,
+            "claims",
+            "release",
+            "--agent",
+            agent,
             &format!("workspace://{project}/default"),
         ])
         .new_process_group()
@@ -683,7 +748,10 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     // Release agent claim
     let _ = Tool::new("bus")
         .args(&[
-            "claims", "release", "--agent", agent,
+            "claims",
+            "release",
+            "--agent",
+            agent,
             &format!("agent://{agent}"),
         ])
         .new_process_group()
@@ -695,12 +763,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
         .new_process_group()
         .run();
 
-    // Sync beads
-    let _ = Tool::new("br")
-        .args(&["sync", "--flush-only"])
-        .in_workspace("default")
-        .ok()
-        .and_then(|t| t.new_process_group().run().ok());
+    // bn is event-sourced — no sync step needed
 
     eprintln!("Cleanup complete for {agent}.");
     Ok(())
@@ -708,9 +771,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
 
 /// Kill child workers spawned by this dev-loop (hierarchical name pattern: AGENT/suffix).
 fn kill_child_workers(agent: &str) {
-    let output = Tool::new("botty")
-        .args(&["list", "--format", "json"])
-        .run();
+    let output = Tool::new("botty").args(&["list", "--format", "json"]).run();
 
     let output = match output {
         Ok(o) if o.success() => o,
@@ -731,4 +792,3 @@ fn kill_child_workers(agent: &str) {
         }
     }
 }
-

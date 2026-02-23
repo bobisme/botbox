@@ -30,11 +30,10 @@ echo "WS_PATH=$WS_PATH"
 PROMPT="You are dev agent \"${ALPHA_DEV}\" for project \"alpha\".
 Your project directory is: ${ALPHA_DIR}
 This project uses maw v2 (bare repo layout). Source files are in ws/default/.
-Use --agent ${ALPHA_DEV} on ALL bus, crit, and br mutation commands.
-Use --actor ${ALPHA_DEV} on br mutations and --author ${ALPHA_DEV} on br comments.
+Use --agent ${ALPHA_DEV} on ALL bus and crit mutation commands.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
 
-You previously started work on bead ${BEAD} (POST /users registration) and discovered
+You previously started work on bone ${BEAD} (POST /users registration) and discovered
 that beta's validate_email rejected + characters. You asked beta-dev about it and they
 have now fixed it.
 
@@ -56,7 +55,7 @@ Your workspace is: ${WS} (files at ${WS_PATH})
 
 4. REQUEST REVIEW:
    - Add a progress comment:
-     maw exec default -- br comments add --actor ${ALPHA_DEV} --author ${ALPHA_DEV} ${BEAD} \"Beta fixed validate_email. Tests pass. Implementation complete, requesting review.\"
+     maw exec default -- bn bone comment add ${BEAD} \"Beta fixed validate_email. Tests pass. Implementation complete, requesting review.\"
    - Create a crit review from your workspace:
      maw exec ${WS} -- crit reviews create --agent ${ALPHA_DEV} --title \"feat: POST /users registration\"
    - Note the review ID from the output
@@ -69,7 +68,7 @@ Your workspace is: ${WS} (files at ${WS_PATH})
 
 Key rules:
 - All file operations use the absolute workspace path: ${WS_PATH}/
-- Run br/bv commands via: maw exec default -- br ...
+- Run bn commands via: maw exec default -- bn ...
 - Run crit/jj/cargo via: maw exec ${WS} -- <command>
 - Use jj (not git) via maw exec"
 

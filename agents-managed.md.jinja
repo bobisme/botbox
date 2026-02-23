@@ -12,9 +12,9 @@ This project uses a **bare repo** layout. Source files live in workspaces under 
 project-root/          ← bare repo (no source files here)
 ├── ws/
 │   ├── default/       ← main working copy (AGENTS.md, .beads/, src/, etc.)
-│   ├── frost-castle/  ← agent workspace (isolated jj commit)
+│   ├── frost-castle/  ← agent workspace (isolated Git worktree)
 │   └── amber-reef/    ← another agent workspace
-├── .jj/               ← jj repo data
+├── .manifold/         ← maw metadata/artifacts
 ├── .git/              ← git data (core.bare=true)
 ├── AGENTS.md          ← stub redirecting to ws/default/AGENTS.md
 └── CLAUDE.md          ← symlink → AGENTS.md
@@ -23,11 +23,12 @@ project-root/          ← bare repo (no source files here)
 **Key rules:**
 - `ws/default/` is the main workspace — beads, config, and project files live here
 - **Never merge or destroy the default workspace.** It is where other branches merge INTO, not something you merge.
-- Agent workspaces (`ws/<name>/`) are isolated jj commits for concurrent work
+- Agent workspaces (`ws/<name>/`) are isolated Git worktrees managed by maw
 - Use `maw exec <ws> -- <command>` to run commands in a workspace context
 - Use `maw exec default -- br|bv ...` for beads commands (always in default workspace)
 - Use `maw exec <ws> -- crit ...` for review commands (always in the review's workspace)
-- Never run `br`, `bv`, `crit`, or `jj` directly — always go through `maw exec`
+- Never run `br`, `bv`, or `crit` directly — always go through `maw exec`
+- Do not run `jj`; this workflow is Git + maw.
 
 ### Beads Quick Reference
 
@@ -54,24 +55,16 @@ project-root/          ← bare repo (no source files here)
 | List workspaces | `maw ws list` |
 | Merge to main | `maw ws merge <name> --destroy` |
 | Destroy (no merge) | `maw ws destroy <name>` |
-| Run jj in workspace | `maw exec <name> -- jj <jj-args...>` |
+| Run command in workspace | `maw exec <name> -- <command>` |
+| View workspace history | `maw ws history <name>` |
+| Sync stale workspace | `maw ws sync <name>` |
+| Inspect merge conflicts | `maw ws conflicts <name>` |
+| Undo local workspace changes | `maw ws undo <name>` |
 
-**Avoiding divergent commits**: Each workspace owns ONE commit. Only modify your own.
-
-| Safe | Dangerous |
-|------|-----------|
-| `maw ws merge <agent-ws> --destroy` | `maw ws merge default --destroy` (NEVER) |
-| `jj describe` (your working copy) | `jj describe main -m "..."` |
-| `maw exec <your-ws> -- jj describe -m "..."` | `jj describe <other-change-id>` |
-
-If you see `(divergent)` in `jj log`:
-```bash
-jj abandon <change-id>/0   # keep one, abandon the divergent copy
-```
-
-**Working copy snapshots**: jj auto-snapshots your working copy before most operations (`jj new`, `jj rebase`, etc.). Edits go into the **current** commit automatically. To put changes in a **new** commit, run `jj new` first, then edit files.
-
-**Always pass `-m`**: Commands like `jj commit`, `jj squash`, and `jj describe` open an editor by default. Agents cannot interact with editors, so always pass `-m "message"` explicitly.
+**Workspace safety:**
+- Never merge or destroy `default`.
+- Prefer `maw ws merge <name> --check` before `maw ws merge <name> --destroy`.
+- Commit workspace changes with `maw exec <name> -- git add -A` and `maw exec <name> -- git commit -m "..."`.
 
 ### Beads Conventions
 

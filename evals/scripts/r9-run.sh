@@ -31,10 +31,9 @@ remaining work until everything is done.
 ## 0. RESUME CHECK (do this FIRST)
 
 Run: bus claims --agent ${AGENT} --mine
-If you hold bead:// claims, you have in-progress work from a previous session.
-For each bead:// claim:
-  - Run: br show <bead-id> to understand the task
-  - Run: br comments <bead-id> to see what was done before the crash
+If you hold bone:// claims, you have in-progress work from a previous session.
+For each bone:// claim:
+  - Run: bn show <bone-id> to understand the task and see comments
   - Check if a workspace exists: look at comments for workspace info
   - Read the workspace code to see what's already implemented
   - Determine what remains to be done
@@ -43,56 +42,54 @@ Do NOT start from scratch. Continue from where the previous session left off.
 
 ## 1. COMPLETE IN-PROGRESS WORK
 
-For the in-progress bead:
+For the doing bone:
 - Check what's already in the workspace (read source files)
-- Read the bead comments to understand what was done and what remains
+- Read the bone comments to understand what was done and what remains
 - Complete the remaining work in the EXISTING workspace (do not create a new one)
-- All file operations use the absolute workspace path from bead comments
+- All file operations use the absolute workspace path from bone comments
 - For jj commands: maw ws jj <ws-name> <args>
-- Post progress: br comments add <id> \"Progress: <what you did>\"
+- Post progress: bn bone comment add <id> \"Progress: <what you did>\"
 - Describe: maw ws jj <ws-name> describe -m \"<id>: <summary>\"
 - Merge: maw ws merge <ws-name> --destroy
-- Close: br close <id> --reason=\"Completed\"
-- Release: bus claims release --agent ${AGENT} \"bead://r9-eval/<id>\"
+- Close: bn done <id> --reason \"Completed\"
+- Release: bus claims release --agent ${AGENT} \"bone://r9-eval/<id>\"
 - Announce: bus send --agent ${AGENT} r9-eval \"Completed <id>: <title>\" -L mesh -L task-done
 
 ## 2. CHECK FOR REMAINING WORK
 
-After completing the in-progress bead:
-- Run: br ready
-- Check the parent bead and dependency tree: br show <parent>, br dep tree <parent>
+After completing the doing bone:
+- Run: bn next
+- Check the parent bone and dependency tree: bn show <parent>, bn triage graph
 - If there are more ready subtasks, work through them in dependency order
 
 For each remaining subtask:
-1. br update <id> --status=in_progress
-2. bus claims stake --agent ${AGENT} \"bead://r9-eval/<id>\" -m \"<id>\"
+1. bn do <id>
+2. bus claims stake --agent ${AGENT} \"bone://r9-eval/<id>\" -m \"<id>\"
 3. maw ws create --random — note workspace NAME and absolute PATH
 4. bus claims stake --agent ${AGENT} \"workspace://r9-eval/\$WS\" -m \"<id>\"
 5. Announce: bus send --agent ${AGENT} r9-eval \"Working on <id>: <title>\" -L mesh -L task-claim
 6. Implement in the workspace. All file operations use absolute WS_PATH.
    For jj: maw ws jj \$WS <args>. Do NOT cd into workspace and stay there.
-7. br comments add <id> \"Progress: ...\"
+7. bn bone comment add <id> \"Progress: ...\"
 8. Verify: cd \$WS_PATH && cargo check
 9. Describe: maw ws jj \$WS describe -m \"<id>: <summary>\"
 10. Merge: maw ws merge \$WS --destroy
-11. br close <id> --reason=\"Completed\"
-12. bus claims release --agent ${AGENT} \"bead://r9-eval/<id>\"
-13. br sync --flush-only
-14. bus send --agent ${AGENT} r9-eval \"Completed <id>: <title>\" -L mesh -L task-done
+11. bn done <id> --reason \"Completed\"
+12. bus claims release --agent ${AGENT} \"bone://r9-eval/<id>\"
+13. bus send --agent ${AGENT} r9-eval \"Completed <id>: <title>\" -L mesh -L task-done
 
 ## 3. CLOSE PARENT
 
-After all subtasks are closed:
-- br close <parent-id> --reason=\"All subtasks completed\"
-- br sync --flush-only
+After all subtasks are done:
+- bn done <parent-id> --reason \"All subtasks completed\"
 - bus send --agent ${AGENT} r9-eval \"All subtasks complete, parent closed\" -L mesh -L task-done
 
 ## Key Rules
 
-- RESUME CHECK is mandatory — you MUST check claims and bead comments first.
-- Do NOT redo work that's already completed (check bead status and existing code).
-- Do NOT create a new workspace for a bead that already has one.
-- Use the existing workspace path from bead comments for in-progress work.
+- RESUME CHECK is mandatory — you MUST check claims and bone comments first.
+- Do NOT redo work that's already completed (check bone state and existing code).
+- Do NOT create a new workspace for a bone that already has one.
+- Use the existing workspace path from bone comments for in-progress work.
 - All bus and crit commands use --agent ${AGENT}.
 - Post progress comments on every subtask you work on.
 - Run cargo check in each workspace before merging.
@@ -105,9 +102,9 @@ claude ${CLAUDE_MODEL:+--model "$CLAUDE_MODEL"} \
 echo ""
 echo "=== R9 Run Complete ==="
 echo "Verify:"
-echo "  br ready                              # should be empty"
-echo "  br show $PARENT_BEAD                  # closed"
-echo "  br show $S3 && br show $S4 && br show $S5  # all closed"
+echo "  bn next                               # should be empty"
+echo "  bn show $PARENT_BEAD                  # done"
+echo "  bn show $S3 && bn show $S4 && bn show $S5  # all done"
 echo "  jj log --no-graph -n 15               # subtask commits merged"
 echo "  bus history --agent $AGENT r9-eval    # resume + completion announcements"
 echo "  ls .workspaces/ 2>/dev/null           # should be empty (all destroyed)"

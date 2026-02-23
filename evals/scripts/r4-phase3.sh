@@ -46,7 +46,7 @@ Workflow:
       botbus send --agent ${DEV_AGENT} r4-eval \"Review feedback addressed: ${REVIEW_ID}, fixes in workspace ${WS_NAME} (${EVAL_DIR}/.workspaces/${WS_NAME})\" -L mesh -L review-response
 
 The workspace is ${WS_NAME}. Use absolute paths for file operations.
-Run br commands from the project root (${EVAL_DIR}), not from inside the workspace.
+Run bn commands from the project root (${EVAL_DIR}), not from inside the workspace.
 Read the full source files before making changes. Verify your fixes compile with cargo check.
 Use jj (via maw ws jj ${WS_NAME}), not git."
 

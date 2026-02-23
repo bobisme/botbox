@@ -7,8 +7,8 @@ use sha2::{Digest, Sha256};
 
 use crate::config::Config;
 use crate::error::ExitError;
-use crate::subprocess::{run_command, Tool};
-use crate::template::{update_managed_section, TemplateContext};
+use crate::subprocess::{Tool, run_command};
+use crate::template::{TemplateContext, update_managed_section};
 
 #[derive(Debug, Args)]
 pub struct SyncArgs {
@@ -80,7 +80,10 @@ pub(crate) const DESIGN_DOCS: &[(&str, &str)] = &[(
 
 /// Embedded reviewer prompts
 pub(crate) const REVIEWER_PROMPTS: &[(&str, &str)] = &[
-    ("reviewer.md", include_str!("../templates/reviewer.md.jinja")),
+    (
+        "reviewer.md",
+        include_str!("../templates/reviewer.md.jinja"),
+    ),
     (
         "reviewer-security.md",
         include_str!("../templates/reviewer-security.md.jinja"),
@@ -108,8 +111,9 @@ impl SyncArgs {
         }
 
         // Load config (.botbox.toml preferred, .botbox.json fallback)
-        let config_path = crate::config::find_config(&project_root)
-            .ok_or_else(|| ExitError::Config("No .botbox.toml or .botbox.json found".to_string()))?;
+        let config_path = crate::config::find_config(&project_root).ok_or_else(|| {
+            ExitError::Config("No .botbox.toml or .botbox.json found".to_string())
+        })?;
         let config = Config::load(&config_path)
             .with_context(|| format!("Failed to parse {}", config_path.display()))?;
 
@@ -205,6 +209,11 @@ impl SyncArgs {
         // Migrate bus hooks from bun .mjs to botbox run
         migrate_bus_hooks(&config);
 
+        // Migrate beads → bones (config, data, tooling files)
+        if !self.check {
+            migrate_beads_to_bones(&project_root, &config_path)?;
+        }
+
         // Auto-commit if changes were made
         if !changed_files.is_empty() && !self.no_commit {
             self.auto_commit(&project_root, &changed_files)?;
@@ -216,14 +225,18 @@ impl SyncArgs {
 
     fn handle_bare_repo(&self, project_root: &Path) -> Result<()> {
         // Canonicalize project_root to prevent path traversal
-        let project_root = project_root.canonicalize()
+        let project_root = project_root
+            .canonicalize()
             .context("canonicalizing project root")?;
 
         // Validate this is actually a botbox project
         if crate::config::find_config(&project_root).is_none()
             && crate::config::find_config(&project_root.join("ws/default")).is_none()
         {
-            anyhow::bail!("not a botbox project: no .botbox.toml or .botbox.json found in {}", project_root.display());
+            anyhow::bail!(
+                "not a botbox project: no .botbox.toml or .botbox.json found in {}",
+                project_root.display()
+            );
         }
 
         let mut args = vec!["exec", "default", "--", "botbox", "sync"];
@@ -250,23 +263,19 @@ impl SyncArgs {
             && crate::config::find_config(&project_root.join("ws/default")).is_some()
         {
             if self.check {
-                eprintln!(
-                    "Stale .botbox.json at bare repo root (will be removed on sync)"
+                eprintln!("Stale .botbox.json at bare repo root (will be removed on sync)");
+                return Err(
+                    ExitError::new(1, "Stale .botbox.json at bare repo root".to_string()).into(),
                 );
-                return Err(ExitError::new(
-                    1,
-                    "Stale .botbox.json at bare repo root".to_string(),
-                )
-                .into());
             } else {
                 match fs::remove_file(&root_json) {
                     Ok(()) => println!(
                         "Removed stale .botbox.json from bare repo root \
                          (authoritative config lives in ws/default/)"
                     ),
-                    Err(e) => eprintln!(
-                        "Warning: failed to remove stale .botbox.json at bare root: {e}"
-                    ),
+                    Err(e) => {
+                        eprintln!("Warning: failed to remove stale .botbox.json at bare root: {e}")
+                    }
                 }
             }
         }
@@ -404,7 +413,11 @@ impl SyncArgs {
         Ok(installed != current)
     }
 
-    fn check_managed_section_staleness(&self, project_root: &Path, config: &Config) -> Result<bool> {
+    fn check_managed_section_staleness(
+        &self,
+        project_root: &Path,
+        config: &Config,
+    ) -> Result<bool> {
         let agents_md = project_root.join("AGENTS.md");
         if !agents_md.exists() {
             return Ok(false); // No AGENTS.md to update
@@ -583,17 +596,14 @@ impl SyncArgs {
         }
 
         // Sanitize file names in commit message (strip control chars)
-        let files_str: String = sanitized.join(", ")
+        let files_str: String = sanitized
+            .join(", ")
             .chars()
             .filter(|c| !c.is_control())
             .collect();
         let message = format!("chore: botbox sync (updated {})", files_str);
 
-        run_command(
-            "jj",
-            &["describe", "-m", &message],
-            Some(project_root),
-        )?;
+        run_command("jj", &["describe", "-m", &message], Some(project_root))?;
 
         // Finalize: create new empty commit and advance main bookmark
         run_command("jj", &["new", "-m", ""], Some(project_root))?;
@@ -642,10 +652,7 @@ fn migrate_bus_hooks(config: &Config) {
             None => continue,
         };
 
-        let channel = hook
-            .get("channel")
-            .and_then(|c| c.as_str())
-            .unwrap_or("");
+        let channel = hook.get("channel").and_then(|c| c.as_str()).unwrap_or("");
 
         // Only migrate hooks for this project's channel
         if channel != name {
@@ -653,7 +660,10 @@ fn migrate_bus_hooks(config: &Config) {
         }
 
         // Skip hooks that already have a botbox description (already migrated)
-        let existing_desc = hook.get("description").and_then(|d| d.as_str()).unwrap_or("");
+        let existing_desc = hook
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
         if existing_desc.starts_with("botbox:") {
             continue;
         }
@@ -670,9 +680,9 @@ fn migrate_bus_hooks(config: &Config) {
         let is_router = cmd_strs.iter().any(|s| {
             s.contains("responder") || s.contains("respond.mjs") || s.contains("router.mjs")
         });
-        let is_reviewer = cmd_strs.iter().any(|s| {
-            s.contains("reviewer-loop") || s.contains("reviewer-loop.mjs")
-        });
+        let is_reviewer = cmd_strs
+            .iter()
+            .any(|s| s.contains("reviewer-loop") || s.contains("reviewer-loop.mjs"));
 
         if !is_router && !is_reviewer {
             continue;
@@ -686,9 +696,7 @@ fn migrate_bus_hooks(config: &Config) {
 
         // Remove old hook (ensure_bus_hook handles dedup by description,
         // but these legacy hooks have no description so we remove manually)
-        let remove = Tool::new("bus")
-            .args(&["hooks", "remove", &id])
-            .run();
+        let remove = Tool::new("bus").args(&["hooks", "remove", &id]).run();
 
         if remove.is_err() || !remove.as_ref().unwrap().success() {
             eprintln!("  Warning: failed to remove legacy hook {id}");
@@ -703,19 +711,31 @@ fn migrate_bus_hooks(config: &Config) {
             match crate::subprocess::ensure_bus_hook(
                 &description,
                 &[
-                    "--agent", &agent,
-                    "--channel", name,
-                    "--claim", &claim_uri,
-                    "--claim-owner", &agent,
-                    "--cwd", spawn_cwd,
-                    "--ttl", "600",
+                    "--agent",
+                    &agent,
+                    "--channel",
+                    name,
+                    "--claim",
+                    &claim_uri,
+                    "--claim-owner",
+                    &agent,
+                    "--cwd",
+                    spawn_cwd,
+                    "--ttl",
+                    "600",
                     "--",
-                    "botty", "spawn",
-                    "--env-inherit", env_inherit,
-                    "--name", &spawn_name,
-                    "--cwd", spawn_cwd,
+                    "botty",
+                    "spawn",
+                    "--env-inherit",
+                    env_inherit,
+                    "--name",
+                    &spawn_name,
+                    "--cwd",
+                    spawn_cwd,
                     "--",
-                    "botbox", "run", "responder",
+                    "botbox",
+                    "run",
+                    "responder",
                 ],
             ) {
                 Ok(_) => println!("  Migrated router hook {id} → botbox run responder"),
@@ -743,29 +763,145 @@ fn migrate_bus_hooks(config: &Config) {
             match crate::subprocess::ensure_bus_hook(
                 &description,
                 &[
-                    "--agent", &agent,
-                    "--channel", name,
-                    "--mention", &reviewer_agent,
-                    "--claim", &claim_uri,
-                    "--claim-owner", &reviewer_agent,
-                    "--ttl", "600",
-                    "--priority", "1",
-                    "--cwd", spawn_cwd,
+                    "--agent",
+                    &agent,
+                    "--channel",
+                    name,
+                    "--mention",
+                    &reviewer_agent,
+                    "--claim",
+                    &claim_uri,
+                    "--claim-owner",
+                    &reviewer_agent,
+                    "--ttl",
+                    "600",
+                    "--priority",
+                    "1",
+                    "--cwd",
+                    spawn_cwd,
                     "--",
-                    "botty", "spawn",
-                    "--env-inherit", env_inherit,
-                    "--name", &reviewer_agent,
-                    "--cwd", spawn_cwd,
+                    "botty",
+                    "spawn",
+                    "--env-inherit",
+                    env_inherit,
+                    "--name",
+                    &reviewer_agent,
+                    "--cwd",
+                    spawn_cwd,
                     "--",
-                    "botbox", "run", "reviewer-loop",
-                    "--agent", &reviewer_agent,
+                    "botbox",
+                    "run",
+                    "reviewer-loop",
+                    "--agent",
+                    &reviewer_agent,
                 ],
             ) {
-                Ok(_) => println!("  Migrated reviewer hook {id} → botbox run reviewer-loop --agent {reviewer_agent}"),
-                Err(e) => eprintln!("  Warning: failed to re-register reviewer hook for {reviewer_agent}: {e}"),
+                Ok(_) => println!(
+                    "  Migrated reviewer hook {id} → botbox run reviewer-loop --agent {reviewer_agent}"
+                ),
+                Err(e) => eprintln!(
+                    "  Warning: failed to re-register reviewer hook for {reviewer_agent}: {e}"
+                ),
             }
         }
     }
+}
+
+/// Migrate beads → bones: config key, data directory, .maw.toml, .critignore, .gitignore.
+///
+/// This is idempotent — checks each step before acting.
+fn migrate_beads_to_bones(project_root: &Path, config_path: &Path) -> Result<()> {
+    let beads_dir = project_root.join(".beads");
+    let bones_dir = project_root.join(".bones");
+
+    // 1. If config has `tools.beads` (in TOML), rename to `tools.bones`
+    //    The serde alias handles deserialization, but we want the file itself updated.
+    if config_path.exists() {
+        let content = fs::read_to_string(config_path)?;
+        if content.contains("beads") && !content.contains("bones") {
+            let updated = content.replace("beads = ", "bones = ");
+            fs::write(config_path, updated)?;
+            println!("Migrated config: tools.beads → tools.bones");
+        }
+    }
+
+    // 2. If .beads/ exists and .bones/ doesn't → run `bn init` + migrate data
+    if beads_dir.exists() && !bones_dir.exists() {
+        let beads_db = beads_dir.join("beads.db");
+        // Initialize bones first
+        match run_command("bn", &["init"], Some(project_root)) {
+            Ok(_) => println!("Initialized bones"),
+            Err(e) => eprintln!("Warning: bn init failed: {e}"),
+        }
+        // Migrate data if beads.db exists
+        if beads_db.exists() {
+            let db_path = beads_db.to_string_lossy().to_string();
+            match run_command(
+                "bn",
+                &["data", "migrate-from-beads", "--beads-db", &db_path],
+                Some(project_root),
+            ) {
+                Ok(_) => println!("Migrated beads data to bones"),
+                Err(e) => eprintln!("Warning: beads data migration failed: {e}"),
+            }
+        }
+    }
+
+    // 3. Update .maw.toml: remove .beads/** entry (set auto_resolve_from_main to empty)
+    let maw_toml = project_root.join(".maw.toml");
+    if maw_toml.exists() {
+        let content = fs::read_to_string(&maw_toml)?;
+        if content.contains(".beads/") {
+            // Remove the .beads/** line and set to empty array if it was the only entry
+            let updated = content
+                .lines()
+                .map(|line| {
+                    if line.contains(".beads/") {
+                        // Skip this line
+                        None
+                    } else {
+                        Some(line)
+                    }
+                })
+                .flatten()
+                .collect::<Vec<_>>()
+                .join("\n");
+            // If the array is now effectively empty, replace with empty
+            let updated = updated.replace(
+                "auto_resolve_from_main = [\n]",
+                "auto_resolve_from_main = []",
+            );
+            fs::write(&maw_toml, format!("{updated}\n"))?;
+            println!("Updated .maw.toml: removed .beads/** entry");
+        }
+    }
+
+    // 4. Update .critignore: .beads/ → .bones/
+    let critignore = project_root.join(".critignore");
+    if critignore.exists() {
+        let content = fs::read_to_string(&critignore)?;
+        if content.contains(".beads/") {
+            let updated = content.replace(".beads/", ".bones/");
+            fs::write(&critignore, updated)?;
+            println!("Updated .critignore: .beads/ → .bones/");
+        }
+    }
+
+    // 5. Update .gitignore: replace .bv/ with .bones/
+    let gitignore = project_root.join(".gitignore");
+    if gitignore.exists() {
+        let content = fs::read_to_string(&gitignore)?;
+        let mut updated = content.clone();
+        if updated.contains(".bv/") {
+            updated = updated.replace(".bv/", ".bones/");
+        }
+        if updated != content {
+            fs::write(&gitignore, updated)?;
+            println!("Updated .gitignore: replaced .bv/ with .bones/");
+        }
+    }
+
+    Ok(())
 }
 
 /// Search up the directory tree for a .jj directory (like jj itself does).
@@ -874,8 +1010,10 @@ mod tests {
     fn test_reviewer_prompts_embedded() {
         assert_eq!(REVIEWER_PROMPTS.len(), 2);
         assert!(REVIEWER_PROMPTS.iter().any(|(n, _)| *n == "reviewer.md"));
-        assert!(REVIEWER_PROMPTS
-            .iter()
-            .any(|(n, _)| *n == "reviewer-security.md"));
+        assert!(
+            REVIEWER_PROMPTS
+                .iter()
+                .any(|(n, _)| *n == "reviewer-security.md")
+        );
     }
 }

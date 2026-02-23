@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::Args;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use crate::config::Config;
 use crate::subprocess::Tool;
@@ -64,8 +64,7 @@ impl DoctorArgs {
     pub fn execute(&self) -> anyhow::Result<()> {
         let project_root = match self.project_root.clone() {
             Some(p) => p,
-            None => std::env::current_dir()
-                .context("could not determine current directory")?,
+            None => std::env::current_dir().context("could not determine current directory")?,
         };
 
         // Check config at root, then ws/default/ (maw v2 bare repo)
@@ -115,11 +114,13 @@ impl DoctorArgs {
                 version: None,
                 present: false,
             });
-            report.issues.push("Tool not found: pi (default agent runtime)".to_string());
+            report
+                .issues
+                .push("Tool not found: pi (default agent runtime)".to_string());
         }
 
         let required_tools = vec![
-            ("beads (br)", config.tools.beads, "br"),
+            ("bones (bn)", config.tools.bones, "bn"),
             ("maw", config.tools.maw, "maw"),
             ("crit", config.tools.crit, "crit"),
             ("botbus (bus)", config.tools.botbus, "bus"),
@@ -164,7 +165,9 @@ impl DoctorArgs {
         });
 
         if !agents_exists {
-            report.issues.push(".agents/botbox/ directory not found".to_string());
+            report
+                .issues
+                .push(".agents/botbox/ directory not found".to_string());
         }
 
         let agents_md = project_root.join("AGENTS.md");
@@ -186,12 +189,16 @@ impl DoctorArgs {
         });
 
         if !claude_md_exists {
-            report.issues.push("CLAUDE.md symlink not found".to_string());
+            report
+                .issues
+                .push("CLAUDE.md symlink not found".to_string());
         }
 
         // Strict mode: version compatibility check (simplified)
         if self.strict && !report.issues.is_empty() {
-            report.issues.insert(0, "strict mode: found issues".to_string());
+            report
+                .issues
+                .insert(0, "strict mode: found issues".to_string());
         }
 
         let issue_count = report.issues.len();
@@ -214,7 +221,8 @@ impl DoctorArgs {
             return Err(crate::error::ExitError::new(
                 std::cmp::min(issue_count, 125) as u8,
                 format!("{} issue(s) found", issue_count),
-            ).into());
+            )
+            .into());
         }
 
         Ok(())
@@ -232,7 +240,11 @@ impl DoctorArgs {
         for tool in &report.tools {
             if tool.enabled {
                 if tool.present {
-                    println!("  ✓ {}: {}", tool.name, tool.version.as_ref().unwrap_or(&"OK".to_string()));
+                    println!(
+                        "  ✓ {}: {}",
+                        tool.name,
+                        tool.version.as_ref().unwrap_or(&"OK".to_string())
+                    );
                 } else {
                     println!("  ✗ {}: NOT FOUND", tool.name);
                 }
@@ -263,9 +275,13 @@ impl DoctorArgs {
     }
 
     fn print_text(&self, report: &DoctorReport) {
-        println!("botbox-doctor  project={}  version={}  agent={}  channel={}",
-            report.config.project, report.config.version,
-            report.config.agent, report.config.channel);
+        println!(
+            "botbox-doctor  project={}  version={}  agent={}  channel={}",
+            report.config.project,
+            report.config.version,
+            report.config.agent,
+            report.config.channel
+        );
 
         for tool in &report.tools {
             let status = if !tool.enabled {

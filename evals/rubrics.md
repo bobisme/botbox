@@ -54,7 +54,7 @@ The code should be realistic — not a contrived CTF challenge. It should look l
 ```bash
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
-botbox init --name review-eval --type api --tools beads,maw,crit,bus,botty --init-beads --no-interactive
+botbox init --name review-eval --type api --tools bones,maw,crit,bus,botty --init-bones --no-interactive
 cargo init --name review-eval
 crit init
 
@@ -217,7 +217,7 @@ The dev agent sees reviewer comments on a blocked review and must handle each on
 
 - **Fix**: Make a code change, commit, reply "Fixed in <change>"
 - **Address**: Reply explaining why the current approach is correct (won't-fix)
-- **Defer**: Create a bead, reply "Filed <bead-id> for follow-up"
+- **Defer**: Create a bone, reply "Filed <bone-id> for follow-up"
 
 **Key question**: Can the agent distinguish "must fix before merge" from "should fix" from "nice to have"?
 
@@ -464,7 +464,7 @@ Test the full dev-agent architecture end-to-end: triage → start → work → r
 ```bash
 EVAL_DIR=$(mktemp -d) && cd "$EVAL_DIR"
 jj git init
-botbox init --name r4-eval --type api --tools beads,maw,crit,bus,botty --init-beads --no-interactive
+botbox init --name r4-eval --type api --tools bones,maw,crit,bus,botty --init-bones --no-interactive
 cargo init --name r4-eval
 crit init && maw init
 
@@ -473,9 +473,9 @@ REVIEWER=$(bus generate-name)
 bus mark-read --agent "$DEV_AGENT" r4-eval
 bus mark-read --agent "$REVIEWER" r4-eval
 
-br create --title="Add file serving endpoint at GET /files/:name" \
-  --description="Create a GET /files/:name endpoint that reads files from ./data and returns contents. Return 404 if not found, 500 on read errors." \
-  --type=task --priority=2
+bn create --title "Add file serving endpoint at GET /files/:name" \
+  --description "Create a GET /files/:name endpoint that reads files from ./data and returns contents. Return 404 if not found, 500 on read errors." \
+  --kind task
 
 mkdir -p data && echo "Hello from test file" > data/test.txt
 jj describe -m "initial project setup" && jj new
@@ -490,10 +490,10 @@ EOF
 ### Phases (5 sequential `claude -p` invocations)
 
 **Phase 1: Dev Agent — Work + Review Request**
-- Triage bead, create workspace, implement endpoint
+- Triage bone, create workspace, implement endpoint
 - Create crit review, request reviewer
-- Do NOT close bead or merge workspace — stop after review request
-- Verify: bead in_progress, workspace exists, review created, code compiles
+- Do NOT close boneor merge workspace — stop after review request
+- Verify: bonein_progress, workspace exists, review created, code compiles
 
 **Phase 2: Reviewer — Review**
 - Proven R1 v2 prompt (clippy, web search, severity levels, evidence-grounding)
@@ -516,9 +516,8 @@ EOF
 - Verify LGTM: `crit review <id>`
 - Mark review merged: `crit reviews merge <id>` (NOT `close`)
 - Merge workspace: `maw ws merge $WS --destroy` (no `-f`)
-- Close bead: `br close <id>`
+- Close bone: `bn done <id>`
 - Release claims: `bus claims release --agent $DEV --all`
-- Sync: `br sync --flush-only`
 - Announce: `bus send ... -L task-done`
 
 ### Scoring (95 points)
@@ -527,11 +526,11 @@ EOF
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Triage: found bead, groomed, claimed | 10 | `br show` shows in_progress, `bus claims` shows claim |
+| Triage: found bone, groomed, claimed | 10 | `bn show` shows in_progress, `bus claims` shows claim |
 | Start: workspace created, announced | 5 | `maw ws list` shows workspace, bus history shows task-claim |
 | Implementation: endpoint works | 10 | `cargo check` clean in workspace |
 | Review created and requested | 10 | `crit reviews list` shows review, requested reviewer |
-| Deferred finish: bead still open, workspace intact | 5 | `br show` still in_progress, `maw ws list` still shows workspace |
+| Deferred finish: bonestill open, workspace intact | 5 | `bn show` still in_progress, `maw ws list` still shows workspace |
 
 #### Phase 2: Reviewer (20 points)
 
@@ -565,8 +564,8 @@ EOF
 | Verified LGTM before merge | 2 | Agent reads review first |
 | `crit reviews merge` (not close) | 2 | `crit reviews list` shows merged |
 | `maw ws merge --destroy` (no -f) | 2 | Workspace removed, code on main |
-| `br close` + `bus claims release --all` | 2 | Bead closed, no active claims |
-| `br sync --flush-only` + announce | 2 | bus history shows task-done |
+| `bn done` + `bus claims release --all` | 2 | Bead closed, no active claims |
+| (sync removed — bones is event-sourced) + announce | 2 | bus history shows task-done |
 
 ```
 Phase 1 (Work + Review):   40 points
@@ -587,7 +586,7 @@ Excellent: ≥81 (85%)
 - `crit reviews merge` not `close` (R3-1 timeout fix)
 - `maw ws merge --destroy` without `-f` (maw v0.15.0)
 - `maw ws jj $WS` for jj commands in workspace
-- Run `br` from project root, not inside workspace
+- Run `bn` from project root, not inside workspace
 - All commands use `--agent`
 - Do NOT cd into workspace permanently
 - Phase 3/4 auto-award if reviewer LGTMs on first pass (code may be clean)
@@ -605,13 +604,13 @@ Excellent: ≥81 (85%)
 
 ### Concept
 
-Single Opus agent receives a complex feature request as one bead. Must decompose it into subtasks with correct dependencies, then execute them in order following worker-loop.md. Tests planning ability — can the agent recognize a task is too large, create a non-trivial dependency graph, and systematically work through it?
+Single Opus agent receives a complex feature request as one bone. Must decompose it into subtasks with correct dependencies, then execute them in order following worker-loop.md. Tests planning ability — can the agent recognize a task is too large, create a non-trivial dependency graph, and systematically work through it?
 
 2 phases: Phase 1 = triage + decompose (stop before coding), Phase 2 = execute subtasks via worker loop.
 
 ### Feature Request
 
-**"Build task management API"** — Rust/Axum, in-memory or SQLite. The bead description mentions "Store tasks in SQLite for persistence" but Cargo.toml has no DB crate. This is the adaptability test — agent must notice the gap and make a decision.
+**"Build task management API"** — Rust/Axum, in-memory or SQLite. The bonedescription mentions "Store tasks in SQLite for persistence" but Cargo.toml has no DB crate. This is the adaptability test — agent must notice the gap and make a decision.
 
 Endpoints: CRUD for tasks, tag management, filtering + pagination, overdue query. Natural decomposition into 5-7 subtasks with a diamond dependency graph (not purely linear).
 
@@ -619,8 +618,8 @@ Endpoints: CRUD for tasks, tag management, filtering + pagination, overdue query
 
 ```bash
 bash evals/scripts/r7-setup.sh
-# Creates eval dir, Cargo.toml (no SQLite crate), minimal main.rs, feature request bead.
-# Outputs EVAL_DIR, DEV_AGENT, PARENT_BEAD.
+# Creates eval dir, Cargo.toml (no SQLite crate), minimal main.rs, feature request bone.
+# Outputs EVAL_DIR, DEV_AGENT, PARENT_BONE.
 # Source .eval-env in the eval dir before running phases.
 ```
 
@@ -642,40 +641,40 @@ bash evals/scripts/r7-phase2.sh
 
 | Category | Criterion | Pts | Verification |
 |----------|-----------|-----|-------------|
-| **Triage** | Found bead via `br ready` / `bv --robot-next` | 3 | `br show` shows interaction |
-| | Recognized bead is too large for one session | 3 | Creates child beads instead of jumping to code |
-| | Groomed parent bead (acceptance criteria, labels) | 4 | `br show <parent>` updated |
-| **Subtasks** | Created 4-7 child beads with distinct scopes | 5 | `br list` count |
-| | Titles are actionable (imperative form) | 3 | `br show` each |
+| **Triage** | Found bonevia `bn next` / `bn next` | 3 | `bn show` shows interaction |
+| | Recognized boneis too large for one session | 3 | Creates child bones instead of jumping to code |
+| | Groomed parent bone(acceptance criteria, labels) | 4 | `bn show <parent>` updated |
+| **Subtasks** | Created 4-7 child bones with distinct scopes | 5 | `bn list` count |
+| | Titles are actionable (imperative form) | 3 | `bn show` each |
 | | Descriptions include acceptance criteria | 4 | What "done" looks like per subtask |
 | | Priorities reflect ordering | 3 | Foundation = higher priority than tests |
-| **Deps** | Dependencies wired with `br dep add` (not just comments) | 5 | `br dep tree <parent>` shows edges |
-| | Root subtask has no parents (unblocked) | 3 | `br ready` shows it first |
+| **Deps** | Dependencies wired with `bn triage dep add` (not just comments) | 5 | `bn triage graph <parent>` shows edges |
+| | Root subtask has no parents (unblocked) | 3 | `bn next` shows it first |
 | | Downstream blocked by actual prerequisites | 4 | Filtering blocked by CRUD, not unrelated |
 | | Graph has parallelism (not purely linear) | 3 | ≥2 tasks share same prerequisite |
 | **Adapt** | Noticed SQLite vs Cargo.toml discrepancy | 2 | Comment or subtask mentions it |
 | | Made explicit decision (add crate, use in-memory, or defer) | 3 | Any documented decision = full marks |
 
 **Failure modes:**
-- Skips decomposition entirely (does all in one bead): 0/45, max total 15/95 (FAIL)
-- Creates subtasks but no `br dep add`: 0/15 on deps
+- Skips decomposition entirely (does all in one bone): 0/45, max total 15/95 (FAIL)
+- Creates subtasks but no `bn triage dep add`: 0/15 on deps
 - Purely linear chain: 2/3 on parallelism (recognizes order, misses independence)
 
 #### Phase 2 — Execution (50 points)
 
 | Category | Criterion | Pts | Verification |
 |----------|-----------|-----|-------------|
-| **Loop** | Picks subtasks respecting dep order (never starts blocked bead) | 5 | `br list --format json` timestamps |
+| **Loop** | Picks subtasks respecting dep order (never starts blocked bone) | 5 | `bn list --format json` timestamps |
 | | Start protocol per subtask (in_progress, claim, workspace, announce) | 5 | `bus history`, `maw ws list` |
-| | Progress comment per subtask | 5 | `br comments <id>` |
-| | Finish protocol per subtask (close, merge ws, release, sync, announce) | 5 | `br show` closed, no leaked workspaces |
+| | Progress comment per subtask | 5 | `bn bone comment list <id>` |
+| | Finish protocol per subtask (close, merge ws, release, sync, announce) | 5 | `bn show` closed, no leaked workspaces |
 | | Completed ≥3 subtasks (partial: 2=15, 1=10, 0=0) | 5 | Count of closed children |
 | **Quality** | Code compiles (`cargo check`) | 5 | Run after all merges |
 | | At least CRUD endpoints exist | 5 | Route definitions in source |
 | | Storage layer exists | 3 | Data model struct + HashMap/Vec/SQLite |
 | | Any test passes | 2 | `cargo test` |
 | **Coherence** | Later subtasks build on earlier (no reimplementation) | 4 | Code inspection |
-| | Parent bead closed after all children | 3 | `br show <parent>` |
+| | Parent boneclosed after all children | 3 | `bn show <parent>` |
 | | Final announcement references feature completion | 3 | `bus history` |
 
 ```
@@ -698,16 +697,16 @@ Excellent: ≥81 (85%)
 
 After Phase 1:
 ```bash
-br dep tree $PARENT_BEAD          # dependency graph
-br ready                          # first unblocked subtask(s)
-br comments $PARENT_BEAD          # decomposition plan + SQLite decision
+bn triage graph $PARENT_BONE          # dependency graph
+bn next                          # first unblocked subtask(s)
+bn bone comment list $PARENT_BONE          # decomposition plan + SQLite decision
 bus history r7-eval --limit 10 # planning announcement
 ```
 
 After Phase 2:
 ```bash
-br list --format json             # all beads with status
-br dep tree $PARENT_BEAD          # all should be closed
+bn list --format json             # all bones with status
+bn triage graph $PARENT_BONE          # all should be closed
 cargo check && cargo test         # code quality
 maw ws list                       # no leaked workspaces
 bus claims --agent $DEV_AGENT  # no active claims
@@ -889,20 +888,20 @@ bus history r8-eval --limit 10
 
 ### Concept
 
-Test whether a dev agent can dispatch Haiku workers in parallel for independent beads, monitor their progress via botbus, and merge completed work — rather than doing tasks sequentially. This is the core capability that separates a "lead dev" agent from a "worker" agent.
+Test whether a dev agent can dispatch Haiku workers in parallel for independent bones, monitor their progress via botbus, and merge completed work — rather than doing tasks sequentially. This is the core capability that separates a "lead dev" agent from a "worker" agent.
 
 ### Setup
 
 ```bash
 bash evals/scripts/r6-setup.sh
-# Creates eval dir with Rust/Axum project and 3 independent beads.
-# Outputs EVAL_DIR, DEV_AGENT, BEAD1-3.
+# Creates eval dir with Rust/Axum project and 3 independent bones.
+# Outputs EVAL_DIR, DEV_AGENT, BONE1-3.
 # Source .eval-env in the eval dir before running.
 ```
 
 The environment includes:
 - Rust/Axum skeleton with `AppState` (request counter) and `/health` endpoint
-- 3 pre-groomed, independent P2 beads:
+- 3 pre-groomed, independent P2 bones:
 
 | Bead | Task | Complexity |
 |------|------|------------|
@@ -910,7 +909,7 @@ The environment includes:
 | 2 | `POST /echo` → `{"echo":"<body>"}` | Trivial |
 | 3 | `GET /metrics` + request counter middleware | Easy |
 
-All beads have acceptance criteria and testing strategy pre-written. No grooming needed — the dev agent should recognize these as dispatch-ready.
+All bones have acceptance criteria and testing strategy pre-written. No grooming needed — the dev agent should recognize these as dispatch-ready.
 
 ### Execution
 
@@ -922,13 +921,13 @@ bash evals/scripts/r6-run.sh
 ```
 
 The dev agent is prompted to:
-1. Triage `br ready` — recognize 3 independent beads
+1. Triage `bn next` — recognize 3 independent bones
 2. For each: create workspace, generate worker identity, launch `claude --model haiku -p "..." &`
 3. Dispatch ALL 3 before waiting for any to complete
 4. Monitor via botbus for completion announcements
-5. Merge each workspace, close beads, announce
+5. Merge each workspace, close bones, announce
 
-Workers implement tasks but do NOT close beads or merge workspaces (the dev agent handles coordination).
+Workers implement tasks but do NOT close bones or merge workspaces (the dev agent handles coordination).
 
 ### Scoring (70 points)
 
@@ -936,10 +935,10 @@ Workers implement tasks but do NOT close beads or merge workspaces (the dev agen
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Recognizes multiple independent beads | 5 | `br ready`, identifies all 3 |
-| Creates separate workspace for each bead | 5 | `maw ws create` × 3 |
+| Recognizes multiple independent bones | 5 | `bn next`, identifies all 3 |
+| Creates separate workspace for each bone| 5 | `maw ws create` × 3 |
 | Generates worker identities | 3 | `bus generate-name` × 3 |
-| Constructs correct worker prompts (bead ID, workspace path, agent identity) | 5 | Prompt includes all 3 fields |
+| Constructs correct worker prompts (bone ID, workspace path, agent identity) | 5 | Prompt includes all 3 fields |
 | Launches all workers before any completes — true parallelism | 7 | All 3 backgrounded before any polling |
 | Workers use correct model (haiku or configured) | 5 | `--model haiku` in launch command |
 
@@ -947,9 +946,9 @@ Workers implement tasks but do NOT close beads or merge workspaces (the dev agen
 
 | Criterion | Points | Verification |
 |-----------|--------|-------------|
-| Polls for worker completions | 5 | `bus inbox` or bead comment checks |
+| Polls for worker completions | 5 | `bus inbox` or bonecomment checks |
 | Detects worker completion announcements | 5 | Recognizes `-L task-done` messages |
-| Tracks which beads are done vs pending | 5 | Doesn't try to merge unfinished work |
+| Tracks which bones are done vs pending | 5 | Doesn't try to merge unfinished work |
 
 #### Merge (15 points)
 
@@ -957,7 +956,7 @@ Workers implement tasks but do NOT close beads or merge workspaces (the dev agen
 |-----------|--------|-------------|
 | Verifies worker changes exist | 3 | `maw ws jj <ws> diff` or similar |
 | Merges workspaces correctly | 4 | `maw ws merge <ws> --destroy` × completed |
-| Closes beads | 4 | `br close` × completed |
+| Closes bones | 4 | `bn done` × completed |
 | Announces each completion | 4 | `bus send -L task-done` × completed |
 
 #### Protocol (10 points)
@@ -990,8 +989,8 @@ Excellent: ≥60 (86%)
 
 ```bash
 source .eval-env
-br ready                    # should be empty (all 3 closed)
-br show $BEAD1 && br show $BEAD2 && br show $BEAD3  # all closed
+bn next                    # should be empty (all 3 closed)
+bn show $BONE1 && bn show $BONE2 && bn show $BONE3  # all closed
 jj log --no-graph -n 10     # worker commits merged
 bus history --agent $DEV_AGENT r6-eval  # dispatch + merge timeline
 ls .workspaces/ 2>/dev/null  # should be empty (all destroyed)
@@ -1006,7 +1005,7 @@ cargo check                  # merged code still compiles
 
 ### v2 Ideas
 
-- **Failure handling**: Add a 4th bead that's impossible (e.g., "Add PostgreSQL pooling" with no pg crate). Score: does the dev agent detect the stuck worker and move on?
+- **Failure handling**: Add a 4th bonethat's impossible (e.g., "Add PostgreSQL pooling" with no pg crate). Score: does the dev agent detect the stuck worker and move on?
 - **Worker timeout**: Kill a worker process mid-task. Score: does the dev agent notice and reassign?
 - **Code review**: Dev agent reviews worker output before merging. Score: does it catch obvious issues?
 
@@ -1016,19 +1015,19 @@ cargo check                  # merged code still compiles
 
 ### Concept
 
-Test whether an agent can resume mid-task after a session crash by reading bead comments and not duplicating completed work. The agent inherits a crashed session's identity, discovers the state from claims and bead comments, and completes all remaining work.
+Test whether an agent can resume mid-task after a session crash by reading bonecomments and not duplicating completed work. The agent inherits a crashed session's identity, discovers the state from claims and bonecomments, and completes all remaining work.
 
 ### Test Code
 
 Rust/Axum items CRUD API. Setup script (`evals/scripts/r9-setup.sh`) creates:
 
 - **Baseline**: `/health` endpoint, `Item` struct, `AppState` with `Arc<Mutex<Vec<Item>>>` and `AtomicU64` ID counter
-- **Parent bead**: "Build items CRUD API" with 5 subtask children in a linear dependency chain
-- **Subtasks 1-2 (closed, merged)**: `GET /items` (src/list.rs) and `POST /items` (src/create.rs) — code is in main branch, beads closed with progress comments
-- **Subtask 3 (crash state)**: `GET /items/:id` — bead in_progress, workspace exists with partial `src/get_item.rs` (handler stub that unwraps instead of returning 404, not wired into router). Agent holds bead and workspace claims. Bead comments describe what was done and what remains.
+- **Parent bone**: "Build items CRUD API" with 5 subtask children in a linear dependency chain
+- **Subtasks 1-2 (closed, merged)**: `GET /items` (src/list.rs) and `POST /items` (src/create.rs) — code is in main branch, bones closed with progress comments
+- **Subtask 3 (crash state)**: `GET /items/:id` — bonein_progress, workspace exists with partial `src/get_item.rs` (handler stub that unwraps instead of returning 404, not wired into router). Agent holds boneand workspace claims. Bead comments describe what was done and what remains.
 - **Subtasks 4-5 (ready, blocked)**: `DELETE /items/:id` and `PUT /items/:id` — blocked by dependency chain
 
-The agent receives the same identity as the crashed session and a prompt saying "you are resuming after a previous session ended unexpectedly" — but is NOT told which bead, which subtask, or what's already done.
+The agent receives the same identity as the crashed session and a prompt saying "you are resuming after a previous session ended unexpectedly" — but is NOT told which bone, which subtask, or what's already done.
 
 ### Execution
 
@@ -1048,7 +1047,7 @@ bash evals/scripts/r9-run.sh
 | Item | Points | How to verify |
 |------|--------|---------------|
 | Checks claims before acting | 5 | Agent runs `bus claims --agent` as first action |
-| Reads bead comments on claimed bead | 5 | Agent runs `br comments <s3>` or `br show <s3>` |
+| Reads bonecomments on claimed bone| 5 | Agent runs `bn bone comment list <s3>` or `bn show <s3>` |
 | Identifies subtasks 1-2 as completed | 5 | Agent acknowledges they're closed/done (doesn't attempt to redo) |
 | Identifies subtask 3 as in-progress with workspace | 5 | Agent finds the existing workspace and partial code |
 
@@ -1064,9 +1063,9 @@ bash evals/scripts/r9-run.sh
 
 | Item | Points | How to verify |
 |------|--------|---------------|
-| Completes subtask 3 (GET /items/:id) | 8 | Handler works with 404 handling, wired into router, bead closed |
-| Completes subtask 4 (DELETE /items/:id) | 6 | Handler works, new workspace created, bead closed |
-| Completes subtask 5 (PUT /items/:id) | 6 | Handler works, new workspace created, bead closed |
+| Completes subtask 3 (GET /items/:id) | 8 | Handler works with 404 handling, wired into router, boneclosed |
+| Completes subtask 4 (DELETE /items/:id) | 6 | Handler works, new workspace created, boneclosed |
+| Completes subtask 5 (PUT /items/:id) | 6 | Handler works, new workspace created, boneclosed |
 | All code compiles (`cargo check`) | 5 | Final `cargo check` passes with all endpoints |
 
 #### Protocol Compliance (10 points)
@@ -1074,9 +1073,9 @@ bash evals/scripts/r9-run.sh
 | Item | Points | How to verify |
 |------|--------|---------------|
 | --agent on bus and crit commands | 3 | Grep session transcript for bus/crit commands |
-| Progress comments on each subtask | 3 | `br comments` shows progress for S3, S4, S5 |
+| Progress comments on each subtask | 3 | `bn bone comment list` shows progress for S3, S4, S5 |
 | Bus announcements | 2 | Sends task-claim and task-done messages |
-| Parent bead closed | 2 | Parent bead status=closed after all subtasks done |
+| Parent boneclosed | 2 | Parent bonestatus=closed after all subtasks done |
 
 **Pass**: ≥49 (70%), **Excellent**: ≥60 (86%)
 
@@ -1086,9 +1085,9 @@ bash evals/scripts/r9-run.sh
 
 ```bash
 source .eval-env
-br ready                                        # should be empty
-br show $PARENT_BEAD                             # closed
-br show $S3 && br show $S4 && br show $S5        # all closed
+bn next                                        # should be empty
+bn show $PARENT_BONE                             # closed
+bn show $S3 && bn show $S4 && bn show $S5        # all closed
 jj log --no-graph -n 15                          # subtask commits merged
 bus history --agent $AGENT r9-eval               # resume + completion announcements
 ls .workspaces/ 2>/dev/null                      # should be empty (all destroyed)
@@ -1099,13 +1098,13 @@ cargo check                                      # merged code compiles
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| R9-1 | Opus | 69/70 (99%) | Perfect crash recovery: detected claims, read bead comments, completed S3 in existing workspace without redoing S1/S2, then finished S4+S5. All code compiles, all beads closed, parent closed. Only deduction: no progress comment added to S3 after completing the resumed work (pre-crash comments only). Total time ~6 min for 3 subtasks. |
+| R9-1 | Opus | 69/70 (99%) | Perfect crash recovery: detected claims, read bonecomments, completed S3 in existing workspace without redoing S1/S2, then finished S4+S5. All code compiles, all bones closed, parent closed. Only deduction: no progress comment added to S3 after completing the resumed work (pre-crash comments only). Total time ~6 min for 3 subtasks. |
 
 ### v2 Ideas
 
 - **Reviewer timeout**: Review requested but never completed — agent should re-request or escalate
 - **Conflicting workspace**: Workspace has merge conflicts from concurrent work
-- **Lost bus message**: Claim exists but completion announcement never sent — agent must infer from bead status
+- **Lost bus message**: Claim exists but completion announcement never sent — agent must infer from bonestatus
 
 ---
 
@@ -1113,7 +1112,7 @@ cargo check                                      # merged code compiles
 
 **Bead**: bd-2s1 · **What it tests**: Agent discovers a bug in an external project, follows report-issue.md to file it cross-project via the #projects registry, and completes its own task.
 
-**Scenario**: Agent works in r5-app on a POST /users bead that references r5-utils's validate_name() function. The function has an off-by-one bug (checks `< 1` instead of `< 2` for minimum length). The bead explicitly asks the agent to verify correctness and follow report-issue.md if issues are found.
+**Scenario**: Agent works in r5-app on a POST /users bonethat references r5-utils's validate_name() function. The function has an off-by-one bug (checks `< 1` instead of `< 2` for minimum length). The boneexplicitly asks the agent to verify correctness and follow report-issue.md if issues are found.
 
 **Key difference from other evals**: Two separate project repos, isolated botbus (BOTBUS_DATA_DIR), tests the report-issue.md protocol end-to-end.
 
@@ -1141,7 +1140,7 @@ cargo check                                      # merged code compiles
 
 | Item | Points | How to verify |
 |------|--------|---------------|
-| Creates bead in r5-utils (correct project) | 8 | `br ready` in $UTILS_DIR shows new bug bead |
+| Creates bonein r5-utils (correct project) | 8 | `bn next` in $UTILS_DIR shows new bug bone|
 | Bead has clear title and description | 6 | Title describes the bug, description has details |
 | Includes reproduction info or code reference | 6 | Description mentions the < 1 vs < 2 discrepancy |
 
@@ -1193,7 +1192,7 @@ cargo check                                      # merged code compiles
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
 | Reads inbox, finds task request | 3 | `bus inbox` called with correct agent |
-| Claims bead (update status + stake claim) | 4 | `br show` shows in_progress, `bus claims list` shows bead claim |
+| Claims bone(update status + stake claim) | 4 | `bn show` shows in_progress, `bus claims list` shows boneclaim |
 | Creates workspace, uses absolute paths | 4 | `maw ws list` shows workspace, no `cd` into workspace |
 | Implements POST /users handler | 4 | Handler exists in workspace, accepts JSON, returns 201/400 |
 | Calls beta's validate_email | 3 | Import or call to beta validation in code |
@@ -1209,7 +1208,7 @@ cargo check                                      # merged code compiles
 | Reads inbox, finds alpha-dev's question | 3 | `bus inbox` with --mentions |
 | Investigates own code before responding | 3 | Reads src/lib.rs |
 | Responds with domain expertise | 3 | Response references RFC or explains the rationale |
-| Creates bug bead to track the fix | 3 | `br create` in beta dir |
+| Creates bug boneto track the fix | 3 | `bn create` in beta dir |
 | Sends response to alpha channel | 3 | `bus send alpha "..." -L feedback` |
 
 ### Phase 3: Beta Fix + Release (15 pts)
@@ -1220,7 +1219,7 @@ cargo check                                      # merged code compiles
 | Correct fix (allows + in local part) | 4 | validate_email("user+tag@example.com") returns Ok |
 | Adds test coverage for + | 2 | Test exists and passes |
 | cargo test passes | 2 | All tests green |
-| Merges workspace, closes bead | 3 | `maw ws merge --destroy`, `br close` |
+| Merges workspace, closes bone| 3 | `maw ws merge --destroy`, `bn done` |
 | Announces fix on alpha channel | 2 | `bus send alpha "..." -L task-done` |
 
 ### Phase 4: Alpha Resumes + Review Request (20 pts)
@@ -1276,9 +1275,9 @@ cargo check                                      # merged code compiles
 |-----------|-----|-------------|
 | Merges workspace | 3 | `maw ws merge --destroy`, workspace gone from `maw ws list` |
 | Marks review merged (from default, after merge) | 2 | `maw exec default -- crit reviews mark-merged` |
-| Closes bead | 2 | `br show` status=closed |
+| Closes bone| 2 | `bn show` status=closed |
 | Releases all claims | 2 | `bus claims list --agent $ALPHA_DEV` is empty |
-| Syncs beads | 1 | `br sync --flush-only` |
+| Syncs bones | 1 | (sync removed — bones is event-sourced) |
 | Version bump + tag | 3 | Cargo.toml version updated, `jj tag set v0.2.0` |
 | Completion announcement | 2 | `bus send alpha "..." -L task-done` |
 
@@ -1286,9 +1285,9 @@ cargo check                                      # merged code compiles
 
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
-| Progress comments on beads | 5 | `br comments` shows updates at key milestones |
+| Progress comments on bones | 5 | `bn bone comment list` shows updates at key milestones |
 | Bus messages use correct labels | 5 | feedback, review-request, review-done, task-done used appropriately |
-| Agent identity consistent | 5 | `--agent`/`--actor` on mutating commands (reads like `br ready`, `crit review` are exempt) |
+| Agent identity consistent | 5 | `--agent` on mutating commands (reads like `bn next`, `crit review` are exempt) |
 
 ### Friction Efficiency (40 pts) — E10v2
 
@@ -1335,10 +1334,10 @@ Automated extraction from phase stdout logs via `e10-friction.sh`. Measures how 
 ### Critical Fail Conditions (override score)
 
 Any of the following results in overall **FAIL**, regardless of point total:
-1. Alpha merges or closes bead while review is BLOCKED (no LGTM).
+1. Alpha merges or closes bonewhile review is BLOCKED (no LGTM).
 2. No cross-project peer message from alpha-dev to beta channel in Phase 1.
 3. `/debug` endpoint still exposes `api_secret` after Phase 6.
-4. Mutating `bus`/`br`/`crit` commands missing identity flags (`--agent`/`--actor`). Read-only commands (`br ready`, `crit review`, `bus history`) are exempt.
+4. Mutating `bus`/`bn`/`crit` commands missing identity flags (`--agent`). Read-only commands (`bn next`, `crit review`, `bus history`) are exempt.
 5. Claims remain unreleased after Phase 8.
 
 **Pass**: >= 140 (70%), **Excellent**: >= 180 (90%)
@@ -1358,21 +1357,21 @@ Any of the following results in overall **FAIL**, regardless of point total:
 
 **What it tests**: The full botbox spawn chain end-to-end: message arrives on channel, hook fires, botty spawns dev-loop, agent triages/claims/implements/merges/closes autonomously. No hand-crafted phase prompts or sequential `claude -p` invocations -- the system runs itself.
 
-**Setup**: `evals/scripts/e11-l1-setup.sh` creates an isolated eval environment with one Rust/Axum project ("echo"), one bead ("Add GET /version endpoint"), and registered hooks. The task-request is NOT sent during setup -- it is sent by the run script to trigger the hook chain.
+**Setup**: `evals/scripts/e11-l1-setup.sh` creates an isolated eval environment with one Rust/Axum project ("echo"), one bone("Add GET /version endpoint"), and registered hooks. The task-request is NOT sent during setup -- it is sent by the run script to trigger the hook chain.
 
-**Run**: `evals/scripts/e11-l1-run.sh` (orchestrator) -- sends task-request, polls for bead completion with 15-minute timeout and 5-minute stuck detection, captures artifacts, runs verification.
+**Run**: `evals/scripts/e11-l1-run.sh` (orchestrator) -- sends task-request, polls for bonecompletion with 15-minute timeout and 5-minute stuck detection, captures artifacts, runs verification.
 
 ### Scoring (50 pts)
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
 | Hook fired and agent spawned | 5 | bus history shows agent activity, botty tail has content |
-| Bead claimed (in_progress at some point) | 5 | `br show` status is in_progress or closed |
+| Bead claimed (in_progress at some point) | 5 | `bn show` status is in_progress or closed |
 | Workspace created | 5 | `maw ws list` showed non-default ws, or channel history mentions workspace |
 | Code implemented and compiles | 10 | `cargo check` passes AND /version endpoint exists in source |
 | Workspace merged | 5 | No non-default workspaces remain |
-| Bead closed | 5 | `br show` status=closed |
-| Claims released | 5 | No bead:// or workspace:// claims for echo-dev |
+| Bead closed | 5 | `bn show` status=closed |
+| Claims released | 5 | No bone:// or workspace:// claims for echo-dev |
 | Agent exited cleanly | 5 | botty list shows no running echo agents |
 | Bus labels correct | 5 | Channel history has task-claim and task-done labels |
 
@@ -1390,7 +1389,7 @@ Any of the following results in overall **FAIL**, regardless of point total:
 source $EVAL_DIR/.eval-env
 BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history echo -n 50     # channel timeline
 cat $EVAL_DIR/artifacts/agent-echo-dev.log                  # agent output
-cd $PROJECT_DIR && maw exec default -- br show $BEAD        # bead state
+cd $PROJECT_DIR && maw exec default -- bn show $BONE        # bonestate
 cd $PROJECT_DIR && maw ws list                              # workspace state
 BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus claims list             # claims
 cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
@@ -1414,9 +1413,9 @@ cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
 
 **Prerequisite**: E11-L1 validates the core spawn chain. L2 adds the reviewer hook and review cycle.
 
-**Setup**: `evals/scripts/e11-l2-setup.sh` creates an isolated eval environment with one Rust/Axum project, one bead ("Add file serving endpoint at GET /files/:name"), registered dev-loop AND reviewer hooks, planted defect (path traversal likely). The task-request is sent by the run script to trigger the dev-loop spawn.
+**Setup**: `evals/scripts/e11-l2-setup.sh` creates an isolated eval environment with one Rust/Axum project, one bone("Add file serving endpoint at GET /files/:name"), registered dev-loop AND reviewer hooks, planted defect (path traversal likely). The task-request is sent by the run script to trigger the dev-loop spawn.
 
-**Run**: `evals/scripts/e11-l2-run.sh` (orchestrator) — sends task-request, polls for bead completion with 20-minute timeout and 5-minute stuck detection, captures artifacts from both agents, runs verification.
+**Run**: `evals/scripts/e11-l2-run.sh` (orchestrator) — sends task-request, polls for bonecompletion with 20-minute timeout and 5-minute stuck detection, captures artifacts from both agents, runs verification.
 
 ### Scoring (95 pts)
 
@@ -1434,12 +1433,12 @@ cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Bead status transitions (open → in_progress → closed) | 5 | `br show` status=closed, channel history shows claims |
-| Progress comments posted to bead | 3 | `br show` comment count > 1 |
-| Workspace created with maw ws create | 3 | `maw ws list` showed non-default ws during run, or bead closed (merged) |
-| Claims staked (bead:// and workspace://) | 4 | Channel history or bead state shows claims |
-| Claims released after work | 5 | `bus claims list --agent $DEV` shows no bead:// or workspace:// claims |
-| br sync called | 2 | Dev agent log shows `br sync` |
+| Bead status transitions (open → in_progress → closed) | 5 | `bn show` status=closed, channel history shows claims |
+| Progress comments posted to bone| 3 | `bn show` comment count > 1 |
+| Workspace created with maw ws create | 3 | `maw ws list` showed non-default ws during run, or boneclosed (merged) |
+| Claims staked (bone:// and workspace://) | 4 | Channel history or bonestate shows claims |
+| Claims released after work | 5 | `bus claims list --agent $DEV` shows no bone:// or workspace:// claims |
+| (sync removed) | 2 | Dev agent log shows (sync removed) |
 | Bus labels correct (task-claim, review-request, review-done, task-done) | 4 | `bus history` shows all 4 labels |
 | Channel announcements (start, progress, completion) | 4 | Channel history shows lifecycle messages |
 
@@ -1526,7 +1525,7 @@ source $EVAL_DIR/.eval-env
 BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history "$(basename "$PROJECT_DIR")" -n 100
 cat $EVAL_DIR/artifacts/agent-$DEV_AGENT.log | tail -100
 cat $EVAL_DIR/artifacts/agent-$REVIEWER.log | tail -100
-cd $PROJECT_DIR && maw exec default -- br show $BEAD
+cd $PROJECT_DIR && maw exec default -- bn show $BONE
 cd $PROJECT_DIR && maw ws list
 BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus claims list
 cd $PROJECT_DIR && maw exec default -- cargo check
@@ -1560,14 +1559,14 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 **Expected flow:**
 1. Router hook fires → respond.mjs → spawns alpha-dev via dev-loop
-2. Alpha-dev triages, claims bead, implements POST /users
+2. Alpha-dev triages, claims bone, implements POST /users
 3. Alpha-dev discovers beta validate_email rejects +, posts to beta channel
 4. Beta router hook fires → beta-dev investigates, fixes, announces on alpha channel
 5. Alpha-dev resumes, creates crit review, @mentions alpha-security
 6. Alpha-security mention hook fires → reviews, finds /debug vulnerability, BLOCKs
 7. Alpha-dev fixes /debug, re-requests review
 8. Alpha-security re-reviews, LGTMs
-9. Alpha-dev merges, closes bead, releases claims
+9. Alpha-dev merges, closes bone, releases claims
 
 **Setup**: `evals/scripts/e11-l3-setup.sh`
 **Run**: `evals/scripts/e11-l3-run.sh` (45 min timeout)
@@ -1595,18 +1594,18 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 | Beta-dev investigated and responded | 5 | Beta-dev log shows lib.rs read |
 | Beta-dev fixed validate_email to allow + | 5 | Beta src/lib.rs allows '+' |
 | Beta-dev announced fix on alpha channel | 4 | Alpha channel has beta-dev fix message |
-| Cross-project tracking bead created | 3 | Bead referencing issue exists |
+| Cross-project tracking bonecreated | 3 | Bead referencing issue exists |
 
 #### Protocol Compliance (25 pts)
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Alpha bead closed | 5 | `br show` status=closed |
-| Progress comments on bead | 3 | Comment count > 1 |
+| Alpha boneclosed | 5 | `bn show` status=closed |
+| Progress comments on bone| 3 | Comment count > 1 |
 | Workspace created and merged | 3 | No leaked workspaces |
-| Claims released | 4 | No bead:// or workspace:// claims |
+| Claims released | 4 | No bone:// or workspace:// claims |
 | Bus labels correct | 5 | JSON label extraction |
-| br sync called | 2 | Dev log shows `br sync` |
+| (sync removed) | 2 | Dev log shows (sync removed) |
 | Channel announcements | 3 | Alpha channel has lifecycle messages |
 
 #### Review Cycle (30 pts)
@@ -1647,7 +1646,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 1. Alpha merges while review BLOCKED (no LGTM)
 2. No cross-project message from alpha-dev to beta channel
 3. /debug still exposes api_secret after fix
-4. Missing --agent/--actor on mutating commands
+4. Missing --agent on mutating commands
 5. Claims unreleased after completion
 
 **Pass**: >= 70%, **Excellent**: >= 85%
@@ -1671,7 +1670,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 **Type**: Integration (single project, multi-agent, botty-native, mission framework)
 
-**What it tests**: The full mission lifecycle in dev-loop.mjs (Level 4): `!mission` handler in respond.mjs creates a mission bead, dev-loop decomposes it into child beads, dispatches parallel workers with mission context (BOTBOX_MISSION, BOTBOX_SIBLINGS, BOTBOX_FILE_HINTS), monitors via checkpoints, and synthesizes results. Review is disabled to isolate the mission framework.
+**What it tests**: The full mission lifecycle in dev-loop.mjs (Level 4): `!mission` handler in respond.mjs creates a mission bone, dev-loop decomposes it into child bones, dispatches parallel workers with mission context (BOTBOX_MISSION, BOTBOX_SIBLINGS, BOTBOX_FILE_HINTS), monitors via checkpoints, and synthesizes results. Review is disabled to isolate the mission framework.
 
 **Prerequisite fix**: agent-loop.mjs was missing `review.enabled` config reading. Workers now read `REVIEW = config.review?.enabled ?? true` and skip review steps when false, preventing deadlock with missions + no reviewer.
 
@@ -1692,12 +1691,12 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 ```
 
 **Expected flow**:
-1. `!mission <spec>` → respond.mjs creates mission bead → execs dev-loop with BOTBOX_MISSION
-2. Dev-loop decomposes into 3+ child beads with `mission:<id>` labels
+1. `!mission <spec>` → respond.mjs creates mission bone→ execs dev-loop with BOTBOX_MISSION
+2. Dev-loop decomposes into 3+ child bones with `mission:<id>` labels
 3. Dev-loop dispatches workers (`futil-dev/<random>`) for independent children
 4. Workers implement subcommands in parallel workspaces
 5. Dev-loop monitors via checkpoint loop
-6. Dev-loop synthesizes results, closes mission bead
+6. Dev-loop synthesizes results, closes mission bone
 
 **Setup**: `evals/scripts/e11-l4-setup.sh`
 **Run**: `evals/scripts/e11-l4-run.sh` (30 min timeout)
@@ -1709,18 +1708,18 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Bead with `mission` label | 5 | `br show` labels include "mission" |
-| Structured description (Outcome/Success/Constraints) | 5 | Mission bead description has structured fields |
-| Dev-loop identified mission context | 5 | Dev log references BOTBOX_MISSION or mission bead |
+| Bead with `mission` label | 5 | `bn show` labels include "mission" |
+| Structured description (Outcome/Success/Constraints) | 5 | Mission bonedescription has structured fields |
+| Dev-loop identified mission context | 5 | Dev log references BOTBOX_MISSION or mission bone|
 
 #### Decomposition (25 pts)
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| 3+ child beads created | 5 | `br list -l mission:<id>` count >= 3 |
+| 3+ child bones created | 5 | `bn list -l mission:<id>` count >= 3 |
 | Children have `mission:<id>` labels | 5 | Label check on each child |
-| Parent dependencies wired | 5 | `br dep add` in dev log or deps on child beads |
-| Inter-child dependency exists | 5 | At least one `br dep add` between children |
+| Parent dependencies wired | 5 | `bn triage dep add` in dev log or deps on child bones |
+| Inter-child dependency exists | 5 | At least one `bn triage dep add` between children |
 | Clear child titles | 5 | All titles >= 5 chars |
 
 #### Worker Dispatch (25 pts)
@@ -1745,9 +1744,9 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| All children closed | 5 | All child beads status=closed |
-| Mission bead closed | 5 | Mission bead status=closed |
-| Synthesis comment | 5 | Mission bead comment references completion/decisions/artifacts |
+| All children closed | 5 | All child bones status=closed |
+| Mission boneclosed | 5 | Mission bonestatus=closed |
+| Synthesis comment | 5 | Mission bonecomment references completion/decisions/artifacts |
 
 #### Code Correctness (25 pts)
 
@@ -1775,7 +1774,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 ### Key Differences from L3
 
-- **Mission framework**: Tests Level 4 (decomposition + parallel workers under a mission envelope), not Level 3 (independent pre-existing beads)
+- **Mission framework**: Tests Level 4 (decomposition + parallel workers under a mission envelope), not Level 3 (independent pre-existing bones)
 - **No review cycle**: `review.enabled=false` isolates mission mechanics from review complexity
 - **Dynamic worker discovery**: Run script discovers workers via `botty list` (hierarchical names `futil-dev/<random>`)
 - **Single project**: No cross-project coordination — focuses purely on mission lifecycle
@@ -1821,8 +1820,8 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 **Config**: Same as L4 — `review.enabled=false`, missions enabled, maxWorkers=3, sonnet workers.
 
 **Expected flow**:
-1. `!mission <spec>` → respond.mjs creates mission bead → execs dev-loop with BOTBOX_MISSION
-2. Dev-loop decomposes: 3 stage beads (ingest, transform, emit) — NO blocking core bead
+1. `!mission <spec>` → respond.mjs creates mission bone→ execs dev-loop with BOTBOX_MISSION
+2. Dev-loop decomposes: 3 stage bones (ingest, transform, emit) — NO blocking core bone
 3. Dev-loop dispatches workers for parallel stages
 4. Workers implement stages, discover they need to modify Record/PipelineError
 5. Workers post coord:interface messages about type changes, read bus for sibling updates
@@ -1840,18 +1839,18 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Bead with `mission` label | 5 | `br show` labels include "mission" |
-| Structured description (Outcome/Success/Constraints) | 5 | Mission bead description has structured fields |
-| Dev-loop identified mission context | 5 | Dev log references BOTBOX_MISSION or mission bead |
+| Bead with `mission` label | 5 | `bn show` labels include "mission" |
+| Structured description (Outcome/Success/Constraints) | 5 | Mission bonedescription has structured fields |
+| Dev-loop identified mission context | 5 | Dev log references BOTBOX_MISSION or mission bone|
 
 #### Decomposition (25 pts)
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| 3+ child beads created | 5 | `br list -l mission:<id>` count >= 3 |
+| 3+ child bones created | 5 | `bn list -l mission:<id>` count >= 3 |
 | Children have `mission:<id>` labels | 5 | Label check on each child |
-| Parent dependencies wired | 5 | `br dep add` in dev log or deps on child beads |
-| Inter-child dependency exists | 5 | At least one `br dep add` between children |
+| Parent dependencies wired | 5 | `bn triage dep add` in dev log or deps on child bones |
+| Inter-child dependency exists | 5 | At least one `bn triage dep add` between children |
 | Clear child titles | 5 | All titles >= 5 chars |
 
 #### Worker Dispatch (25 pts)
@@ -1876,9 +1875,9 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| All children closed | 5 | All child beads status=closed |
-| Mission bead closed | 5 | Mission bead status=closed |
-| Synthesis comment | 5 | Mission bead comment references completion/decisions |
+| All children closed | 5 | All child bones status=closed |
+| Mission boneclosed | 5 | Mission bonestatus=closed |
+| Synthesis comment | 5 | Mission bonecomment references completion/decisions |
 
 #### Code Correctness (25 pts)
 
@@ -1919,7 +1918,7 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 
 - **Co-evolving types**: Record struct starts minimal (id + data), each stage adds domain-specific fields — types emerge from implementation, not from specs
 - **Domain language specs**: Specs say "track provenance" not "add source: String" — field names are implementation decisions
-- **No blocking core bead**: Unlike L5v1's taskr (where core module could be serialized), flowlog has no frontloadable type definitions
+- **No blocking core bone**: Unlike L5v1's taskr (where core module could be serialized), flowlog has no frontloadable type definitions
 - **Structural coordination checks**: Verify script checks ACTUAL Record fields and PipelineError variants, not just bus messages
 - **Bidirectional communication**: Checks that MULTIPLE agents posted coord messages, not just one
 - **No implicit fallback**: L5v1 gave coordination credit for compilation success alone; L5v2 requires structural evidence of co-evolution
@@ -1945,11 +1944,11 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 
 ### Purpose
 
-Tests concurrent lead orchestrators: two independent missions dispatched simultaneously, each handled by a separate lead slot (`futil-dev/0`, `futil-dev/1`). Validates that router.mjs correctly spawns multiple leads, each lead completes its mission independently, merge serialization prevents divergent commits, and bead claims prevent duplicate work.
+Tests concurrent lead orchestrators: two independent missions dispatched simultaneously, each handled by a separate lead slot (`futil-dev/0`, `futil-dev/1`). Validates that router.mjs correctly spawns multiple leads, each lead completes its mission independently, merge serialization prevents divergent commits, and boneclaims prevent duplicate work.
 
 ### Prerequisites
 
-- All tools: botbox, bus, br, bv, maw, crit, botty, jj, cargo, jq
+- All tools: botbox, bus, bn, maw, crit, botty, jj, cargo, jq
 - Router.mjs with multi-lead support (`acquireLeadSlot`, `spawnLead`)
 - Dev-loop.mjs with multi-lead awareness (`discoverSiblingLeads`, claim checking)
 - Merge mutex in dev-loop FINISH step (`workspace://project/default` claim)
@@ -1987,10 +1986,10 @@ Two `!mission` messages sent ~5s apart:
 
 | Check | Criteria | Points | How Verified |
 |-------|----------|--------|-------------|
-| Mission A created | Bead with `mission` label for error.rs + stats | 5 | `br list --all -l mission` |
-| Mission B created | Bead with `mission` label for search + convert | 5 | `br list --all -l mission` |
-| Mission A has children | 1+ child beads with `mission:<A-id>` label | 5 | `br list --all -l "mission:<id>"` |
-| Mission B has children | 1+ child beads with `mission:<B-id>` label | 5 | `br list --all -l "mission:<id>"` |
+| Mission A created | Bead with `mission` label for error.rs + stats | 5 | `bn list --all -l mission` |
+| Mission B created | Bead with `mission` label for search + convert | 5 | `bn list --all -l mission` |
+| Mission A has children | 1+ child bones with `mission:<A-id>` label | 5 | `bn list --all -l "mission:<id>"` |
+| Mission B has children | 1+ child bones with `mission:<B-id>` label | 5 | `bn list --all -l "mission:<id>"` |
 
 #### Merge Serialization (20 pts)
 
@@ -2004,17 +2003,17 @@ Two `!mission` messages sent ~5s apart:
 
 | Check | Criteria | Points | How Verified |
 |-------|----------|--------|-------------|
-| No duplicate ownership | Each bead owned by at most one agent | 5 | `br list --all --format json` — no bead with 2 owners |
-| Work divided between leads | Each lead worked on different beads | 5 | Distinct bead sets per lead in logs |
+| No duplicate ownership | Each boneowned by at most one agent | 5 | `bn list --all --format json` — no bonewith 2 owners |
+| Work divided between leads | Each lead worked on different bones | 5 | Distinct bonesets per lead in logs |
 
 #### Mission Completion (20 pts)
 
 | Check | Criteria | Points | How Verified |
 |-------|----------|--------|-------------|
-| Mission A closed | Mission A bead status == closed | 5 | `br show <A-id>` |
-| Mission B closed | Mission B bead status == closed | 5 | `br show <B-id>` |
-| Mission A children closed | All A's children closed | 5 | `br list --all -l "mission:<A-id>"` — all closed |
-| Mission B children closed | All B's children closed | 5 | `br list --all -l "mission:<B-id>"` — all closed |
+| Mission A closed | Mission A bonestatus == closed | 5 | `bn show <A-id>` |
+| Mission B closed | Mission B bonestatus == closed | 5 | `bn show <B-id>` |
+| Mission A children closed | All A's children closed | 5 | `bn list --all -l "mission:<A-id>"` — all closed |
+| Mission B children closed | All B's children closed | 5 | `bn list --all -l "mission:<B-id>"` — all closed |
 
 #### Code Correctness (15 pts)
 

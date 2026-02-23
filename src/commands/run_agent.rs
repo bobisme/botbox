@@ -1,12 +1,12 @@
 use std::cell::RefCell;
 use std::io::{BufRead, BufReader, IsTerminal};
 use std::process::{Child, Command, Stdio};
-use std::sync::mpsc::{channel, Receiver};
 use std::sync::OnceLock;
+use std::sync::mpsc::{Receiver, channel};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use serde_json::Value;
 
 use crate::error::ExitError;
@@ -582,7 +582,10 @@ fn print_pi_tool_result(event: &Value, style: &Style) {
         .get("toolName")
         .and_then(|n| n.as_str())
         .unwrap_or("?");
-    let is_error = event.get("isError").and_then(|e| e.as_bool()).unwrap_or(false);
+    let is_error = event
+        .get("isError")
+        .and_then(|e| e.as_bool())
+        .unwrap_or(false);
 
     // Extract result text
     let result_text = event
@@ -826,8 +829,7 @@ mod tests {
 
     #[test]
     fn claude_text_event_is_not_completion() {
-        let event: Value =
-            serde_json::from_str(r#"{"type":"text","text":"hello"}"#).unwrap();
+        let event: Value = serde_json::from_str(r#"{"type":"text","text":"hello"}"#).unwrap();
         assert!(!handle_claude_event(&event, &TEXT_STYLE));
     }
 

@@ -138,7 +138,7 @@ All guidance states exit 0, including states that indicate the agent cannot proc
 - **NeedsReview** — awaiting review approval
 - **HasResources** — workspace/claims still held
 - **Clean** — no held resources
-- **HasWork** — ready beads available
+- **HasWork** — ready bones available
 - **Fresh** — starting fresh (no prior state)
 
 The agent reads the `status` field in stdout to decide what to do next. Exit 0 means "I produced valid guidance output."
@@ -219,7 +219,7 @@ Validate the exit-code contract:
 - `protocol_exit_error_to_exit_error` — integrates with main.rs ExitError
 
 ### Integration Tests
-(Implemented in higher-level beads)
+(Implemented in higher-level bones)
 - Agents receiving stale guidance re-run the revalidate command
 - Commands executed from stale guidance fail or warn appropriately
 

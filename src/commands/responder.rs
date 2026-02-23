@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 
-use anyhow::{anyhow, Context};
+use anyhow::{Context, anyhow};
 use serde::Deserialize;
 
 use crate::config::Config;
@@ -14,7 +14,7 @@ use crate::subprocess::Tool;
 #[derive(Debug, Clone, PartialEq)]
 pub enum RouteType {
     Dev,
-    Bead,
+    Bone,
     Mission,
     Leads,
     Question,
@@ -43,73 +43,137 @@ pub fn route_message(body: &str) -> Route {
 
     // !oneshot [message]
     if let Some(rest) = strip_prefix_ci(trimmed, "!oneshot") {
-        return Route { route_type: RouteType::Oneshot, body: rest.to_string(), model: None };
+        return Route {
+            route_type: RouteType::Oneshot,
+            body: rest.to_string(),
+            model: None,
+        };
     }
 
     // !mission [description]
     if let Some(rest) = strip_prefix_ci(trimmed, "!mission") {
-        return Route { route_type: RouteType::Mission, body: rest.to_string(), model: None };
+        return Route {
+            route_type: RouteType::Mission,
+            body: rest.to_string(),
+            model: None,
+        };
     }
 
     // !leads [message] — spawn multi-lead session
     if let Some(rest) = strip_prefix_ci(trimmed, "!leads") {
-        return Route { route_type: RouteType::Leads, body: rest.to_string(), model: None };
+        return Route {
+            route_type: RouteType::Leads,
+            body: rest.to_string(),
+            model: None,
+        };
     }
 
     // !dev [message]
     if let Some(rest) = strip_prefix_ci(trimmed, "!dev") {
-        return Route { route_type: RouteType::Dev, body: rest.to_string(), model: None };
+        return Route {
+            route_type: RouteType::Dev,
+            body: rest.to_string(),
+            model: None,
+        };
     }
 
-    // !bead [description]
+    // !bone [description] (also accepts legacy !bead)
+    if let Some(rest) = strip_prefix_ci(trimmed, "!bone") {
+        return Route {
+            route_type: RouteType::Bone,
+            body: rest.to_string(),
+            model: None,
+        };
+    }
+
     if let Some(rest) = strip_prefix_ci(trimmed, "!bead") {
-        return Route { route_type: RouteType::Bead, body: rest.to_string(), model: None };
+        return Route {
+            route_type: RouteType::Bone,
+            body: rest.to_string(),
+            model: None,
+        };
     }
 
     // !q(model) [question] — must check before !q
     if let Some((model, rest)) = match_explicit_model(trimmed, "!q") {
-        return Route { route_type: RouteType::Question, body: rest, model: Some(model) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest,
+            model: Some(model),
+        };
     }
 
     // !bigq [question]
     if let Some(rest) = strip_prefix_ci(trimmed, "!bigq") {
-        return Route { route_type: RouteType::Question, body: rest.to_string(), model: Some("opus".into()) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest.to_string(),
+            model: Some("opus".into()),
+        };
     }
 
     // !qq [question] — must check before !q
     if let Some(rest) = strip_prefix_ci(trimmed, "!qq") {
-        return Route { route_type: RouteType::Question, body: rest.to_string(), model: Some("haiku".into()) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest.to_string(),
+            model: Some("haiku".into()),
+        };
     }
 
     // !q [question]
     if let Some(rest) = strip_prefix_ci(trimmed, "!q") {
-        return Route { route_type: RouteType::Question, body: rest.to_string(), model: Some("sonnet".into()) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest.to_string(),
+            model: Some("sonnet".into()),
+        };
     }
 
     // --- Backwards compat: old colon-prefixed convention ---
 
     // q(model): [question]
     if let Some((model, rest)) = match_explicit_model_colon(trimmed) {
-        return Route { route_type: RouteType::Question, body: rest, model: Some(model) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest,
+            model: Some(model),
+        };
     }
 
     // big q: [question]
     if let Some(rest) = strip_prefix_colon_ci(trimmed, "big q") {
-        return Route { route_type: RouteType::Question, body: rest.to_string(), model: Some("opus".into()) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest.to_string(),
+            model: Some("opus".into()),
+        };
     }
 
     // qq: [question] — must check before q:
     if let Some(rest) = strip_prefix_colon_ci(trimmed, "qq") {
-        return Route { route_type: RouteType::Question, body: rest.to_string(), model: Some("haiku".into()) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest.to_string(),
+            model: Some("haiku".into()),
+        };
     }
 
     // q: [question]
     if let Some(rest) = strip_prefix_colon_ci(trimmed, "q") {
-        return Route { route_type: RouteType::Question, body: rest.to_string(), model: Some("sonnet".into()) };
+        return Route {
+            route_type: RouteType::Question,
+            body: rest.to_string(),
+            model: Some("sonnet".into()),
+        };
     }
 
     // --- No prefix → triage ---
-    Route { route_type: RouteType::Triage, body: trimmed.to_string(), model: None }
+    Route {
+        route_type: RouteType::Triage,
+        body: trimmed.to_string(),
+        model: None,
+    }
 }
 
 /// Strip a case-insensitive word prefix followed by optional whitespace.
@@ -212,7 +276,11 @@ fn match_explicit_model_colon(input: &str) -> Option<(String, String)> {
 /// Sanitize user input for prompt embedding: strip XML-like tags and limit length.
 fn sanitize_for_prompt(input: &str) -> String {
     let max_len = 4096;
-    let truncated = if input.len() > max_len { &input[..max_len] } else { input };
+    let truncated = if input.len() > max_len {
+        &input[..max_len]
+    } else {
+        input
+    };
     // Strip XML-like tags that could confuse prompt parsing
     truncated
         .replace("<escalate>", "[escalate]")
@@ -240,7 +308,9 @@ struct Transcript {
 
 impl Transcript {
     fn new() -> Self {
-        Self { entries: Vec::new() }
+        Self {
+            entries: Vec::new(),
+        }
     }
 
     /// Max transcript entries to prevent unbounded memory growth.
@@ -402,46 +472,49 @@ struct Responder {
 }
 
 impl Responder {
-    fn new(project_root: PathBuf, agent: Option<String>, model: Option<String>) -> anyhow::Result<Self> {
+    fn new(
+        project_root: PathBuf,
+        agent: Option<String>,
+        model: Option<String>,
+    ) -> anyhow::Result<Self> {
         // Load config using canonical priority order
         let config = crate::config::find_config_in_project(&project_root)
             .ok()
             .and_then(|(p, _)| Config::load(&p).ok());
 
-        let project = config.as_ref()
-            .map(|c| c.channel())
-            .unwrap_or_default();
-        let default_agent = config.as_ref()
+        let project = config.as_ref().map(|c| c.channel()).unwrap_or_default();
+        let default_agent = config
+            .as_ref()
             .map(|c| c.default_agent())
             .unwrap_or_default();
 
-        let responder_config = config.as_ref()
-            .and_then(|c| c.agents.responder.clone());
+        let responder_config = config.as_ref().and_then(|c| c.agents.responder.clone());
 
         let default_model = model.unwrap_or_else(|| {
-            responder_config.as_ref()
+            responder_config
+                .as_ref()
                 .map(|r| r.model.clone())
                 .unwrap_or_else(|| "sonnet".into())
         });
-        let wait_timeout = responder_config.as_ref()
+        let wait_timeout = responder_config
+            .as_ref()
             .map(|r| r.wait_timeout)
             .unwrap_or(300);
-        let claude_timeout = responder_config.as_ref()
-            .map(|r| r.timeout)
-            .unwrap_or(300);
-        let max_conversations = responder_config.as_ref()
+        let claude_timeout = responder_config.as_ref().map(|r| r.timeout).unwrap_or(300);
+        let max_conversations = responder_config
+            .as_ref()
             .map(|r| r.max_conversations)
             .unwrap_or(10);
 
-        let multi_lead_config = config.as_ref()
+        let multi_lead_config = config
+            .as_ref()
             .and_then(|c| c.agents.dev.as_ref())
             .and_then(|d| d.multi_lead.clone());
-        let multi_lead_enabled = multi_lead_config.as_ref()
+        let multi_lead_enabled = multi_lead_config
+            .as_ref()
             .map(|m| m.enabled)
             .unwrap_or(false);
-        let multi_lead_max_leads = multi_lead_config.as_ref()
-            .map(|m| m.max_leads)
-            .unwrap_or(3);
+        let multi_lead_max_leads = multi_lead_config.as_ref().map(|m| m.max_leads).unwrap_or(3);
 
         // Resolve agent name: CLI flag > config default
         // Note: we intentionally ignore AGENT/BOTBUS_AGENT here because in hook context
@@ -453,11 +526,14 @@ impl Responder {
             .map_err(|_| anyhow!("BOTBUS_CHANNEL not set (should be set by hook)"))?;
 
         if project.is_empty() {
-            return Err(anyhow!("Project name required (set in .botbox.toml or provide --project-root)"));
+            return Err(anyhow!(
+                "Project name required (set in .botbox.toml or provide --project-root)"
+            ));
         }
 
         // Resolve default model through tiers
-        let default_model = config.as_ref()
+        let default_model = config
+            .as_ref()
             .map(|c| c.resolve_model(&default_model))
             .unwrap_or(default_model);
 
@@ -479,9 +555,7 @@ impl Responder {
     // --- Bus helpers ---
 
     fn bus_send(&self, message: &str, label: Option<&str>) -> anyhow::Result<()> {
-        let mut args = vec![
-            "send", "--agent", &self.agent, &self.channel, message,
-        ];
+        let mut args = vec!["send", "--agent", &self.agent, &self.channel, message];
         let label_owned;
         if let Some(l) = label {
             label_owned = l.to_string();
@@ -500,7 +574,15 @@ impl Responder {
 
     fn bus_set_status(&self, status: &str, ttl: &str) {
         let _ = Tool::new("bus")
-            .args(&["statuses", "set", "--agent", &self.agent, status, "--ttl", ttl])
+            .args(&[
+                "statuses",
+                "set",
+                "--agent",
+                &self.agent,
+                status,
+                "--ttl",
+                ttl,
+            ])
             .run();
     }
 
@@ -514,7 +596,15 @@ impl Responder {
         let uri = format!("agent://{}", self.agent);
         let ttl = format!("{}", self.wait_timeout + 120);
         let _ = Tool::new("bus")
-            .args(&["claims", "stake", "--agent", &self.agent, &uri, "--ttl", &ttl])
+            .args(&[
+                "claims",
+                "stake",
+                "--agent",
+                &self.agent,
+                &uri,
+                "--ttl",
+                &ttl,
+            ])
             .run();
     }
 
@@ -525,36 +615,39 @@ impl Responder {
             .run();
     }
 
-    // --- Beads helpers (via maw exec default) ---
+    // --- Bones helpers (via maw exec default) ---
 
-    fn br(&self, args: &[&str]) -> anyhow::Result<String> {
-        let output = Tool::new("br")
+    fn bn(&self, args: &[&str]) -> anyhow::Result<String> {
+        let output = Tool::new("bn")
             .args(args)
             .in_workspace("default")?
             .run_ok()?;
         Ok(output.stdout.trim().to_string())
     }
 
-    fn br_create(&self, title: &str, description: &str, labels: Option<&str>) -> anyhow::Result<String> {
+    fn bn_create(
+        &self,
+        title: &str,
+        description: &str,
+        labels: Option<&str>,
+    ) -> anyhow::Result<String> {
         let title_arg = format!("--title={title}");
         let desc_arg = format!("--description={description}");
-        let mut args = vec![
-            "create", "--actor", &self.agent, "--owner", &self.agent,
-            &title_arg, &desc_arg, "--type=task", "--priority=2",
-        ];
+        let mut args = vec!["create", &title_arg, &desc_arg, "--kind=task"];
         let labels_arg;
         if let Some(l) = labels {
             labels_arg = l.to_string();
             args.push("--labels");
             args.push(&labels_arg);
         }
-        let output = self.br(&args)?;
-        extract_bead_id(&output).ok_or_else(|| anyhow!("could not parse bead ID from: {output}"))
+        let output = self.bn(&args)?;
+        extract_bone_id(&output).ok_or_else(|| anyhow!("could not parse bone ID from: {output}"))
     }
 
     /// Resolve a model string through config tiers, falling through to passthrough.
     fn resolve_model(&self, model: &str) -> String {
-        self.config.as_ref()
+        self.config
+            .as_ref()
             .map(|c| c.resolve_model(model))
             .unwrap_or_else(|| model.to_string())
     }
@@ -574,7 +667,16 @@ impl Responder {
 
     fn capture_agent_response(&self) -> Option<String> {
         let result = Tool::new("bus")
-            .args(&["history", &self.channel, "--from", &self.agent, "-n", "1", "--format", "json"])
+            .args(&[
+                "history",
+                &self.channel,
+                "--from",
+                &self.agent,
+                "-n",
+                "1",
+                "--format",
+                "json",
+            ])
             .run()
             .ok()?;
         if !result.success() {
@@ -596,22 +698,32 @@ impl Responder {
         let timeout_str = self.wait_timeout.to_string();
         let result = Tool::new("bus")
             .args(&[
-                "wait", "--agent", &self.agent, "--mentions",
-                "--channels", &self.channel, "--timeout", &timeout_str,
-                "--format", "json",
+                "wait",
+                "--agent",
+                &self.agent,
+                "--mentions",
+                "--channels",
+                &self.channel,
+                "--timeout",
+                &timeout_str,
+                "--format",
+                "json",
             ])
             .run()
             .ok()?;
         if !result.success() {
-            eprintln!("bus wait: {}", if result.stderr.contains("timeout") { "timeout" } else { &result.stderr });
+            eprintln!(
+                "bus wait: {}",
+                if result.stderr.contains("timeout") {
+                    "timeout"
+                } else {
+                    &result.stderr
+                }
+            );
             return None;
         }
         let resp: WaitResponse = serde_json::from_str(&result.stdout).ok()?;
-        if resp.received {
-            resp.message
-        } else {
-            None
-        }
+        if resp.received { resp.message } else { None }
     }
 
     // --- Prompt builders ---
@@ -638,9 +750,9 @@ You received a message in channel #{channel} from {sender}.
 INSTRUCTIONS:
 - Answer the question helpfully and concisely
 - Use --agent {agent} on ALL bus commands
-- If you need to check files, beads, or code to answer, do so
+- If you need to check files, bones, or code to answer, do so
 - RESPOND using: bus send --agent {agent} {channel} "your response here"
-- Do NOT create beads or workspaces — this is a conversation, not a work task
+- Do NOT create bones or workspaces — this is a conversation, not a work task
 - If during the conversation you realize this is actually a bug or work item that needs
   immediate attention, output <escalate>brief description of the issue</escalate> AFTER
   posting your response. This will hand off to the dev-loop with full conversation context.
@@ -669,7 +781,7 @@ You received a message in channel #{channel} from {sender}:
 
 Respond to this message. If it's clearly a work request (bug report, feature request, task,
 "please fix/add/change X"), acknowledge it and output <escalate>one-line summary of the work</escalate>
-so I can create a bead and spawn the dev-loop. Otherwise, just respond helpfully — I'll wait
+so I can create a bone and spawn the dev-loop. Otherwise, just respond helpfully — I'll wait
 for follow-ups automatically.
 
 RULES:
@@ -708,13 +820,21 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
     fn handle_question(&mut self, route: &Route, message: &BusMessage) -> anyhow::Result<()> {
         self.transcript.add("user", &message.agent, &message.body);
-        let mut model = self.resolve_model(&route.model.clone().unwrap_or_else(|| self.default_model.clone()));
+        let mut model = self.resolve_model(
+            &route
+                .model
+                .clone()
+                .unwrap_or_else(|| self.default_model.clone()),
+        );
         let mut conversation_count: u32 = 0;
         let mut current_message = message.clone_for_follow_up();
 
         while conversation_count < self.max_conversations {
             conversation_count += 1;
-            eprintln!("\n--- Response {conversation_count}/{} ---", self.max_conversations);
+            eprintln!(
+                "\n--- Response {conversation_count}/{} ---",
+                self.max_conversations
+            );
             eprintln!("Model: {model}");
 
             let prompt = self.build_question_prompt(&current_message);
@@ -750,26 +870,32 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 }
             };
 
-            eprintln!("Follow-up from {}: {}...", follow_up.agent,
-                &follow_up.body[..follow_up.body.len().min(80)]);
+            eprintln!(
+                "Follow-up from {}: {}...",
+                follow_up.agent,
+                &follow_up.body[..follow_up.body.len().min(80)]
+            );
             current_message = follow_up.clone_for_follow_up();
 
             // Re-route in case of new prefix
             let re_parsed = route_message(&follow_up.body);
             match re_parsed.route_type {
                 RouteType::Dev => {
-                    self.transcript.add("user", &follow_up.agent, &follow_up.body);
+                    self.transcript
+                        .add("user", &follow_up.agent, &follow_up.body);
                     self.handle_dev(&re_parsed.body)?;
                     return Ok(());
                 }
                 RouteType::Mission => {
-                    self.transcript.add("user", &follow_up.agent, &follow_up.body);
+                    self.transcript
+                        .add("user", &follow_up.agent, &follow_up.body);
                     self.handle_mission(&re_parsed.body)?;
                     return Ok(());
                 }
-                RouteType::Bead => {
-                    self.transcript.add("user", &follow_up.agent, &follow_up.body);
-                    self.handle_bead(&re_parsed.body)?;
+                RouteType::Bone => {
+                    self.transcript
+                        .add("user", &follow_up.agent, &follow_up.body);
+                    self.handle_bone(&re_parsed.body)?;
                     return Ok(());
                 }
                 RouteType::Question => {
@@ -780,43 +906,47 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 _ => {}
             }
 
-            self.transcript.add("user", &follow_up.agent, &follow_up.body);
+            self.transcript
+                .add("user", &follow_up.agent, &follow_up.body);
         }
 
         Ok(())
     }
 
-    fn handle_bead(&self, body: &str) -> anyhow::Result<()> {
+    fn handle_bone(&self, body: &str) -> anyhow::Result<()> {
         if body.is_empty() {
-            self.bus_send("Usage: !bead <description of what needs to be done>", None)?;
+            self.bus_send("Usage: !bone <description of what needs to be done>", None)?;
             return Ok(());
         }
 
-        // Dedup: search for similar open beads
-        let keywords: Vec<&str> = body.split_whitespace()
+        // Dedup: search for similar open bones
+        let keywords: Vec<&str> = body
+            .split_whitespace()
             .filter(|w| w.len() > 3)
             .take(5)
             .collect();
         if !keywords.is_empty() {
             let search_query = keywords.join(" ");
-            if let Ok(result) = self.br(&["search", &search_query])
-                && !result.contains("Found 0") {
-                    let matches: Vec<&str> = result.lines()
-                        .filter(|l| l.contains("bd-"))
-                        .take(3)
-                        .collect();
-                    if !matches.is_empty() {
-                        let match_list = matches.join("\n");
-                        let msg = format!(
-                            "Possible duplicates found:\n{match_list}\nUse `br show <id>` to check. Send `!bead` again with more specific wording to force-create."
-                        );
-                        self.bus_send(&msg, None)?;
-                        return Ok(());
-                    }
+            if let Ok(result) = self.bn(&["search", &search_query])
+                && !result.contains("Found 0")
+            {
+                let matches: Vec<&str> = result
+                    .lines()
+                    .filter(|l| l.contains("bn-"))
+                    .take(3)
+                    .collect();
+                if !matches.is_empty() {
+                    let match_list = matches.join("\n");
+                    let msg = format!(
+                        "Possible duplicates found:\n{match_list}\nUse `bn show <id>` to check. Send `!bone` again with more specific wording to force-create."
+                    );
+                    self.bus_send(&msg, None)?;
+                    return Ok(());
                 }
+            }
         }
 
-        // Create the bead
+        // Create the bone
         let lines: Vec<&str> = body.lines().collect();
         let mut title = lines[0].trim().to_string();
         if title.len() > 80 {
@@ -834,20 +964,23 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             description.push_str(&transcript_ctx);
         }
 
-        match self.br_create(&title, &description, None) {
-            Ok(bead_id) => {
-                self.bus_send(&format!("Created {bead_id}: {title}"), Some("feedback"))?;
+        match self.bn_create(&title, &description, None) {
+            Ok(bone_id) => {
+                self.bus_send(&format!("Created {bone_id}: {title}"), Some("feedback"))?;
             }
             Err(e) => {
-                eprintln!("Error creating bead: {e}");
-                self.bus_send(&format!("Failed to create bead: {e}"), None)?;
+                eprintln!("Error creating bone: {e}");
+                self.bus_send(&format!("Failed to create bone: {e}"), None)?;
             }
         }
         Ok(())
     }
 
     fn handle_dev(&self, _body: &str) -> anyhow::Result<()> {
-        eprintln!("Exec into dev-loop: botbox run dev-loop --agent {}", self.agent);
+        eprintln!(
+            "Exec into dev-loop: botbox run dev-loop --agent {}",
+            self.agent
+        );
 
         let _ = self.bus_send("Dev agent spawned — working on it.", Some("spawn-ack"));
 
@@ -879,7 +1012,10 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         let mut description = if lines.len() > 1 {
             body.trim().to_string()
         } else {
-            format!("Outcome: {}\nSuccess metric: TBD\nConstraints: TBD\nStop criteria: TBD", body.trim())
+            format!(
+                "Outcome: {}\nSuccess metric: TBD\nConstraints: TBD\nStop criteria: TBD",
+                body.trim()
+            )
         };
 
         let transcript_ctx = self.transcript.format_for_prompt();
@@ -888,23 +1024,32 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             description.push_str(&transcript_ctx);
         }
 
-        let bead_id = match self.br_create(&title, &description, Some("mission")) {
+        let bone_id = match self.bn_create(&title, &description, Some("mission")) {
             Ok(id) => id,
             Err(e) => {
-                eprintln!("Error creating mission bead: {e}");
-                self.bus_send(&format!("Failed to create mission bead: {e}"), None)?;
+                eprintln!("Error creating mission bone: {e}");
+                self.bus_send(&format!("Failed to create mission bone: {e}"), None)?;
                 return Ok(());
             }
         };
 
-        let _ = self.bus_send(&format!("Mission created: {bead_id}: {title}"), Some("feedback"));
-        let _ = self.bus_send(&format!("Dev agent spawned for mission {bead_id}."), Some("spawn-ack"));
+        let _ = self.bus_send(
+            &format!("Mission created: {bone_id}: {title}"),
+            Some("feedback"),
+        );
+        let _ = self.bus_send(
+            &format!("Dev agent spawned for mission {bone_id}."),
+            Some("spawn-ack"),
+        );
 
-        eprintln!("Exec into dev-loop with mission {bead_id}: botbox run dev-loop --agent {}", self.agent);
+        eprintln!(
+            "Exec into dev-loop with mission {bone_id}: botbox run dev-loop --agent {}",
+            self.agent
+        );
 
         let status = Command::new("botbox")
             .args(["run", "dev-loop", "--agent", &self.agent])
-            .env("BOTBOX_MISSION", &bead_id)
+            .env("BOTBOX_MISSION", &bone_id)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -971,37 +1116,49 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 }
             };
 
-            eprintln!("Follow-up from {}: {}...", follow_up.agent,
-                &follow_up.body[..follow_up.body.len().min(80)]);
+            eprintln!(
+                "Follow-up from {}: {}...",
+                follow_up.agent,
+                &follow_up.body[..follow_up.body.len().min(80)]
+            );
             current_message = follow_up.clone_for_follow_up();
 
             // Re-route in case of new prefix
             let re_parsed = route_message(&follow_up.body);
             match re_parsed.route_type {
                 RouteType::Dev => {
-                    self.transcript.add("user", &follow_up.agent, &follow_up.body);
+                    self.transcript
+                        .add("user", &follow_up.agent, &follow_up.body);
                     self.handle_dev(&re_parsed.body)?;
                     return Ok(());
                 }
                 RouteType::Mission => {
-                    self.transcript.add("user", &follow_up.agent, &follow_up.body);
+                    self.transcript
+                        .add("user", &follow_up.agent, &follow_up.body);
                     self.handle_mission(&re_parsed.body)?;
                     return Ok(());
                 }
-                RouteType::Bead => {
-                    self.transcript.add("user", &follow_up.agent, &follow_up.body);
-                    self.handle_bead(&re_parsed.body)?;
+                RouteType::Bone => {
+                    self.transcript
+                        .add("user", &follow_up.agent, &follow_up.body);
+                    self.handle_bone(&re_parsed.body)?;
                     return Ok(());
                 }
                 _ => {}
             }
 
-            self.transcript.add("user", &follow_up.agent, &follow_up.body);
+            self.transcript
+                .add("user", &follow_up.agent, &follow_up.body);
             conversation_count += 1;
-            eprintln!("\n--- Response {conversation_count}/{} ---", self.max_conversations);
+            eprintln!(
+                "\n--- Response {conversation_count}/{} ---",
+                self.max_conversations
+            );
 
             let model = self.resolve_model(&if re_parsed.route_type == RouteType::Question {
-                re_parsed.model.unwrap_or_else(|| self.default_model.clone())
+                re_parsed
+                    .model
+                    .unwrap_or_else(|| self.default_model.clone())
             } else {
                 self.default_model.clone()
             });
@@ -1038,11 +1195,17 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         }
 
         // Parse requested count from body (e.g., "!leads 2" → 2), default to max
-        let requested: u32 = body.trim().split_whitespace().next()
+        let requested: u32 = body
+            .trim()
+            .split_whitespace()
+            .next()
             .and_then(|s| s.parse().ok())
             .unwrap_or(self.multi_lead_max_leads);
 
-        let cwd = std::env::current_dir().unwrap_or_default().to_string_lossy().to_string();
+        let cwd = std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         let mut spawned: u32 = 0;
 
         // Iterate slots 0..maxLeads, try to acquire each via atomic claim
@@ -1057,8 +1220,15 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             // Try to stake the slot claim — atomic admission control
             let claim_result = Tool::new("bus")
                 .args(&[
-                    "claims", "stake", "--agent", &lead_name,
-                    &claim_uri, "--ttl", "120", "-m", &format!("lead slot {slot}"),
+                    "claims",
+                    "stake",
+                    "--agent",
+                    &lead_name,
+                    &claim_uri,
+                    "--ttl",
+                    "120",
+                    "-m",
+                    &format!("lead slot {slot}"),
                 ])
                 .run();
 
@@ -1069,13 +1239,22 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     let spawn_result = Tool::new("botty")
                         .args(&[
                             "spawn",
-                            "--env-inherit", "SSH_AUTH_SOCK",
-                            "--env", &format!("AGENT={lead_name}"),
-                            "--env", &format!("BOTBUS_CHANNEL={}", self.channel),
-                            "--name", &lead_name,
-                            "--cwd", &cwd,
+                            "--env-inherit",
+                            "SSH_AUTH_SOCK",
+                            "--env",
+                            &format!("AGENT={lead_name}"),
+                            "--env",
+                            &format!("BOTBUS_CHANNEL={}", self.channel),
+                            "--name",
+                            &lead_name,
+                            "--cwd",
+                            &cwd,
                             "--",
-                            "botbox", "run", "dev-loop", "--agent", &lead_name,
+                            "botbox",
+                            "run",
+                            "dev-loop",
+                            "--agent",
+                            &lead_name,
                         ])
                         .run();
 
@@ -1111,7 +1290,10 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
         if spawned == 0 {
             self.bus_send(
-                &format!("No lead slots available (0/{} free).", self.multi_lead_max_leads),
+                &format!(
+                    "No lead slots available (0/{} free).",
+                    self.multi_lead_max_leads
+                ),
                 Some("feedback"),
             )?;
         } else {
@@ -1131,7 +1313,17 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
     fn stake_message_claim(&self, message_id: &str) -> bool {
         let uri = format!("message://{}/{}", self.project, message_id);
         let result = Tool::new("bus")
-            .args(&["claims", "stake", "--agent", &self.agent, &uri, "-m", message_id, "--ttl", "600"])
+            .args(&[
+                "claims",
+                "stake",
+                "--agent",
+                &self.agent,
+                &uri,
+                "-m",
+                message_id,
+                "--ttl",
+                "600",
+            ])
             .run();
         match result {
             Ok(output) => output.success(),
@@ -1147,8 +1339,14 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
     fn drain_actionable_messages(&self, trigger_id: Option<&str>) -> anyhow::Result<()> {
         let output = Tool::new("bus")
             .args(&[
-                "inbox", "--agent", &self.agent, "--channels", &self.channel,
-                "--format", "json", "--mark-read",
+                "inbox",
+                "--agent",
+                &self.agent,
+                "--channels",
+                &self.channel,
+                "--format",
+                "json",
+                "--mark-read",
             ])
             .run()?;
 
@@ -1189,27 +1387,30 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     RouteType::Dev => {
                         eprintln!("Drain: processing !dev from {}", msg.agent);
                         if let Some(ref id) = msg.id
-                            && !self.stake_message_claim(id) {
-                                eprintln!("Drain: message {} already claimed, skipping", id);
-                                continue;
-                            }
+                            && !self.stake_message_claim(id)
+                        {
+                            eprintln!("Drain: message {} already claimed, skipping", id);
+                            continue;
+                        }
                         self.handle_dev(&route.body)?;
                     }
                     RouteType::Mission => {
                         eprintln!("Drain: processing !mission from {}", msg.agent);
                         if let Some(ref id) = msg.id
-                            && !self.stake_message_claim(id) {
-                                eprintln!("Drain: message {} already claimed, skipping", id);
-                                continue;
-                            }
+                            && !self.stake_message_claim(id)
+                        {
+                            eprintln!("Drain: message {} already claimed, skipping", id);
+                            continue;
+                        }
                         self.handle_mission(&route.body)?;
                     }
                     RouteType::Leads => {
                         eprintln!("Drain: processing !leads from {}", msg.agent);
                         if let Some(ref id) = msg.id
-                            && !self.stake_message_claim(id) {
-                                continue;
-                            }
+                            && !self.stake_message_claim(id)
+                        {
+                            continue;
+                        }
                         self.handle_leads(&route.body)?;
                     }
                     _ => {
@@ -1257,28 +1458,38 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         // Fall back to inbox
         let output = Tool::new("bus")
             .args(&[
-                "inbox", "--agent", &self.agent, "--channels", &self.channel,
-                "--format", "json", "--mark-read",
+                "inbox",
+                "--agent",
+                &self.agent,
+                "--channels",
+                &self.channel,
+                "--format",
+                "json",
+                "--mark-read",
             ])
             .run_ok()
             .context("reading inbox")?;
 
-        let inbox: InboxResponse = serde_json::from_str(&output.stdout)
-            .unwrap_or(InboxResponse { channels: Vec::new() });
+        let inbox: InboxResponse = serde_json::from_str(&output.stdout).unwrap_or(InboxResponse {
+            channels: Vec::new(),
+        });
 
         for ch in &inbox.channels {
             if ch.channel == self.channel
-                && let Some(msg) = ch.messages.last() {
-                    return Ok(BusMessage {
-                        id: msg.id.clone(),
-                        agent: msg.agent.clone(),
-                        body: msg.body.clone(),
-                        labels: msg.labels.clone(),
-                    });
-                }
+                && let Some(msg) = ch.messages.last()
+            {
+                return Ok(BusMessage {
+                    id: msg.id.clone(),
+                    agent: msg.agent.clone(),
+                    body: msg.body.clone(),
+                    labels: msg.labels.clone(),
+                });
+            }
         }
 
-        Err(anyhow!("No unread messages in channel and no message ID provided"))
+        Err(anyhow!(
+            "No unread messages in channel and no message ID provided"
+        ))
     }
 
     // --- Main run ---
@@ -1302,8 +1513,11 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             }
         };
 
-        eprintln!("Trigger: {}: {}...", trigger_message.agent,
-            &trigger_message.body[..trigger_message.body.floor_char_boundary(80)]);
+        eprintln!(
+            "Trigger: {}: {}...",
+            trigger_message.agent,
+            &trigger_message.body[..trigger_message.body.floor_char_boundary(80)]
+        );
 
         // Skip self-messages
         if trigger_message.agent == self.agent {
@@ -1315,13 +1529,20 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         // Skip messages from project agents (e.g., botbox-dev, botbox-security, botbox-dev/worker-suffix)
         let project_prefix = format!("{}-", self.project);
         if trigger_message.agent.starts_with(&project_prefix) {
-            eprintln!("Skipping project-internal message from {}", trigger_message.agent);
+            eprintln!(
+                "Skipping project-internal message from {}",
+                trigger_message.agent
+            );
             self.cleanup();
             return Ok(());
         }
 
         // Skip internal coordination messages
-        if let Some(matched) = trigger_message.labels.iter().find(|l| SKIP_LABELS.contains(&l.as_str())) {
+        if let Some(matched) = trigger_message
+            .labels
+            .iter()
+            .find(|l| SKIP_LABELS.contains(&l.as_str()))
+        {
             eprintln!("Skipping internal message (label: {matched})");
             self.cleanup();
             return Ok(());
@@ -1329,15 +1550,20 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
         // Message idempotency: stake claim to prevent duplicate processing
         if let Some(ref msg_id) = trigger_message.id
-            && !self.stake_message_claim(msg_id) {
-                eprintln!("Message {} already being handled, skipping", msg_id);
-                self.cleanup();
-                return Ok(());
-            }
+            && !self.stake_message_claim(msg_id)
+        {
+            eprintln!("Message {} already being handled, skipping", msg_id);
+            self.cleanup();
+            return Ok(());
+        }
 
         // Route the message
         let route = route_message(&trigger_message.body);
-        let model_info = route.model.as_ref().map(|m| format!(" (model: {m})")).unwrap_or_default();
+        let model_info = route
+            .model
+            .as_ref()
+            .map(|m| format!(" (model: {m})"))
+            .unwrap_or_default();
         eprintln!("Route:   {:?}{model_info}", route.route_type);
 
         // Dispatch to handler
@@ -1345,7 +1571,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             RouteType::Dev => self.handle_dev(&route.body)?,
             RouteType::Mission => self.handle_mission(&route.body)?,
             RouteType::Leads => self.handle_leads(&route.body)?,
-            RouteType::Bead => self.handle_bead(&route.body)?,
+            RouteType::Bone => self.handle_bone(&route.body)?,
             RouteType::Question => self.handle_question(&route, &trigger_message)?,
             RouteType::Triage => self.handle_triage(&trigger_message)?,
             RouteType::Oneshot => self.handle_oneshot(&trigger_message)?,
@@ -1367,11 +1593,12 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
 // Config discovery uses crate::config::find_config_in_project() for canonical priority.
 
-fn extract_bead_id(output: &str) -> Option<String> {
-    // Find bd-XXXX pattern in output
-    let start = output.find("bd-")?;
+fn extract_bone_id(output: &str) -> Option<String> {
+    // Find bn-XXXX pattern in output
+    let start = output.find("bn-")?;
     let rest = &output[start..];
-    let end = rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
+    let end = rest
+        .find(|c: char| !c.is_ascii_alphanumeric() && c != '-')
         .unwrap_or(rest.len());
     Some(rest[..end].to_string())
 }
@@ -1474,9 +1701,16 @@ mod tests {
     }
 
     #[test]
-    fn route_bead() {
+    fn route_bone() {
+        let r = route_message("!bone Add dark mode");
+        assert_eq!(r.route_type, RouteType::Bone);
+        assert_eq!(r.body, "Add dark mode");
+    }
+
+    #[test]
+    fn route_legacy_bead() {
         let r = route_message("!bead Add dark mode");
-        assert_eq!(r.route_type, RouteType::Bead);
+        assert_eq!(r.route_type, RouteType::Bone);
         assert_eq!(r.body, "Add dark mode");
     }
 
@@ -1615,16 +1849,22 @@ mod tests {
     // --- Helper tests ---
 
     #[test]
-    fn extract_bead_id_from_output() {
-        assert_eq!(extract_bead_id("Created bd-abc123"), Some("bd-abc123".into()));
-        assert_eq!(extract_bead_id("bd-xyz issue"), Some("bd-xyz".into()));
-        assert_eq!(extract_bead_id("no bead here"), None);
+    fn extract_bone_id_from_output() {
+        assert_eq!(
+            extract_bone_id("Created bn-abc123"),
+            Some("bn-abc123".into())
+        );
+        assert_eq!(extract_bone_id("bn-xyz issue"), Some("bn-xyz".into()));
+        assert_eq!(extract_bone_id("no bone here"), None);
     }
 
     #[test]
     fn extract_escalation_tag() {
         let output = "Some text <escalate>fix the auth bug</escalate> more text";
-        assert_eq!(Responder::extract_escalation(output), Some("fix the auth bug".into()));
+        assert_eq!(
+            Responder::extract_escalation(output),
+            Some("fix the auth bug".into())
+        );
     }
 
     #[test]
@@ -1651,8 +1891,14 @@ mod tests {
 
     #[test]
     fn strip_prefix_ci_basic() {
-        assert_eq!(strip_prefix_ci("!dev fix bug", "!dev"), Some("fix bug".into()));
-        assert_eq!(strip_prefix_ci("!DEV fix bug", "!dev"), Some("fix bug".into()));
+        assert_eq!(
+            strip_prefix_ci("!dev fix bug", "!dev"),
+            Some("fix bug".into())
+        );
+        assert_eq!(
+            strip_prefix_ci("!DEV fix bug", "!dev"),
+            Some("fix bug".into())
+        );
         assert_eq!(strip_prefix_ci("!dev", "!dev"), Some("".into()));
         assert_eq!(strip_prefix_ci("!devloop", "!dev"), None); // word boundary
     }

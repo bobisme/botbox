@@ -69,7 +69,7 @@ echo ""
 # --- Send task-request (this triggers the router hook → dev-loop spawns) ---
 echo "--- Sending task-request ($(date +%H:%M:%S)) ---"
 BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus send --agent setup echo \
-  "New task: Add GET /files/:name endpoint that reads and returns file contents from the files/ directory. The endpoint should accept a file name as a path parameter, read the file, and return its contents as text. Handle 404 for missing files and 500 for read errors. See bead $BEAD for details." \
+  "New task: Add GET /files/:name endpoint that reads and returns file contents from the files/ directory. The endpoint should accept a file name as a path parameter, read the file, and return its contents as text. Handle 404 for missing files and 500 for read errors. See bone $BEAD for details." \
   -L task-request
 echo "Task-request sent. Router hook should fire shortly and spawn dev agent."
 echo ""
@@ -131,17 +131,17 @@ while true; do
     echo "  Reviewer agent: NOT RUNNING"
   fi
 
-  # Check bead status
+  # Check bone status
   cd "$PROJECT_DIR"
-  BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json 2>/dev/null || echo "[]")
-  BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-  echo "  Bead $BEAD: $BEAD_STATUS"
+  BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json 2>/dev/null || echo "[]")
+  BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+  echo "  Bone $BEAD: $BEAD_STATUS"
 
   # Track activity for stuck detection
   if [[ "$BEAD_STATUS" != "$LAST_BEAD_STATUS" ]]; then
     LAST_BEAD_STATUS="$BEAD_STATUS"
     LAST_ACTIVITY_TIME=$(date +%s)
-    if [[ "$BEAD_STATUS" == "closed" && -z "$BEAD_CLOSED_TIME" ]]; then
+    if [[ "$BEAD_STATUS" == "done" && -z "$BEAD_CLOSED_TIME" ]]; then
       BEAD_CLOSED_TIME=$ELAPSED
       PHASE_TIMES+="bead_closed=${BEAD_CLOSED_TIME}s\n"
     fi
@@ -168,8 +168,8 @@ while true; do
   fi
 
   # Check for completion
-  if [[ "$BEAD_STATUS" == "closed" ]]; then
-    echo "  Bead is CLOSED — dev agent completed the task!"
+  if [[ "$BEAD_STATUS" == "done" ]]; then
+    echo "  Bone is DONE — dev agent completed the task!"
     # Give agents time to finish cleanup (release claims, sync, exit)
     # Dev-loop needs to cycle through hasWork() check which takes an iteration
     FINAL_STATUS_DEV="completed-still-running"
@@ -197,7 +197,7 @@ while true; do
     DEV_ALIVE=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
     REVIEWER_ALIVE=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
     if [[ -z "$DEV_ALIVE" && -z "$REVIEWER_ALIVE" ]]; then
-      echo "  Both agents exited without closing bead — marking as agent-exited"
+      echo "  Both agents exited without closing bone — marking as agent-exited"
       FINAL_STATUS_DEV="agent-exited"
       FINAL_STATUS_REVIEWER="agent-exited"
       break
@@ -239,11 +239,11 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history echo -n 100 > "$ARTIFACTS/channel
   echo "(no channel history)" > "$ARTIFACTS/channel-history.log"
 echo "  channel history: $ARTIFACTS/channel-history.log"
 
-# Bead state
+# Bone state
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json > "$ARTIFACTS/bead-state.json" 2>/dev/null || \
-  echo "[]" > "$ARTIFACTS/bead-state.json"
-echo "  bead state: $ARTIFACTS/bead-state.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json > "$ARTIFACTS/bone-state.json" 2>/dev/null || \
+  echo "[]" > "$ARTIFACTS/bone-state.json"
+echo "  bone state: $ARTIFACTS/bone-state.json"
 
 # Workspace state
 cd "$PROJECT_DIR"
@@ -309,7 +309,7 @@ if [[ -n "$REVIEWER_SPAWN_TIME" ]]; then
   echo "  Reviewer spawn: ${REVIEWER_SPAWN_TIME}s"
 fi
 if [[ -n "$BEAD_CLOSED_TIME" ]]; then
-  echo "  Bead closed: ${BEAD_CLOSED_TIME}s"
+  echo "  Bone done: ${BEAD_CLOSED_TIME}s"
 fi
 echo ""
 echo "Artifacts: $ARTIFACTS/"

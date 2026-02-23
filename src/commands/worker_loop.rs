@@ -15,7 +15,7 @@ pub struct WorkerLoop {
     timeout: u64,
     review_enabled: bool,
     critical_approvers: Vec<String>,
-    dispatched_bead: Option<String>,
+    dispatched_bone: Option<String>,
     dispatched_workspace: Option<String>,
     dispatched_mission: Option<String>,
     dispatched_siblings: Option<String>,
@@ -52,33 +52,59 @@ impl WorkerLoop {
 
         let timeout = worker_config.map(|w| w.timeout).unwrap_or(900);
         let review_enabled = config.review.enabled;
-        let critical_approvers = config.project.critical_approvers.clone().unwrap_or_default();
+        let critical_approvers = config
+            .project
+            .critical_approvers
+            .clone()
+            .unwrap_or_default();
 
         // Dispatched worker env vars (set by dev-loop)
-        // Validate bead ID format: bd-XXXX (alphanumeric + hyphens)
-        let dispatched_bead = std::env::var("BOTBOX_BEAD").ok().filter(|v| {
-            !v.is_empty() && v.len() <= 20
-                && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
-        });
+        // Validate bone ID format: bd-XXXX (alphanumeric + hyphens)
+        let dispatched_bone = std::env::var("BOTBOX_BONE")
+            .or_else(|_| std::env::var("BOTBOX_BEAD"))
+            .ok()
+            .filter(|v| {
+                !v.is_empty()
+                    && v.len() <= 20
+                    && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+            });
         // Validate workspace name: lowercase alphanumeric + hyphens, no path components
         let dispatched_workspace = std::env::var("BOTBOX_WORKSPACE").ok().filter(|v| {
-            !v.is_empty() && v.len() <= 64
-                && v.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+            !v.is_empty()
+                && v.len() <= 64
+                && v.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
                 && !v.starts_with('-')
                 && !v.contains("..")
         });
-        // Mission ID has same format as bead ID
+        // Mission ID has same format as bone ID
         let dispatched_mission = std::env::var("BOTBOX_MISSION").ok().filter(|v| {
-            !v.is_empty() && v.len() <= 20
+            !v.is_empty()
+                && v.len() <= 20
                 && v.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
         });
         // Siblings and file hints are informational — limit size to prevent prompt bloat
-        let dispatched_siblings = std::env::var("BOTBOX_SIBLINGS").ok()
-            .map(|v| if v.len() > 4096 { v[..v.floor_char_boundary(4096)].to_string() } else { v });
-        let dispatched_mission_outcome = std::env::var("BOTBOX_MISSION_OUTCOME").ok()
-            .map(|v| if v.len() > 2048 { v[..v.floor_char_boundary(2048)].to_string() } else { v });
-        let dispatched_file_hints = std::env::var("BOTBOX_FILE_HINTS").ok()
-            .map(|v| if v.len() > 4096 { v[..v.floor_char_boundary(4096)].to_string() } else { v });
+        let dispatched_siblings = std::env::var("BOTBOX_SIBLINGS").ok().map(|v| {
+            if v.len() > 4096 {
+                v[..v.floor_char_boundary(4096)].to_string()
+            } else {
+                v
+            }
+        });
+        let dispatched_mission_outcome = std::env::var("BOTBOX_MISSION_OUTCOME").ok().map(|v| {
+            if v.len() > 2048 {
+                v[..v.floor_char_boundary(2048)].to_string()
+            } else {
+                v
+            }
+        });
+        let dispatched_file_hints = std::env::var("BOTBOX_FILE_HINTS").ok().map(|v| {
+            if v.len() > 4096 {
+                v[..v.floor_char_boundary(4096)].to_string()
+            } else {
+                v
+            }
+        });
 
         Ok(Self {
             project_root,
@@ -88,7 +114,7 @@ impl WorkerLoop {
             timeout,
             review_enabled,
             critical_approvers,
-            dispatched_bead,
+            dispatched_bone,
             dispatched_workspace,
             dispatched_mission,
             dispatched_siblings,
@@ -116,31 +142,31 @@ impl WorkerLoop {
 
     /// Build the worker loop prompt.
     fn build_prompt(&self) -> String {
-        let dispatched_section = if let (Some(bead), Some(ws)) =
-            (&self.dispatched_bead, &self.dispatched_workspace)
+        let dispatched_section = if let (Some(bone), Some(ws)) =
+            (&self.dispatched_bone, &self.dispatched_workspace)
         {
             let mission_section = if let Some(ref mission) = self.dispatched_mission {
                 let outcome = if let Some(ref outcome) = self.dispatched_mission_outcome {
                     format!("Mission outcome: {outcome}")
                 } else {
-                    format!("Read mission context: maw exec default -- br show {mission}")
+                    format!("Read mission context: maw exec default -- bn show {mission}")
                 };
 
                 let siblings = if let Some(ref sibs) = self.dispatched_siblings {
-                    format!("\nSibling beads (other workers in this mission):\n{sibs}")
+                    format!("\nSibling bones (other workers in this mission):\n{sibs}")
                 } else {
                     String::new()
                 };
 
                 let file_hints = if let Some(ref hints) = self.dispatched_file_hints {
-                    format!("\nAdvisory file ownership (avoid editing files owned by siblings):\n{hints}")
+                    format!(
+                        "\nAdvisory file ownership (avoid editing files owned by siblings):\n{hints}"
+                    )
                 } else {
                     String::new()
                 };
 
-                format!(
-                    "Mission: {mission}\n{outcome}{siblings}{file_hints}"
-                )
+                format!("Mission: {mission}\n{outcome}{siblings}{file_hints}")
             } else {
                 String::new()
             };
@@ -150,23 +176,23 @@ impl WorkerLoop {
             format!(
                 r#"## DISPATCHED WORKER — FAST PATH
 
-You were dispatched by a lead dev agent with a pre-assigned bead and workspace.
+You were dispatched by a lead dev agent with a pre-assigned bone and workspace.
 Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE) entirely.
 
-Pre-assigned bead: {bead}
+Pre-assigned bone: {bone}
 Pre-assigned workspace: {ws}
 Workspace path: {ws_path}
 {mission_section}
 
 Go directly to:
-1. Verify your bead: maw exec default -- br show {bead}
+1. Verify your bone: maw exec default -- bn show {bone}
 2. Verify your workspace: maw ws list (confirm {ws} exists)
-3. Your bead is already in_progress and claimed. Proceed to step 4 (WORK).
+3. Your bone is already doing and claimed. Proceed to step 4 (WORK).
    Use absolute workspace path: {ws_path}
    For commands in workspace: maw exec {ws} -- <command>
 
 "#,
-                bead = bead,
+                bone = bone,
                 ws = ws,
                 ws_path = ws_path.display(),
                 mission_section = mission_section,
@@ -175,7 +201,7 @@ Go directly to:
             String::new()
         };
 
-        let dispatched_intro = if self.dispatched_bead.is_some() {
+        let dispatched_intro = if self.dispatched_bone.is_some() {
             "You are a dispatched worker — follow the FAST PATH section below."
         } else {
             r#"Execute exactly ONE cycle of the worker loop. Complete one task (or determine there is no work),
@@ -185,27 +211,27 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
         let review_step_6 = if self.review_enabled {
             format!(
                 r#"6. REVIEW REQUEST (risk-aware):
-   First, check the bead's risk label: maw exec default -- br show <id> — look for risk:low, risk:high, or risk:critical labels.
+   First, check the bone's risk label: maw exec default -- bn show <id> — look for risk:low, risk:high, or risk:critical labels.
    No risk label = risk:medium (standard review, current default).
 
    RISK:LOW PATH (evals, docs, tests, config) — Self-review and merge directly:
      No security review needed regardless of REVIEW setting.
-     Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+     Add self-review comment: maw exec default -- bn bone comment add <id> "Self-review (risk:low): <what you verified>"
      Proceed directly to step 7 (FINISH).
 
    RISK:MEDIUM PATH — Standard review (current default):
-     Try protocol command: botbox protocol review <bead-id> --agent {agent}
+     Try protocol command: botbox protocol review <bone-id> --agent {agent}
      Read the output carefully. If status is Ready, run the suggested commands.
      If it fails (exit 1 = command unavailable), fall back to manual review request:
        CHECK for existing review first:
-         - Run: maw exec default -- br comments <id> | grep "Review created:"
+         - Run: maw exec default -- bn comments <id> | grep "Review created:"
          - If found, extract <review-id> and skip to requesting review (don't create duplicate)
        Create review with reviewer assignment (only if none exists):
          - maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
-         - IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace $WS"
+         - IMMEDIATELY record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace $WS"
        bus statuses set --agent {agent} "Review: <review-id>".
        Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-     Do NOT close the bead. Do NOT merge. Do NOT release claims.
+     Do NOT close the bone. Do NOT merge. Do NOT release claims.
      Output: <promise>COMPLETE</promise>
      STOP this iteration.
 
@@ -234,18 +260,19 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
             )
         } else {
             r#"   REVIEW is disabled. Skip code review.
-   Proceed directly to step 7 (FINISH)."#.to_string()
+   Proceed directly to step 7 (FINISH)."#
+                .to_string()
         };
 
-        let finish_step_7 = if self.dispatched_bead.is_some() {
+        let finish_step_7 = if self.dispatched_bone.is_some() {
             format!(
                 r#"7. FINISH (dispatched worker — lead handles merge):
-   Try protocol command: botbox protocol finish <bead-id> --agent {agent} --no-merge
+   Try protocol command: botbox protocol finish <bone-id> --agent {agent} --no-merge
    Read the output carefully. If status is Ready, run the suggested commands.
    If it fails (exit 1 = command unavailable), fall back to manual finish:
-     Close bead: maw exec default -- br close --actor {agent} <id> --reason="Completed"
+     Close bone: maw exec default -- bn done <id> --reason "Completed"
      Announce: bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
-     Release bead claim: bus claims release --agent {agent} "bead://{project}/<id>"
+     Release bone claim: bus claims release --agent {agent} "bone://{project}/<id>"
      Do NOT merge the workspace — the lead dev will handle merging via the merge protocol.
      Do NOT run the release check — the lead handles releases.
    Output: <promise>COMPLETE</promise>"#,
@@ -255,19 +282,19 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
         } else {
             format!(
                 r#"7. FINISH (only reached after LGTM from step 0, or after step 6 when REVIEW is false):
-   Try protocol command: botbox protocol finish <bead-id> --agent {agent}
+   Try protocol command: botbox protocol finish <bone-id> --agent {agent}
    Read the output carefully. If status is Ready, run the suggested commands.
    If it fails (exit 1 = command unavailable), fall back to manual finish:
      If a review was conducted:
        maw exec default -- crit reviews mark-merged <review-id> --agent {agent}.
-     RISK:CRITICAL CHECK — Before merging a risk:critical bead:
-       Verify human approval exists: bus history {project} -n 50 -L review-request | look for approval message referencing this bead/review from an authorized approver.
+     RISK:CRITICAL CHECK — Before merging a risk:critical bone:
+       Verify human approval exists: bus history {project} -n 50 -L review-request | look for approval message referencing this bone/review from an authorized approver.
        If no approval found, do NOT merge. Post: bus send --agent {agent} {project} "Waiting for human approval on risk:critical <id>" -L review-request. STOP.
-       If approval found, record it: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Human approval: <approver> via bus message <msg-id>"
-     maw exec default -- br comments add --actor {agent} --author {agent} <id> "Completed by {agent}".
-     maw exec default -- br close --actor {agent} <id> --reason="Completed" --suggest-next.
+       If approval found, record it: maw exec default -- bn bone comment add <id> "Human approval: <approver> via bus message <msg-id>"
+     maw exec default -- bn bone comment add <id> "Completed by {agent}".
+     maw exec default -- bn done <id> --reason "Completed" --suggest-next.
      bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done.
-     bus claims release --agent {agent} "bead://{project}/<id>".
+     bus claims release --agent {agent} "bone://{project}/<id>".
      Keep workspace claim — the lead will merge it.
    STOP — do not proceed to RELEASE CHECK (only leads check for releases after merging)."#,
                 agent = self.agent,
@@ -285,13 +312,13 @@ then STOP. Do not start a second task — the outer loop handles iteration."#
         format!(
             r#"You are worker agent "{agent}" for project "{project}".
 
-IMPORTANT: Use --agent {agent} on ALL bus and crit commands. Use --actor {agent} on ALL mutating br commands (create, update, close, comments add, dep add, label add). Also use --owner {agent} on br create and --author {agent} on br comments add. Set BOTBOX_PROJECT={project}.
+IMPORTANT: Use --agent {agent} on ALL bus and crit commands. bn resolves agent identity from $AGENT/$BOTBUS_AGENT env automatically. Set BOTBOX_PROJECT={project}.
 
 CRITICAL - HUMAN MESSAGE PRIORITY: If you see a system reminder with "STOP:" showing unread bus messages, these are from humans or other agents trying to reach you. IMMEDIATELY check inbox and respond before continuing your current task. Human questions, clarifications, and redirects take priority over heads-down work.
 
-COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. All crit commands run in their workspace.
-  br/bv: maw exec default -- br <args>       or  maw exec default -- bv <args>
-  crit:  maw exec $WS -- crit <args>
+COMMAND PATTERN — maw exec: All bn commands run in the default workspace. All crit commands run in their workspace.
+  bn:   maw exec default -- bn <args>
+  crit: maw exec $WS -- crit <args>
   other: maw exec $WS -- <command>           (cargo test, etc.)
 
 CRITICAL — NO JJ COMMANDS: Workers must NEVER run jj commands (jj status, jj describe, jj diff, jj log, etc.).
@@ -309,13 +336,13 @@ At the end of your work, output exactly one of these completion signals:
    Try protocol command: botbox protocol resume --agent {agent}
    If it fails (exit 1 = command unavailable), fall back to manual resume check:
      Run: bus claims list --agent {agent} --mine
-     If you hold a bead:// claim, you have an in-progress bead from a previous iteration.
-     - Run: maw exec default -- br comments <bead-id> to understand what was done before and what remains.
+     If you hold a bone:// claim, you have an in-progress bone from a previous iteration.
+     - Run: maw exec default -- bn comments <bone-id> to understand what was done before and what remains.
      - Look for workspace info in comments (workspace name and path).
      - If a "Review created: <review-id>" comment exists:
        * Find the review: maw exec $WS -- crit review <review-id>
        * Check review status: maw exec $WS -- crit review <review-id>
-       * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bead.
+       * If LGTM (approved): proceed to FINISH (step 7) — merge the review and close the bone.
        * If BLOCKED (changes requested): fix the issues, then re-request review:
          1. Read threads: maw exec $WS -- crit review <review-id> (threads show inline with comments)
          2. For each unresolved thread with reviewer feedback:
@@ -330,41 +357,41 @@ At the end of your work, output exactly one of these completion signals:
      - If no review comment (work was in progress when session ended):
        * Read the workspace code to see what's already done.
        * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
-       * After completing: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Resumed and completed: <what you finished>".
+       * After completing: maw exec default -- bn bone comment add <id> "Resumed and completed: <what you finished>".
        * Then proceed to step 6 (REVIEW REQUEST) or step 7 (FINISH).
      If no active claims: proceed to step 1 (INBOX).
 
 1. INBOX (do this before triaging):
    Run: bus inbox --agent {agent} --channels {project} --mark-read
    For each message:
-   - Task request (-L task-request or asks for work): create a bead with maw exec default -- br create.
-   - Status check or question: reply on bus, do NOT create a bead.
-   - Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bead. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
+   - Task request (-L task-request or asks for work): create a bone with maw exec default -- bn create.
+   - Status check or question: reply on bus, do NOT create a bone.
+   - Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bone. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
    - Announcements from other agents ("Working on...", "Completed...", "online"): ignore, no action.
-   - Duplicate of existing bead: do NOT create another bead, note it covers the request.
+   - Duplicate of existing bone: do NOT create another bone, note it covers the request.
 
-2. TRIAGE: Check maw exec default -- br ready. If no ready beads and inbox created none, say "NO_WORK_AVAILABLE" and stop.
-   GROOM each ready bead (maw exec default -- br show <id>): ensure clear title, description with acceptance criteria
+2. TRIAGE: Check maw exec default -- bn next. If no ready bones and inbox created none, say "NO_WORK_AVAILABLE" and stop.
+   GROOM each ready bone (maw exec default -- bn show <id>): ensure clear title, description with acceptance criteria
    and testing strategy, appropriate priority, and risk label. Fix anything missing, comment what you changed.
-   RISK LABELS: Assess each bead for risk using these dimensions: blast radius, data sensitivity, reversibility, dependency uncertainty.
-   - risk:low — typo fixes, doc updates, config tweaks (add label: br label add --actor {agent} -l risk:low <id>)
+   RISK LABELS: Assess each bone for risk using these dimensions: blast radius, data sensitivity, reversibility, dependency uncertainty.
+   - risk:low — typo fixes, doc updates, config tweaks (add label: bn bone tag <id> risk:low)
    - risk:medium — standard features/bugs (default, no label needed)
    - risk:high — security-sensitive, data integrity, user-visible behavior changes (add label)
    - risk:critical — irreversible actions, migrations, regulated changes (add label)
    Any agent can escalate risk upward. Downgrades require lead approval with justification comment.
-   Use maw exec default -- bv --robot-next to pick exactly one small task. If the task is large, break it down with
-   maw exec default -- br create + br dep add, then bv --robot-next again. If a bead is claimed
-   (bus claims check --agent {agent} "bead://{project}/<id>"), skip it.
+   Use maw exec default -- bn --robot-next to pick exactly one small task. If the task is large, break it down with
+   maw exec default -- bn create + bn triage dep add, then bn next again. If a bone is claimed
+   (bus claims check --agent {agent} "bone://{project}/<id>"), skip it.
 
-   MISSION CONTEXT: After picking a bead, check if it has a mission:bd-xxx label (visible in br show output).
-   If it does, read the mission bead for shared context:
-     maw exec default -- br show <mission-id>
+   MISSION CONTEXT: After picking a bone, check if it has a mission:bd-xxx label (visible in bn show output).
+   If it does, read the mission bone for shared context:
+     maw exec default -- bn show <mission-id>
    Note the mission's Outcome, Constraints, and Stop criteria. Check siblings:
-     maw exec default -- br list -l "mission:<mission-id>"
+     maw exec default -- bn list -l "mission:<mission-id>"
    Use this context to understand how your work fits into the larger effort.
 
    SIBLING COORDINATION (missions only):
-   When working on a mission bead, you share the codebase with sibling workers. Coordinate through bus:
+   When working on a mission bone, you share the codebase with sibling workers. Coordinate through bus:
 
    READ siblings: Before editing a file listed in BOTBOX_FILE_HINTS as owned by a sibling, and periodically
    during work (~every 5 minutes), check for sibling messages:
@@ -378,14 +405,14 @@ At the end of your work, output exactly one of these completion signals:
 
    COORDINATION LABELS on bus messages:
    - coord:interface — API/schema/config changes that affect siblings
-   - coord:blocker — You need something from a sibling: bus send --agent {agent} {project} "Blocked by <sibling-bead>: <reason>" -L coord:blocker -L "mission:<mission-id>"
+   - coord:blocker — You need something from a sibling: bus send --agent {agent} {project} "Blocked by <sibling-bone>: <reason>" -L coord:blocker -L "mission:<mission-id>"
    - task-done — Signal completion: bus send --agent {agent} {project} "Completed <id>" -L task-done -L "mission:<mission-id>"
 
-3. START: Try protocol command: botbox protocol start <bead-id> --agent {agent}
+3. START: Try protocol command: botbox protocol start <bone-id> --agent {agent}
    Read the output carefully. If status is Ready, run the suggested commands.
    If it fails (exit 1 = command unavailable), fall back to manual start:
-     maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}.
-     bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>".
+     maw exec default -- bn do <id>.
+     bus claims stake --agent {agent} "bone://{project}/<id>" -m "<id>".
      Create workspace: run maw ws create --random. Note the workspace name AND absolute path
      from the output (e.g., name "frost-castle", path "/abs/path/ws/frost-castle").
      Store the name as WS and the absolute path as WS_PATH.
@@ -393,22 +420,22 @@ At the end of your work, output exactly one of these completion signals:
      For commands in the workspace: maw exec $WS -- <command>.
      Do NOT cd into the workspace and stay there — the workspace is destroyed during finish.
      bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>".
-     maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)".
+     maw exec default -- bn bone comment add <id> "Started in workspace $WS ($WS_PATH)".
      bus statuses set --agent {agent} "Working: <id>" --ttl 30m.
      Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim.
 
-4. WORK: maw exec default -- br show <id>, then implement the task in the workspace.
-   If this bead is part of a mission, check bus for sibling updates BEFORE starting implementation:
+4. WORK: maw exec default -- bn show <id>, then implement the task in the workspace.
+   If this bone is part of a mission, check bus for sibling updates BEFORE starting implementation:
      bus history {project} -n 10 -L "mission:<mission-id>" -L coord:interface
    Adapt your approach if siblings have already defined interfaces you need to consume or conform to.
-   Add at least one progress comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Progress: ...".
+   Add at least one progress comment: maw exec default -- bn bone comment add <id> "Progress: ...".
 
 5. STUCK CHECK: If same approach tried twice, info missing, or tool fails repeatedly — you are
-   stuck. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Blocked: <details>".
+   stuck. maw exec default -- bn bone comment add <id> "Blocked: <details>".
    bus statuses set --agent {agent} "Blocked: <short reason>".
    bus send --agent {agent} {project} "Stuck on <id>: <reason>" -L task-blocked.
-   maw exec default -- br update --actor {agent} <id> --status=blocked.
-   Release: bus claims release --agent {agent} "bead://{project}/<id>".
+   maw exec default -- bn bone tag <id> blocked.
+   Release: bus claims release --agent {agent} "bone://{project}/<id>".
    Output: <promise>BLOCKED</promise>
    Stop this cycle.
 
@@ -420,7 +447,7 @@ At the end of your work, output exactly one of these completion signals:
    Try protocol command: botbox protocol cleanup --agent {agent}
    If it fails (exit 1 = command unavailable), fall back to manual cleanup:
      bus statuses clear --agent {agent}
-     maw exec default -- br sync --flush-only
+     (bn is event-sourced — no sync needed)
 
 Key rules:
 - Exactly one small task per cycle.
@@ -428,12 +455,12 @@ Key rules:
 - If claim denied, pick something else.
 - All bus and crit commands use --agent {agent}.
 - All file operations use the absolute workspace path from maw ws create output. Do NOT cd into the workspace and stay there.
-- All br/bv commands: maw exec default -- br/bv ...
+- All bn commands: maw exec default -- bn ...
 - All crit/jj commands in a workspace: maw exec $WS -- crit/jj ...
 - If a tool behaves unexpectedly, report it: bus send --agent {agent} {project} "Tool issue: <details>" -L tool-issue.
 - STOP after completing one task or determining no work. Do not loop.
 - Always output <promise>COMPLETE</promise> or <promise>BLOCKED</promise> at the end.
-- RISK LABELS: Check bead risk labels before review. REVIEW={review_status}. {review_note}"#,
+- RISK LABELS: Check bone risk labels before review. REVIEW={review_status}. {review_note}"#,
             agent = self.agent,
             project = self.project,
             dispatched = dispatched_section,
@@ -466,7 +493,11 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
 /// Tries each model in the pool sequentially. If a model returns a rate limit error (429),
 /// logs a warning and tries the next model. Returns error only when all models are exhausted
 /// or a non-rate-limit error occurs.
-fn run_agent_with_fallback(prompt: &str, model_pool: &[String], timeout: u64) -> anyhow::Result<String> {
+fn run_agent_with_fallback(
+    prompt: &str,
+    model_pool: &[String],
+    timeout: u64,
+) -> anyhow::Result<String> {
     for (i, model) in model_pool.iter().enumerate() {
         if model_pool.len() > 1 {
             eprintln!("Trying model {}/{}: {}", i + 1, model_pool.len(), model);
@@ -474,14 +505,20 @@ fn run_agent_with_fallback(prompt: &str, model_pool: &[String], timeout: u64) ->
         match try_run_agent(prompt, model, timeout) {
             Ok(output) => {
                 if is_rate_limit_output(&output) {
-                    eprintln!("Rate limited on {} (detected in output), trying next model...", model);
+                    eprintln!(
+                        "Rate limited on {} (detected in output), trying next model...",
+                        model
+                    );
                     continue;
                 }
                 // Empty or near-empty output means the model hung/crashed without
                 // producing useful work (e.g., Pi killed a hung Gemini process).
                 // Try the next model if available.
                 if output.trim().is_empty() && i + 1 < model_pool.len() {
-                    eprintln!("Empty output from {} (process likely hung), trying next model...", model);
+                    eprintln!(
+                        "Empty output from {} (process likely hung), trying next model...",
+                        model
+                    );
                     continue;
                 }
                 return Ok(output);
@@ -491,14 +528,21 @@ fn run_agent_with_fallback(prompt: &str, model_pool: &[String], timeout: u64) ->
                 if (is_rate_limit_error(&err_str) || err_str.contains("exited with code"))
                     && i + 1 < model_pool.len()
                 {
-                    eprintln!("Failed on {} ({}), trying next model...", model, err_str.lines().next().unwrap_or("error"));
+                    eprintln!(
+                        "Failed on {} ({}), trying next model...",
+                        model,
+                        err_str.lines().next().unwrap_or("error")
+                    );
                     continue;
                 }
                 return Err(e);
             }
         }
     }
-    anyhow::bail!("All {} models in pool exhausted (rate limited)", model_pool.len())
+    anyhow::bail!(
+        "All {} models in pool exhausted (rate limited)",
+        model_pool.len()
+    )
 }
 
 /// Check if output text indicates a rate limit error.
@@ -592,7 +636,7 @@ fn register_cleanup_handlers(agent: &str, project: &str) {
     .expect("Error setting Ctrl-C handler");
 }
 
-/// Cleanup: release claims, clear status, sync beads.
+/// Cleanup: release claims, clear status.
 fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     eprintln!("Cleaning up...");
 
@@ -601,40 +645,34 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
     // (botty kill sends SIGTERM to the parent's process group, which would
     // otherwise kill these children before they complete).
 
-    // Reset orphaned in-progress beads
-    let result = Tool::new("br")
-        .args(&["list", "--status", "in_progress", "--assignee", agent, "--json"])
+    // Reset orphaned doing bones
+    let result = Tool::new("bn")
+        .args(&["list", "--state", "doing", "--assignee", agent, "--json"])
         .in_workspace("default")?
         .new_process_group()
         .run();
 
     if let Ok(output) = result
-        && let Ok(beads) = output.parse_json::<Vec<serde_json::Value>>() {
-            for bead in beads {
-                if let Some(id) = bead.get("id").and_then(|v| v.as_str()) {
-                    let _ = Tool::new("br")
-                        .args(&["update", "--actor", agent, id, "--status=open"])
-                        .in_workspace("default")?
-                        .new_process_group()
-                        .run();
-                    let _ = Tool::new("br")
-                        .args(&[
-                            "comments",
-                            "add",
-                            "--actor",
-                            agent,
-                            "--author",
-                            agent,
-                            id,
-                            &format!("Worker {agent} exited without completing. Resetting to open for reassignment."),
-                        ])
-                        .in_workspace("default")?
-                        .new_process_group()
-                        .run();
-                    eprintln!("Reset orphaned bead {id} to open");
-                }
+        && let Ok(bones) = output.parse_json::<Vec<serde_json::Value>>()
+    {
+        for bone in bones {
+            if let Some(id) = bone.get("id").and_then(|v| v.as_str()) {
+                // bn doesn't have an "undo" command — just add a comment noting the orphan
+                let _ = Tool::new("bn")
+                    .args(&[
+                        "bone",
+                        "comment",
+                        "add",
+                        id,
+                        &format!("Worker {agent} exited without completing. Needs reassignment."),
+                    ])
+                    .in_workspace("default")?
+                    .new_process_group()
+                    .run();
+                eprintln!("Noted orphaned bone {id}");
             }
         }
+    }
 
     // Sign off on bus
     let _ = Tool::new("bus")
@@ -658,7 +696,13 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
 
     // Release agent claim
     let _ = Tool::new("bus")
-        .args(&["claims", "release", "--agent", agent, &format!("agent://{agent}")])
+        .args(&[
+            "claims",
+            "release",
+            "--agent",
+            agent,
+            &format!("agent://{agent}"),
+        ])
         .new_process_group()
         .run();
 
@@ -668,12 +712,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
         .new_process_group()
         .run();
 
-    // Sync beads
-    let _ = Tool::new("br")
-        .args(&["sync", "--flush-only"])
-        .in_workspace("default")?
-        .new_process_group()
-        .run();
+    // bn is event-sourced — no sync step needed
 
     eprintln!("Cleanup complete for {agent}.");
     Ok(())
@@ -729,7 +768,7 @@ mod tests {
     #[test]
     fn build_prompt_contains_agent_identity() {
         unsafe {
-            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_BONE", "");
             std::env::set_var("BOTBOX_WORKSPACE", "");
         }
 
@@ -741,7 +780,7 @@ mod tests {
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
-            dispatched_bead: None,
+            dispatched_bone: None,
             dispatched_workspace: None,
             dispatched_mission: None,
             dispatched_siblings: None,
@@ -760,7 +799,7 @@ mod tests {
     #[test]
     fn build_prompt_dispatched_fast_path() {
         unsafe {
-            std::env::set_var("BOTBOX_BEAD", "bd-test");
+            std::env::set_var("BOTBOX_BONE", "bd-test");
             std::env::set_var("BOTBOX_WORKSPACE", "test-ws");
         }
 
@@ -772,7 +811,7 @@ mod tests {
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
-            dispatched_bead: Some("bd-test".to_string()),
+            dispatched_bone: Some("bd-test".to_string()),
             dispatched_workspace: Some("test-ws".to_string()),
             dispatched_mission: None,
             dispatched_siblings: None,
@@ -782,7 +821,7 @@ mod tests {
 
         let prompt = worker.build_prompt();
         assert!(prompt.contains("DISPATCHED WORKER — FAST PATH"));
-        assert!(prompt.contains("Pre-assigned bead: bd-test"));
+        assert!(prompt.contains("Pre-assigned bone: bd-test"));
         assert!(prompt.contains("Pre-assigned workspace: test-ws"));
         assert!(prompt.contains("Skip steps 0 (RESUME CHECK), 1 (INBOX), and 2 (TRIAGE)"));
     }
@@ -790,7 +829,7 @@ mod tests {
     #[test]
     fn build_prompt_contains_all_protocol_commands() {
         unsafe {
-            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_BONE", "");
             std::env::set_var("BOTBOX_WORKSPACE", "");
         }
 
@@ -802,7 +841,7 @@ mod tests {
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
-            dispatched_bead: None,
+            dispatched_bone: None,
             dispatched_workspace: None,
             dispatched_mission: None,
             dispatched_siblings: None,
@@ -838,7 +877,7 @@ mod tests {
     #[test]
     fn build_prompt_review_disabled() {
         unsafe {
-            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_BONE", "");
             std::env::set_var("BOTBOX_WORKSPACE", "");
         }
 
@@ -850,7 +889,7 @@ mod tests {
             timeout: 900,
             review_enabled: false,
             critical_approvers: vec![],
-            dispatched_bead: None,
+            dispatched_bone: None,
             dispatched_workspace: None,
             dispatched_mission: None,
             dispatched_siblings: None,
@@ -867,7 +906,7 @@ mod tests {
     #[test]
     fn build_prompt_contains_protocol_fallback_wording() {
         unsafe {
-            std::env::set_var("BOTBOX_BEAD", "");
+            std::env::set_var("BOTBOX_BONE", "");
             std::env::set_var("BOTBOX_WORKSPACE", "");
         }
 
@@ -879,7 +918,7 @@ mod tests {
             timeout: 900,
             review_enabled: true,
             critical_approvers: vec![],
-            dispatched_bead: None,
+            dispatched_bone: None,
             dispatched_workspace: None,
             dispatched_mission: None,
             dispatched_siblings: None,
@@ -927,7 +966,9 @@ mod tests {
         assert!(is_rate_limit_output("Error 429: rate limit exceeded"));
         assert!(is_rate_limit_output("HTTP 429 - quota exceeded"));
         assert!(is_rate_limit_output("429 resource_exhausted"));
-        assert!(is_rate_limit_output("Got 429: You have exhausted your capacity"));
+        assert!(is_rate_limit_output(
+            "Got 429: You have exhausted your capacity"
+        ));
         assert!(!is_rate_limit_output("Everything is fine"));
         assert!(!is_rate_limit_output("Error 500: server error"));
         // 429 alone without rate limit keywords should not match

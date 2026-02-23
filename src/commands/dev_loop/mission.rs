@@ -1,6 +1,6 @@
 //! Mission orchestration helpers (Level 4).
 //!
-//! Missions are large tasks decomposed into child beads dispatched to parallel workers.
+//! Missions are large tasks decomposed into child bones dispatched to parallel workers.
 //! The orchestration logic is primarily prompt-driven; these helpers support
 //! checkpoint state management and mission lifecycle tracking.
 
@@ -61,7 +61,7 @@ impl MissionCheckpoint {
         self.closed == self.total_children
     }
 
-    /// Check if the mission is stuck (all remaining beads blocked, no workers alive).
+    /// Check if the mission is stuck (all remaining bones blocked, no workers alive).
     pub fn is_stuck(&self) -> bool {
         self.in_progress == 0 && self.blocked > 0 && self.open == 0
     }

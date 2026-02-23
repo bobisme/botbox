@@ -2,26 +2,27 @@ use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use clap::Args;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
-use crate::config::Config;
-use crate::subprocess::Tool;
 use super::doctor::OutputFormat;
 use super::protocol::context::ProtocolContext;
 use super::protocol::review_gate;
+use crate::config::Config;
+use crate::subprocess::Tool;
 
-/// Validate that a bead ID matches the expected pattern (e.g., bd-xxxx).
-fn is_valid_bead_id(id: &str) -> bool {
-    id.starts_with("bd-") && id.len() <= 20
+/// Validate that a bone ID matches the expected pattern (e.g., bn-xxxx).
+fn is_valid_bone_id(id: &str) -> bool {
+    (id.starts_with("bn-") || id.starts_with("bd-"))
+        && id.len() <= 20
         && id[3..].chars().all(|c| c.is_ascii_alphanumeric())
 }
 
 /// Validate that a workspace name is safe (alphanumeric + hyphens only).
 fn is_valid_workspace_name(name: &str) -> bool {
-    !name.is_empty() && name.len() <= 64
+    !name.is_empty()
+        && name.len() <= 64
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
 }
-
 
 #[derive(Debug, Args)]
 pub struct StatusArgs {
@@ -49,7 +50,7 @@ pub struct Advice {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StatusReport {
-    pub ready_beads: ReadyBeads,
+    pub ready_bones: ReadyBones,
     pub workspaces: WorkspaceSummary,
     pub inbox: InboxSummary,
     pub agents: AgentsSummary,
@@ -60,13 +61,13 @@ pub struct StatusReport {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct ReadyBeads {
+pub struct ReadyBones {
     pub count: usize,
-    pub items: Vec<BeadSummary>,
+    pub items: Vec<BoneSummary>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct BeadSummary {
+pub struct BoneSummary {
     pub id: String,
     pub title: String,
 }
@@ -107,28 +108,35 @@ impl StatusArgs {
         let config = crate::config::find_config_in_project(&PathBuf::from("."))
             .ok()
             .and_then(|(p, _)| Config::load(&p).ok());
-        let project = self.project.clone()
+        let project = self
+            .project
+            .clone()
             .or_else(|| std::env::var("BOTBOX_PROJECT").ok())
             .or_else(|| config.as_ref().map(|c| c.project.name.clone()))
             .unwrap_or_else(|| "botbox".to_string());
 
-        let agent = self.agent.clone()
+        let agent = self
+            .agent
+            .clone()
             .or_else(|| std::env::var("BOTBOX_AGENT").ok())
             .or_else(|| config.as_ref().map(|c| c.default_agent()))
             .unwrap_or_else(|| format!("{project}-dev"));
 
         // Get required reviewers from config (format: ["security"] → ["<project>-security"])
-        let required_reviewers: Vec<String> = config.as_ref()
+        let required_reviewers: Vec<String> = config
+            .as_ref()
             .filter(|c| c.review.enabled)
             .map(|c| {
-                c.review.reviewers.iter()
+                c.review
+                    .reviewers
+                    .iter()
                     .map(|r| format!("{project}-{r}"))
                     .collect()
             })
             .unwrap_or_else(|| vec![format!("{project}-security")]);
 
         let mut report = StatusReport {
-            ready_beads: ReadyBeads {
+            ready_bones: ReadyBones {
                 count: 0,
                 items: vec![],
             },
@@ -137,42 +145,37 @@ impl StatusArgs {
                 active: 0,
                 stale: 0,
             },
-            inbox: InboxSummary {
-                unread: 0,
-            },
-            agents: AgentsSummary {
-                running: 0,
-            },
-            claims: ClaimsSummary {
-                active: 0,
-            },
+            inbox: InboxSummary { unread: 0 },
+            agents: AgentsSummary { running: 0 },
+            claims: ClaimsSummary { active: 0 },
             advice: Vec::new(),
         };
 
         // Try to collect ProtocolContext for advice generation
         let ctx = ProtocolContext::collect(&project, &agent).ok();
 
-        // 1. Ready beads
-        if let Ok(output) = Tool::new("br")
-            .arg("ready")
+        // 1. Ready bones
+        if let Ok(output) = Tool::new("bn")
+            .arg("next")
             .arg("--format")
             .arg("json")
             .run()
-            && let Ok(beads_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
-                && let Some(items) = beads_json.get("items").and_then(|v| v.as_array()) {
-                    report.ready_beads.count = items.len();
-                    for item in items.iter().take(5) {
-                        if let (Some(id), Some(title)) = (
-                            item.get("id").and_then(|v| v.as_str()),
-                            item.get("title").and_then(|v| v.as_str()),
-                        ) {
-                            report.ready_beads.items.push(BeadSummary {
-                                id: id.to_string(),
-                                title: title.to_string(),
-                            });
-                        }
-                    }
+            && let Ok(bones_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+            && let Some(items) = bones_json.get("items").and_then(|v| v.as_array())
+        {
+            report.ready_bones.count = items.len();
+            for item in items.iter().take(5) {
+                if let (Some(id), Some(title)) = (
+                    item.get("id").and_then(|v| v.as_str()),
+                    item.get("title").and_then(|v| v.as_str()),
+                ) {
+                    report.ready_bones.items.push(BoneSummary {
+                        id: id.to_string(),
+                        title: title.to_string(),
+                    });
                 }
+            }
+        }
 
         // 2. Active workspaces
         if let Ok(output) = Tool::new("maw")
@@ -181,28 +184,33 @@ impl StatusArgs {
             .arg("--format")
             .arg("json")
             .run()
-            && let Ok(ws_json) = serde_json::from_str::<serde_json::Value>(&output.stdout) {
-                if let Some(workspaces) = ws_json.get("workspaces").and_then(|v| v.as_array()) {
-                    report.workspaces.total = workspaces.len();
-                    for ws in workspaces {
-                        if ws.get("is_default").and_then(|v| v.as_bool()).unwrap_or(false) {
-                            continue;
-                        }
-                        report.workspaces.active += 1;
+            && let Ok(ws_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
+        {
+            if let Some(workspaces) = ws_json.get("workspaces").and_then(|v| v.as_array()) {
+                report.workspaces.total = workspaces.len();
+                for ws in workspaces {
+                    if ws
+                        .get("is_default")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false)
+                    {
+                        continue;
                     }
-                }
-                if let Some(ws_advice) = ws_json.get("advice").and_then(|v| v.as_array()) {
-                    report.workspaces.stale = ws_advice
-                        .iter()
-                        .filter(|a| {
-                            a.get("message")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.contains("stale"))
-                                .unwrap_or(false)
-                        })
-                        .count();
+                    report.workspaces.active += 1;
                 }
             }
+            if let Some(ws_advice) = ws_json.get("advice").and_then(|v| v.as_array()) {
+                report.workspaces.stale = ws_advice
+                    .iter()
+                    .filter(|a| {
+                        a.get("message")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.contains("stale"))
+                            .unwrap_or(false)
+                    })
+                    .count();
+            }
+        }
 
         // 3. Pending inbox
         if let Ok(output) = Tool::new("bus")
@@ -211,9 +219,10 @@ impl StatusArgs {
             .arg("json")
             .run()
             && let Ok(inbox_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
-                && let Some(messages) = inbox_json.get("messages").and_then(|v| v.as_array()) {
-                    report.inbox.unread = messages.len();
-                }
+            && let Some(messages) = inbox_json.get("messages").and_then(|v| v.as_array())
+        {
+            report.inbox.unread = messages.len();
+        }
 
         // 4. Running agents
         if let Ok(output) = Tool::new("botty")
@@ -222,9 +231,10 @@ impl StatusArgs {
             .arg("json")
             .run()
             && let Ok(agents_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
-                && let Some(agents) = agents_json.get("agents").and_then(|v| v.as_array()) {
-                    report.agents.running = agents.len();
-                }
+            && let Some(agents) = agents_json.get("agents").and_then(|v| v.as_array())
+        {
+            report.agents.running = agents.len();
+        }
 
         // 5. Active claims
         if let Ok(output) = Tool::new("bus")
@@ -234,9 +244,10 @@ impl StatusArgs {
             .arg("json")
             .run()
             && let Ok(claims_json) = serde_json::from_str::<serde_json::Value>(&output.stdout)
-                && let Some(claims) = claims_json.get("claims").and_then(|v| v.as_array()) {
-                    report.claims.active = claims.len();
-                }
+            && let Some(claims) = claims_json.get("claims").and_then(|v| v.as_array())
+        {
+            report.claims.active = claims.len();
+        }
 
         // 6. Generate advice based on cross-tool state
         if let Some(ref context) = ctx {
@@ -259,45 +270,55 @@ impl StatusArgs {
     }
 
     /// Generate actionable advice from cross-tool state analysis.
-    fn generate_advice(&self, report: &mut StatusReport, ctx: &ProtocolContext, required_reviewers: &[String]) -> anyhow::Result<()> {
-        // Priority 1: CRITICAL - orphaned claims (bead closed but claim still active)
-        for (bead_id, _pattern) in ctx.held_bead_claims() {
-            if !is_valid_bead_id(bead_id) {
+    fn generate_advice(
+        &self,
+        report: &mut StatusReport,
+        ctx: &ProtocolContext,
+        required_reviewers: &[String],
+    ) -> anyhow::Result<()> {
+        // Priority 1: CRITICAL - orphaned claims (bone closed but claim still active)
+        for (bone_id, _pattern) in ctx.held_bone_claims() {
+            if !is_valid_bone_id(bone_id) {
                 continue; // Skip malformed claim URIs
             }
-            if let Ok(bead) = ctx.bead_status(bead_id) {
-                if bead.status == "closed" {
+            if let Ok(bone) = ctx.bone_status(bone_id) {
+                if bone.state == "done" || bone.state == "archived" {
                     report.advice.push(Advice {
                         severity: "CRITICAL".to_string(),
                         message: format!(
-                            "Orphaned claim: bead {} is closed but claim still active → cleanup required",
-                            bead_id
+                            "Orphaned claim: bone {} is closed but claim still active → cleanup required",
+                            bone_id
                         ),
-                        command: Some(format!("botbox protocol cleanup {}", bead_id)),
+                        command: Some(format!("botbox protocol cleanup {}", bone_id)),
                     });
                 }
             }
         }
 
         // Priority 2: HIGH - LGTM review with no finish action
-        for (bead_id, _pattern) in ctx.held_bead_claims() {
-            if !is_valid_bead_id(bead_id) {
+        for (bone_id, _pattern) in ctx.held_bone_claims() {
+            if !is_valid_bone_id(bone_id) {
                 continue;
             }
-            if let Some(ws_name) = ctx.workspace_for_bead(bead_id) {
+            if let Some(ws_name) = ctx.workspace_for_bone(bone_id) {
                 if let Ok(reviews) = ctx.reviews_in_workspace(ws_name) {
                     for review_summary in reviews {
-                        if let Ok(review_detail) = ctx.review_status(&review_summary.review_id, ws_name) {
-                            let gate = review_gate::evaluate_review_gate(&review_detail, required_reviewers);
+                        if let Ok(review_detail) =
+                            ctx.review_status(&review_summary.review_id, ws_name)
+                        {
+                            let gate = review_gate::evaluate_review_gate(
+                                &review_detail,
+                                required_reviewers,
+                            );
 
                             if gate.status == review_gate::ReviewGateStatus::Approved {
                                 report.advice.push(Advice {
                                     severity: "HIGH".to_string(),
                                     message: format!(
-                                        "Review {} approved (LGTM) → ready to finish bead {}",
-                                        review_detail.review_id, bead_id
+                                        "Review {} approved (LGTM) → ready to finish bone {}",
+                                        review_detail.review_id, bone_id
                                     ),
-                                    command: Some(format!("botbox protocol finish {}", bead_id)),
+                                    command: Some(format!("botbox protocol finish {}", bone_id)),
                                 });
                             }
                         }
@@ -307,25 +328,30 @@ impl StatusArgs {
         }
 
         // Priority 3: HIGH - BLOCK review needing response
-        for (bead_id, _pattern) in ctx.held_bead_claims() {
-            if !is_valid_bead_id(bead_id) {
+        for (bone_id, _pattern) in ctx.held_bone_claims() {
+            if !is_valid_bone_id(bone_id) {
                 continue;
             }
-            if let Some(ws_name) = ctx.workspace_for_bead(bead_id) {
+            if let Some(ws_name) = ctx.workspace_for_bone(bone_id) {
                 if let Ok(reviews) = ctx.reviews_in_workspace(ws_name) {
                     for review_summary in reviews {
-                        if let Ok(review_detail) = ctx.review_status(&review_summary.review_id, ws_name) {
-                            let gate = review_gate::evaluate_review_gate(&review_detail, required_reviewers);
+                        if let Ok(review_detail) =
+                            ctx.review_status(&review_summary.review_id, ws_name)
+                        {
+                            let gate = review_gate::evaluate_review_gate(
+                                &review_detail,
+                                required_reviewers,
+                            );
 
                             if gate.status == review_gate::ReviewGateStatus::Blocked {
                                 let blocked_by = gate.blocked_by.join(", ");
                                 report.advice.push(Advice {
                                     severity: "HIGH".to_string(),
                                     message: format!(
-                                        "Review {} blocked by {} → address feedback on bead {}",
-                                        review_detail.review_id, blocked_by, bead_id
+                                        "Review {} blocked by {} → address feedback on bone {}",
+                                        review_detail.review_id, blocked_by, bone_id
                                     ),
-                                    command: Some(format!("br show {} | grep -A5 'Review created'", bead_id)),
+                                    command: Some(format!("bn show {}", bone_id)),
                                 });
                             }
                         }
@@ -334,31 +360,32 @@ impl StatusArgs {
             }
         }
 
-        // Priority 4: MEDIUM - in-progress bead with no workspace
-        for (bead_id, _pattern) in ctx.held_bead_claims() {
-            if !is_valid_bead_id(bead_id) {
+        // Priority 4: MEDIUM - in-progress bone with no workspace
+        for (bone_id, _pattern) in ctx.held_bone_claims() {
+            if !is_valid_bone_id(bone_id) {
                 continue;
             }
-            if let Ok(bead) = ctx.bead_status(bead_id) {
-                if bead.status == "in_progress" && ctx.workspace_for_bead(bead_id).is_none() {
+            if let Ok(bone) = ctx.bone_status(bone_id) {
+                if bone.state == "doing" && ctx.workspace_for_bone(bone_id).is_none() {
                     report.advice.push(Advice {
                         severity: "MEDIUM".to_string(),
                         message: format!(
-                            "In-progress bead {} has no workspace → possible crash recovery needed",
-                            bead_id
+                            "In-progress bone {} has no workspace → possible crash recovery needed",
+                            bone_id
                         ),
-                        command: Some(format!("br show {}", bead_id)),
+                        command: Some(format!("bn show {}", bone_id)),
                     });
                 }
             }
         }
 
-        // Priority 5: MEDIUM - workspace with no bead claim
+        // Priority 5: MEDIUM - workspace with no bone claim
         for ws in ctx.workspaces() {
             if ws.is_default {
                 continue;
             }
-            let has_claim = ctx.held_workspace_claims()
+            let has_claim = ctx
+                .held_workspace_claims()
                 .iter()
                 .any(|(name, _)| name == &ws.name);
 
@@ -371,7 +398,7 @@ impl StatusArgs {
                 report.advice.push(Advice {
                     severity: "MEDIUM".to_string(),
                     message: format!(
-                        "Workspace {} has no bead claim → investigate or clean up",
+                        "Workspace {} has no bone claim → investigate or clean up",
                         ws.name
                     ),
                     command,
@@ -379,20 +406,24 @@ impl StatusArgs {
             }
         }
 
-        // Priority 6: LOW - ready beads available (informational)
-        if report.ready_beads.count > 0 {
+        // Priority 6: LOW - ready bones available (informational)
+        if report.ready_bones.count > 0 {
             report.advice.push(Advice {
                 severity: "LOW".to_string(),
-                message: format!("{} ready bead(s) available → run triage", report.ready_beads.count),
-                command: Some("maw exec default -- br ready".to_string()),
+                message: format!(
+                    "{} ready bone(s) available → run triage",
+                    report.ready_bones.count
+                ),
+                command: Some("maw exec default -- bn next".to_string()),
             });
         }
 
         // Priority 7: INFO - agent idle with no work
-        if ctx.held_bead_claims().is_empty() && report.ready_beads.count == 0 {
+        if ctx.held_bone_claims().is_empty() && report.ready_bones.count == 0 {
             report.advice.push(Advice {
                 severity: "INFO".to_string(),
-                message: "No held beads and no ready work → check inbox or create beads from tasks".to_string(),
+                message: "No held bones and no ready work → check inbox or create bones from tasks"
+                    .to_string(),
                 command: Some("bus inbox --agent $AGENT".to_string()),
             });
         }
@@ -403,19 +434,19 @@ impl StatusArgs {
     fn print_pretty(&self, report: &StatusReport) {
         println!("=== Botbox Status ===\n");
 
-        println!("Ready Beads: {}", report.ready_beads.count);
-        for bead in report.ready_beads.items.iter().take(5) {
-            println!("  • {} — {}", bead.id, bead.title);
+        println!("Ready Bones: {}", report.ready_bones.count);
+        for bone in report.ready_bones.items.iter().take(5) {
+            println!("  • {} — {}", bone.id, bone.title);
         }
-        if report.ready_beads.count > 5 {
-            println!("  ... and {} more", report.ready_beads.count - 5);
+        if report.ready_bones.count > 5 {
+            println!("  ... and {} more", report.ready_bones.count - 5);
         }
 
         println!("\nWorkspaces:");
-        println!("  Total: {}  (Active: {}, Stale: {})",
-            report.workspaces.total,
-            report.workspaces.active,
-            report.workspaces.stale);
+        println!(
+            "  Total: {}  (Active: {}, Stale: {})",
+            report.workspaces.total, report.workspaces.active, report.workspaces.stale
+        );
 
         println!("\nInbox: {} unread", report.inbox.unread);
         println!("Running Agents: {}", report.agents.running);
@@ -434,14 +465,14 @@ impl StatusArgs {
 
     fn print_text(&self, report: &StatusReport) {
         println!("botbox-status");
-        println!("ready-beads  count={}", report.ready_beads.count);
-        for bead in report.ready_beads.items.iter().take(5) {
-            println!("ready-bead  id={}  title={}", bead.id, bead.title);
+        println!("ready-bones  count={}", report.ready_bones.count);
+        for bone in report.ready_bones.items.iter().take(5) {
+            println!("ready-bone  id={}  title={}", bone.id, bone.title);
         }
-        println!("workspaces  total={}  active={}  stale={}",
-            report.workspaces.total,
-            report.workspaces.active,
-            report.workspaces.stale);
+        println!(
+            "workspaces  total={}  active={}  stale={}",
+            report.workspaces.total, report.workspaces.active, report.workspaces.stale
+        );
         println!("inbox  unread={}", report.inbox.unread);
         println!("agents  running={}", report.agents.running);
         println!("claims  active={}", report.claims.active);
@@ -449,7 +480,10 @@ impl StatusArgs {
         if !report.advice.is_empty() {
             println!("advice  count={}", report.advice.len());
             for adv in &report.advice {
-                println!("advice-item  severity={}  message={}", adv.severity, adv.message);
+                println!(
+                    "advice-item  severity={}  message={}",
+                    adv.severity, adv.message
+                );
                 if let Some(ref cmd) = adv.command {
                     println!("advice-command  {}", cmd);
                 }
@@ -478,7 +512,7 @@ mod tests {
     #[test]
     fn status_report_with_empty_advice() {
         let report = StatusReport {
-            ready_beads: ReadyBeads {
+            ready_bones: ReadyBones {
                 count: 0,
                 items: vec![],
             },
@@ -487,15 +521,9 @@ mod tests {
                 active: 0,
                 stale: 0,
             },
-            inbox: InboxSummary {
-                unread: 0,
-            },
-            agents: AgentsSummary {
-                running: 0,
-            },
-            claims: ClaimsSummary {
-                active: 0,
-            },
+            inbox: InboxSummary { unread: 0 },
+            agents: AgentsSummary { running: 0 },
+            claims: ClaimsSummary { active: 0 },
             advice: vec![],
         };
 
@@ -513,29 +541,21 @@ mod tests {
     #[test]
     fn status_report_with_advice() {
         let report = StatusReport {
-            ready_beads: ReadyBeads {
+            ready_bones: ReadyBones {
                 count: 2,
-                items: vec![
-                    BeadSummary {
-                        id: "bd-abc".to_string(),
-                        title: "test bead 1".to_string(),
-                    },
-                ],
+                items: vec![BoneSummary {
+                    id: "bd-abc".to_string(),
+                    title: "test bone 1".to_string(),
+                }],
             },
             workspaces: WorkspaceSummary {
                 total: 1,
                 active: 1,
                 stale: 0,
             },
-            inbox: InboxSummary {
-                unread: 1,
-            },
-            agents: AgentsSummary {
-                running: 1,
-            },
-            claims: ClaimsSummary {
-                active: 1,
-            },
+            inbox: InboxSummary { unread: 1 },
+            agents: AgentsSummary { running: 1 },
+            claims: ClaimsSummary { active: 1 },
             advice: vec![
                 Advice {
                     severity: "HIGH".to_string(),
@@ -555,7 +575,11 @@ mod tests {
 
         // Verify advice array structure
         assert!(parsed.get("advice").is_some());
-        let advice_array = parsed.get("advice").unwrap().as_array().expect("should be array");
+        let advice_array = parsed
+            .get("advice")
+            .unwrap()
+            .as_array()
+            .expect("should be array");
         assert_eq!(advice_array.len(), 2);
         assert_eq!(advice_array[0]["severity"], "HIGH");
         assert_eq!(advice_array[1]["severity"], "INFO");

@@ -13,11 +13,12 @@ Start a bead using the standard botbox flow: claim the work, set up a workspace,
 2. `maw exec default -- br update --actor $AGENT <bead-id> --status=in_progress --owner=$AGENT`
 3. `bus claims stake --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
 4. Create a workspace: `maw ws create --random` — note the workspace name from the output. Store as `$WS`.
-5. **All file edits must use the workspace path** `ws/$WS/` (e.g., `$PROJECT_ROOT/ws/frost-castle/`). Use absolute paths for Read, Write, and Edit tools. For commands: `maw exec $WS -- <command>`. For jj: `maw exec $WS -- jj <args>`. Run `br` commands via `maw exec default -- br ...`.
-6. `bus claims stake --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
-7. Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>: <bead-title>" -L task-claim`
+5. **All file edits must use the workspace path** `ws/$WS/` (e.g., `$PROJECT_ROOT/ws/frost-castle/`). Use absolute paths for Read, Write, and Edit tools. For commands: `maw exec $WS -- <command>`. Run `br` commands via `maw exec default -- br ...`.
+6. **No `jj`**: botbox now uses Git worktrees through maw. Keep workspace actions in `maw` commands (and `git` only inside `maw exec` when needed).
+7. `bus claims stake --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
+8. Announce: `bus send --agent $AGENT $BOTBOX_PROJECT "Working on <bead-id>: <bead-title>" -L task-claim`
 
 ## Assumptions
 
 - `BOTBOX_PROJECT` env var contains the project channel name.
-- `maw` workspaces are used (jj required).
+- `maw` workspaces are used with Git worktrees.

@@ -11,7 +11,8 @@ use crate::error::ExitError;
 use crate::hooks::HookRegistry;
 use crate::subprocess::run_command;
 
-pub(crate) const PI_BOTBOX_HOOKS_EXTENSION: &str = include_str!("../templates/extensions/botbox-hooks.ts");
+pub(crate) const PI_BOTBOX_HOOKS_EXTENSION: &str =
+    include_str!("../templates/extensions/botbox-hooks.ts");
 
 #[derive(Debug, Subcommand)]
 pub enum HooksCommand {

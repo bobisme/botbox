@@ -15,8 +15,8 @@ set -euo pipefail
 #
 # Expected flow:
 # 1. Router hook fires → respond.mjs → routes !mission
-# 2. respond.mjs creates mission bead → execs into dev-loop with BOTBOX_MISSION
-# 3. Dev-loop decomposes mission into child beads
+# 2. respond.mjs creates mission bone → execs into dev-loop with BOTBOX_MISSION
+# 3. Dev-loop decomposes mission into child bones
 # 4. Dev-loop dispatches workers (flowlog-dev/<random>) for children
 # 5. Workers implement stages, each ADDING fields to shared Record struct
 # 6. Workers post coord:interface when they modify record.rs or pipeline.rs
@@ -178,7 +178,7 @@ LAST_MSG_COUNT=0
 FINAL_STATUS_DEV="unknown"
 
 # Mission tracking
-MISSION_BEAD=""
+MISSION_BONE=""
 CHILD_COUNT=0
 CHILDREN_CLOSED=0
 
@@ -269,17 +269,17 @@ while true; do
     done
   fi
 
-  # Discover mission bead
+  # Discover mission bone
   cd "$PROJECT_DIR"
-  if [[ -z "$MISSION_BEAD" ]]; then
-    MISSION_BEADS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l mission --format json 2>/dev/null || echo '[]')
-    MISSION_BEAD=$(echo "$MISSION_BEADS" | jq -r '.[0].id // empty' 2>/dev/null || echo "")
-    if [[ -z "$MISSION_BEAD" ]]; then
+  if [[ -z "$MISSION_BONE" ]]; then
+    MISSION_BONES=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l mission --format json 2>/dev/null || echo '[]')
+    MISSION_BONE=$(echo "$MISSION_BONES" | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+    if [[ -z "$MISSION_BONE" ]]; then
       # Try alternative JSON shape
-      MISSION_BEAD=$(echo "$MISSION_BEADS" | jq -r '.beads[0].id // empty' 2>/dev/null || echo "")
+      MISSION_BONE=$(echo "$MISSION_BONES" | jq -r '.bones[0].id // empty' 2>/dev/null || echo "")
     fi
-    if [[ -n "$MISSION_BEAD" ]]; then
-      echo "  MISSION BEAD: $MISSION_BEAD"
+    if [[ -n "$MISSION_BONE" ]]; then
+      echo "  MISSION BONE: $MISSION_BONE"
       MISSION_FOUND_TIME=$ELAPSED
       PHASE_TIMES+="mission_found=${MISSION_FOUND_TIME}s\n"
       LAST_ACTIVITY_TIME=$(date +%s)
@@ -287,11 +287,11 @@ while true; do
   fi
 
   # Track children if mission exists
-  if [[ -n "$MISSION_BEAD" ]]; then
-    CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_BEAD" --format json 2>/dev/null || echo '[]')
+  if [[ -n "$MISSION_BONE" ]]; then
+    CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$MISSION_BONE" --format json 2>/dev/null || echo '[]')
     # Try both JSON shapes
-    NEW_CHILD_COUNT=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
-    NEW_CLOSED=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
+    NEW_CHILD_COUNT=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .bones then (.bones | length) else 0 end' 2>/dev/null || echo "0")
+    NEW_CLOSED=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .bones then .bones[] else empty end | select(.state == "done")] | length' 2>/dev/null || echo "0")
 
     if [[ "$NEW_CHILD_COUNT" -gt "$CHILD_COUNT" ]]; then
       LAST_ACTIVITY_TIME=$(date +%s)
@@ -307,14 +307,14 @@ while true; do
     fi
     CHILDREN_CLOSED=$NEW_CLOSED
 
-    echo "  Children: $CHILDREN_CLOSED/$CHILD_COUNT closed"
+    echo "  Children: $CHILDREN_CLOSED/$CHILD_COUNT done"
 
-    # Check mission bead status
-    MISSION_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$MISSION_BEAD" --format json 2>/dev/null | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-    echo "  Mission $MISSION_BEAD: $MISSION_STATUS"
+    # Check mission bone state
+    MISSION_STATE=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$MISSION_BONE" --format json 2>/dev/null | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+    echo "  Mission $MISSION_BONE: $MISSION_STATE"
 
-    if [[ "$MISSION_STATUS" == "closed" ]]; then
-      echo "  Mission is CLOSED — workflow completed!"
+    if [[ "$MISSION_STATE" == "done" ]]; then
+      echo "  Mission is DONE — workflow completed!"
       MISSION_CLOSED_TIME=$ELAPSED
       PHASE_TIMES+="mission_closed=${MISSION_CLOSED_TIME}s\n"
       FINAL_STATUS_DEV="completed-still-running"
@@ -358,7 +358,7 @@ while true; do
     # If ALL agents have exited without closing mission, it's a failure
     ALL_AGENTS=$(echo "$BOTTY_JSON" | jq '.agents | length' 2>/dev/null || echo "0")
     if [[ "$ALL_AGENTS" -eq 0 ]]; then
-      echo "  All agents exited without closing mission — marking as agent-exited"
+      echo "  All agents exited without completing mission — marking as agent-exited"
       FINAL_STATUS_DEV="agent-exited"
       break
     fi
@@ -421,18 +421,18 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus search "coord" -c flowlog > "$ARTIFACTS/c
   echo "(no coord messages)" > "$ARTIFACTS/coord-messages.log"
 echo "  coord messages: $ARTIFACTS/coord-messages.log"
 
-# Mission bead state
+# Mission bone state
 cd "$PROJECT_DIR"
-if [[ -n "$MISSION_BEAD" ]]; then
-  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$MISSION_BEAD" --format json > "$ARTIFACTS/mission-bead-state.json" 2>/dev/null || \
-    echo "[]" > "$ARTIFACTS/mission-bead-state.json"
-  echo "  mission bead: $ARTIFACTS/mission-bead-state.json"
+if [[ -n "$MISSION_BONE" ]]; then
+  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$MISSION_BONE" --format json > "$ARTIFACTS/mission-bone-state.json" 2>/dev/null || \
+    echo "[]" > "$ARTIFACTS/mission-bone-state.json"
+  echo "  mission bone: $ARTIFACTS/mission-bone-state.json"
 fi
 
-# All beads state
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --format json > "$ARTIFACTS/all-beads-state.json" 2>/dev/null || \
-  echo '[]' > "$ARTIFACTS/all-beads-state.json"
-echo "  all beads: $ARTIFACTS/all-beads-state.json"
+# All bones state
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --format json > "$ARTIFACTS/all-bones-state.json" 2>/dev/null || \
+  echo '[]' > "$ARTIFACTS/all-bones-state.json"
+echo "  all bones: $ARTIFACTS/all-bones-state.json"
 
 # Workspace state
 maw ws list --format json > "$ARTIFACTS/workspace-state.json" 2>/dev/null || \
@@ -457,7 +457,7 @@ if [[ $KNOWN_WORKER_COUNT -gt 0 ]]; then
 fi
 {
   echo "FLOWLOG_DEV_STATUS=$FINAL_STATUS_DEV"
-  echo "MISSION_BEAD=${MISSION_BEAD:-none}"
+  echo "MISSION_BONE=${MISSION_BONE:-none}"
   echo "CHILD_COUNT=$CHILD_COUNT"
   echo "CHILDREN_CLOSED=$CHILDREN_CLOSED"
   echo "WORKER_COUNT=$KNOWN_WORKER_COUNT"
@@ -493,8 +493,8 @@ echo "========================================="
 echo ""
 echo "Final status:"
 echo "  flowlog-dev: $FINAL_STATUS_DEV"
-echo "  Mission bead: ${MISSION_BEAD:-none}"
-echo "  Children: $CHILDREN_CLOSED/$CHILD_COUNT closed"
+echo "  Mission bone: ${MISSION_BONE:-none}"
+echo "  Children: $CHILDREN_CLOSED/$CHILD_COUNT done"
 echo "  Workers discovered: $KNOWN_WORKER_COUNT"
 echo "Elapsed: $(( $(date +%s) - START_TIME ))s"
 echo ""

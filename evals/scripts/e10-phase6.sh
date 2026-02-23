@@ -49,8 +49,7 @@ echo "WS_PATH=$WS_PATH"
 PROMPT="You are dev agent \"${ALPHA_DEV}\" for project \"alpha\".
 Your project directory is: ${ALPHA_DIR}
 This project uses maw v2 (bare repo layout). Source files are in ws/default/.
-Use --agent ${ALPHA_DEV} on ALL bus, crit, and br mutation commands.
-Use --actor ${ALPHA_DEV} on br mutations and --author ${ALPHA_DEV} on br comments.
+Use --agent ${ALPHA_DEV} on ALL bus and crit mutation commands.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
 
 Your code review ${REVIEW_ID} has been BLOCKED by the security reviewer.
@@ -86,7 +85,7 @@ Removed /debug endpoint (security: exposed api_secret)\"
 
 Key rules:
 - All file operations use the absolute workspace path: ${WS_PATH}/
-- Run br/bv commands via: maw exec default -- br ...
+- Run bn commands via: maw exec default -- bn ...
 - Run crit/jj/cargo via: maw exec ${WS} -- <command>
 - Use jj (not git) via maw exec"
 

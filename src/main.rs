@@ -18,7 +18,11 @@ use commands::status::StatusArgs;
 use commands::sync::SyncArgs;
 
 #[derive(Debug, Parser)]
-#[command(name = "botbox", version, about = "Setup and sync tool for multi-agent workflows")]
+#[command(
+    name = "botbox",
+    version,
+    about = "Setup and sync tool for multi-agent workflows"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -49,7 +53,7 @@ enum Commands {
         #[command(subcommand)]
         command: ProtocolCommand,
     },
-    /// Run triage (bead scoring and recommendations)
+    /// Run triage (bone scoring and recommendations)
     Triage,
 }
 

@@ -8,7 +8,7 @@ set -euo pipefail
 # Expected flow:
 # 1. Send Mission A (error.rs + stats) → router spawns lead slot 0
 # 2. Send Mission B (search + convert) → router spawns lead slot 1
-# 3. Both leads decompose their missions into child beads
+# 3. Both leads decompose their missions into child bones
 # 4. Both leads dispatch workers in parallel
 # 5. Merge mutex serializes all merges into default
 # 6. Both missions complete independently
@@ -142,8 +142,8 @@ LAST_MSG_COUNT=0
 FINAL_STATUS="unknown"
 
 # Mission tracking
-MISSION_A_BEAD=""
-MISSION_B_BEAD=""
+MISSION_A_BONE=""
+MISSION_B_BONE=""
 MISSION_A_CHILDREN=0
 MISSION_B_CHILDREN=0
 MISSION_A_CLOSED=0
@@ -263,23 +263,23 @@ while true; do
     done
   fi
 
-  # Discover mission beads
+  # Discover mission bones
   cd "$PROJECT_DIR"
-  MISSION_BEADS_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l mission --format json 2>/dev/null || echo '[]')
-  MISSION_IDS=$(echo "$MISSION_BEADS_JSON" | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null || echo "")
+  MISSION_BONES_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l mission --format json 2>/dev/null || echo '[]')
+  MISSION_IDS=$(echo "$MISSION_BONES_JSON" | jq -r 'if type == "array" then .[].id elif .bones then .bones[].id else empty end' 2>/dev/null || echo "")
 
   for mid in $MISSION_IDS; do
     [[ -z "$mid" ]] && continue
-    if [[ -z "$MISSION_A_BEAD" ]]; then
-      MISSION_A_BEAD="$mid"
+    if [[ -z "$MISSION_A_BONE" ]]; then
+      MISSION_A_BONE="$mid"
       echo "  MISSION A: $mid"
       if [[ -z "$FIRST_MISSION_FOUND_TIME" ]]; then
         FIRST_MISSION_FOUND_TIME=$ELAPSED
         PHASE_TIMES+="first_mission=${FIRST_MISSION_FOUND_TIME}s\n"
       fi
       LAST_ACTIVITY_TIME=$(date +%s)
-    elif [[ "$mid" != "$MISSION_A_BEAD" && -z "$MISSION_B_BEAD" ]]; then
-      MISSION_B_BEAD="$mid"
+    elif [[ "$mid" != "$MISSION_A_BONE" && -z "$MISSION_B_BONE" ]]; then
+      MISSION_B_BONE="$mid"
       echo "  MISSION B: $mid"
       if [[ -z "$SECOND_MISSION_FOUND_TIME" ]]; then
         SECOND_MISSION_FOUND_TIME=$ELAPSED
@@ -292,15 +292,15 @@ while true; do
   # Track children for each mission
   for mission_label in "A" "B"; do
     if [[ "$mission_label" == "A" ]]; then
-      mbead="$MISSION_A_BEAD"
+      mbone="$MISSION_A_BONE"
     else
-      mbead="$MISSION_B_BEAD"
+      mbone="$MISSION_B_BONE"
     fi
-    [[ -z "$mbead" ]] && continue
+    [[ -z "$mbone" ]] && continue
 
-    CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$mbead" --format json 2>/dev/null || echo '[]')
-    ccount=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
-    cclosed=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
+    CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$mbone" --format json 2>/dev/null || echo '[]')
+    ccount=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .bones then (.bones | length) else 0 end' 2>/dev/null || echo "0")
+    cclosed=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .bones then .bones[] else empty end | select(.state == "done")] | length' 2>/dev/null || echo "0")
 
     if [[ "$mission_label" == "A" ]]; then
       MISSION_A_CHILDREN=$ccount; MISSION_A_CLOSED=$cclosed
@@ -308,18 +308,18 @@ while true; do
       MISSION_B_CHILDREN=$ccount; MISSION_B_CLOSED=$cclosed
     fi
 
-    # Check mission bead status
-    mstatus=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$mbead" --format json 2>/dev/null | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+    # Check mission bone state
+    mstate=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$mbone" --format json 2>/dev/null | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
 
     if [[ "$mission_label" == "A" ]]; then
-      [[ "$mstatus" != "$MISSION_A_STATUS" ]] && LAST_ACTIVITY_TIME=$(date +%s)
-      MISSION_A_STATUS=$mstatus
+      [[ "$mstate" != "$MISSION_A_STATUS" ]] && LAST_ACTIVITY_TIME=$(date +%s)
+      MISSION_A_STATUS=$mstate
     else
-      [[ "$mstatus" != "$MISSION_B_STATUS" ]] && LAST_ACTIVITY_TIME=$(date +%s)
-      MISSION_B_STATUS=$mstatus
+      [[ "$mstate" != "$MISSION_B_STATUS" ]] && LAST_ACTIVITY_TIME=$(date +%s)
+      MISSION_B_STATUS=$mstate
     fi
 
-    echo "  Mission $mission_label ($mbead): $mstatus — children $cclosed/$ccount"
+    echo "  Mission $mission_label ($mbone): $mstate — children $cclosed/$ccount"
   done
 
   # Check merge count (coord:merge messages)
@@ -332,8 +332,8 @@ while true; do
   echo "  Merges detected: $MERGE_COUNT"
 
   # Check if both missions are closed
-  if [[ "$MISSION_A_STATUS" == "closed" && "$MISSION_B_STATUS" == "closed" ]]; then
-    echo "  BOTH MISSIONS CLOSED — eval complete!"
+  if [[ "$MISSION_A_STATUS" == "done" && "$MISSION_B_STATUS" == "done" ]]; then
+    echo "  BOTH MISSIONS DONE — eval complete!"
     ALL_MISSIONS_CLOSED_TIME=$ELAPSED
     PHASE_TIMES+="all_closed=${ALL_MISSIONS_CLOSED_TIME}s\n"
     FINAL_STATUS="completed-still-running"
@@ -352,7 +352,7 @@ while true; do
   fi
 
   # Check if at least one mission is closed (partial success)
-  if [[ "$MISSION_A_STATUS" == "closed" || "$MISSION_B_STATUS" == "closed" ]]; then
+  if [[ "$MISSION_A_STATUS" == "done" || "$MISSION_B_STATUS" == "done" ]]; then
     echo "  One mission closed, waiting for second..."
   fi
 
@@ -426,15 +426,15 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history futil -n 200 > "$ARTIFACTS/channe
 BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history futil -n 200 --format json > "$ARTIFACTS/channel-futil-history.json" 2>/dev/null || true
 echo "  channel: $ARTIFACTS/channel-futil-history.log"
 
-# Mission bead states
+# Mission bone states
 cd "$PROJECT_DIR"
-for mbead in "$MISSION_A_BEAD" "$MISSION_B_BEAD"; do
-  [[ -z "$mbead" ]] && continue
-  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$mbead" --format json > "$ARTIFACTS/mission-${mbead}-state.json" 2>/dev/null || true
+for mbone in "$MISSION_A_BONE" "$MISSION_B_BONE"; do
+  [[ -z "$mbone" ]] && continue
+  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$mbone" --format json > "$ARTIFACTS/mission-${mbone}-state.json" 2>/dev/null || true
 done
 
-# All beads
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all --format json > "$ARTIFACTS/all-beads-state.json" 2>/dev/null || true
+# All bones
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all --format json > "$ARTIFACTS/all-bones-state.json" 2>/dev/null || true
 
 # Workspace state
 maw ws list --format json > "$ARTIFACTS/workspace-state.json" 2>/dev/null || true
@@ -448,8 +448,8 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- jj log --no-graph -T 'com
 # Final status file
 cat > "$ARTIFACTS/final-status.txt" << EOF
 FINAL_STATUS=$FINAL_STATUS
-MISSION_A_BEAD=${MISSION_A_BEAD:-none}
-MISSION_B_BEAD=${MISSION_B_BEAD:-none}
+MISSION_A_BONE=${MISSION_A_BONE:-none}
+MISSION_B_BONE=${MISSION_B_BONE:-none}
 MISSION_A_STATUS=$MISSION_A_STATUS
 MISSION_B_STATUS=$MISSION_B_STATUS
 MISSION_A_CHILDREN=$MISSION_A_CHILDREN
@@ -496,8 +496,8 @@ echo "=== Multi-Lead Complete ($(date +%H:%M:%S)) ==="
 echo "========================================="
 echo ""
 echo "Final status: $FINAL_STATUS"
-echo "  Mission A ($MISSION_A_BEAD): $MISSION_A_STATUS — children $MISSION_A_CLOSED/$MISSION_A_CHILDREN"
-echo "  Mission B ($MISSION_B_BEAD): $MISSION_B_STATUS — children $MISSION_B_CLOSED/$MISSION_B_CHILDREN"
+echo "  Mission A ($MISSION_A_BONE): $MISSION_A_STATUS — children $MISSION_A_CLOSED/$MISSION_A_CHILDREN done"
+echo "  Mission B ($MISSION_B_BONE): $MISSION_B_STATUS — children $MISSION_B_CLOSED/$MISSION_B_CHILDREN done"
 echo "  Lead slots discovered: $LEAD_SLOT_COUNT"
 echo "  Workers discovered: $KNOWN_WORKER_COUNT"
 echo "  Merges detected: $MERGE_COUNT"

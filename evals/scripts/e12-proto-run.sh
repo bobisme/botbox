@@ -2,8 +2,8 @@
 set -euo pipefail
 
 # E12-Proto Eval — Run
-# Spawns a worker-loop agent via botty, polls for bead completion,
-# captures artifacts (agent log, bus history, bead state, workspace state).
+# Spawns a worker-loop agent via botty, polls for bone completion,
+# captures artifacts (agent log, bus history, bone state, workspace state).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OVERALL_TIMEOUT=${E12_TIMEOUT:-300}  # 5 minutes default
@@ -37,12 +37,12 @@ ARTIFACTS="$EVAL_DIR/artifacts"
 echo "--- setup: OK (EVAL_DIR=$EVAL_DIR) ---"
 echo ""
 
-# --- Verify bead exists ---
-echo "--- Verifying bead ---"
+# --- Verify bone exists ---
+echo "--- Verifying bone ---"
 cd "$PROJECT_DIR"
-BEAD_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" 2>&1 || echo "ERROR")
-echo "$BEAD_STATUS" | head -3
-echo "--- bead: OK ---"
+BONE_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" 2>&1 || echo "ERROR")
+echo "$BONE_STATUS" | head -3
+echo "--- bone: OK ---"
 echo ""
 
 # --- Spawn worker ---
@@ -51,7 +51,7 @@ WORKER_AGENT="$AGENT_NAME/$WORKER_NAME"
 
 echo "--- Spawning worker: $WORKER_NAME ---"
 echo "  Agent: $WORKER_AGENT"
-echo "  Bead: $BEAD_ID"
+echo "  Bone: $BONE_ID"
 echo "  Timeout: ${OVERALL_TIMEOUT}s"
 echo ""
 
@@ -60,7 +60,7 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty spawn \
   --cwd "$PROJECT_DIR" \
   --env-inherit BOTBUS_DATA_DIR,SSH_AUTH_SOCK \
   -e "AGENT=$WORKER_AGENT" \
-  -e "BOTBOX_BEAD=$BEAD_ID" \
+  -e "BOTBOX_BEAD=$BONE_ID" \
   -t "$OVERALL_TIMEOUT" \
   -- botbox run worker-loop --agent "$WORKER_AGENT"
 
@@ -96,14 +96,14 @@ while true; do
     FINAL_STATUS="worker-exited"
   fi
 
-  # Check bead status
+  # Check bone state
   cd "$PROJECT_DIR"
-  BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" --format json 2>/dev/null || echo "[]")
-  BEAD_CUR_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-  echo "  bead $BEAD_ID: $BEAD_CUR_STATUS"
+  BONE_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" --format json 2>/dev/null || echo "[]")
+  BONE_CUR_STATE=$(echo "$BONE_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+  echo "  bone $BONE_ID: $BONE_CUR_STATE"
 
-  if [[ "$BEAD_CUR_STATUS" == "closed" ]]; then
-    echo "  Bead is CLOSED — worker completed!"
+  if [[ "$BONE_CUR_STATE" == "done" ]]; then
+    echo "  Bone is DONE — worker completed!"
     FINAL_STATUS="completed"
 
     # Grace period for worker to exit
@@ -120,9 +120,9 @@ while true; do
     break
   fi
 
-  # If worker exited but bead not closed
+  # If worker exited but bone not done
   if [[ "$FINAL_STATUS" == "worker-exited" ]]; then
-    echo "  Worker exited without closing bead (status=$BEAD_CUR_STATUS)"
+    echo "  Worker exited without completing bone (state=$BONE_CUR_STATE)"
     break
   fi
 
@@ -131,7 +131,7 @@ while true; do
   echo "  Channel messages: $MSG_COUNT"
 
   # Activity tracking
-  if [[ "$BEAD_CUR_STATUS" == "in_progress" ]]; then
+  if [[ "$BONE_CUR_STATE" == "doing" ]]; then
     LAST_ACTIVITY_TIME=$(date +%s)
   fi
 
@@ -159,13 +159,13 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history greeter -n 200 > "$ARTIFACTS/chan
   echo "(no history)" > "$ARTIFACTS/channel-history.log"
 echo "  channel: $ARTIFACTS/channel-history.log"
 
-# Bead state
+# Bone state
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" --format json > "$ARTIFACTS/bead-final.json" 2>/dev/null || \
-  echo "[]" > "$ARTIFACTS/bead-final.json"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" > "$ARTIFACTS/bead-final.txt" 2>/dev/null || true
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br comments "$BEAD_ID" > "$ARTIFACTS/bead-comments.txt" 2>/dev/null || true
-echo "  bead: $ARTIFACTS/bead-final.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" --format json > "$ARTIFACTS/bone-final.json" 2>/dev/null || \
+  echo "[]" > "$ARTIFACTS/bone-final.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" > "$ARTIFACTS/bone-final.txt" 2>/dev/null || true
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn bone comment list "$BONE_ID" > "$ARTIFACTS/bone-comments.txt" 2>/dev/null || true
+echo "  bone: $ARTIFACTS/bone-final.json"
 
 # Workspace state
 maw ws list --format json > "$ARTIFACTS/workspace-state.json" 2>/dev/null || \
@@ -190,8 +190,8 @@ echo "  tests: $ARTIFACTS/test-output.txt"
 # Final status
 cat > "$ARTIFACTS/final-status.txt" << EOF
 FINAL_STATUS=$FINAL_STATUS
-BEAD_ID=$BEAD_ID
-BEAD_STATUS=$BEAD_CUR_STATUS
+BONE_ID=$BONE_ID
+BONE_STATUS=$BONE_CUR_STATE
 WORKER_NAME=$WORKER_NAME
 WORKER_AGENT=$WORKER_AGENT
 EOF
@@ -218,7 +218,7 @@ echo "=== E12-Proto Complete ($(date +%H:%M:%S)) ==="
 echo "========================================="
 echo ""
 echo "Final status: $FINAL_STATUS"
-echo "Bead: $BEAD_ID ($BEAD_CUR_STATUS)"
+echo "Bone: $BONE_ID ($BONE_CUR_STATE)"
 echo "Elapsed: $(( $(date +%s) - START_TIME ))s"
 echo ""
 echo "Artifacts: $ARTIFACTS/"

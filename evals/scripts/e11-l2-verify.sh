@@ -133,20 +133,20 @@ echo ""
 
 cd "$PROJECT_DIR"
 
-# Check 6: Bead status transitions (5 pts)
-echo "--- Check 6: Bead status transitions ---"
-BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json 2>/dev/null || echo "[]")
-BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+# Check 6: Bone state transitions (5 pts)
+echo "--- Check 6: Bone state transitions ---"
+BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json 2>/dev/null || echo "[]")
+BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
 BEAD_TRANSITIONS=false
-# Bead should be closed by end (open → in_progress → closed)
-if [[ "$BEAD_STATUS" == "closed" ]]; then
+# Bone should be done by end (open → doing → done)
+if [[ "$BEAD_STATUS" == "done" ]]; then
   BEAD_TRANSITIONS=true
 fi
 # Also check channel history for status announcements
-if echo "$CHANNEL_HISTORY" | grep -qi "in.progress\|claim\|started.*work"; then
+if echo "$CHANNEL_HISTORY" | grep -qi "doing\|claim\|started.*work"; then
   BEAD_TRANSITIONS=true
 fi
-check "Bead status transitions (open → in_progress → closed)" "$($BEAD_TRANSITIONS && echo 0 || echo 1)" 5
+check "Bone state transitions (open → doing → done)" "$($BEAD_TRANSITIONS && echo 0 || echo 1)" 5
 
 # Check 7: Progress comments posted (3 pts)
 echo ""
@@ -164,8 +164,8 @@ echo "--- Check 8: Workspace created ---"
 WS_CREATED=false
 WS_JSON=$(cat "$ARTIFACTS/workspace-state.json" 2>/dev/null || echo "{}")
 WS_COUNT=$(echo "$WS_JSON" | jq '[.workspaces[] | select(.is_default == false)] | length' 2>/dev/null || echo "0")
-# If bead closed and workspace merged, it wouldn't show in current list
-if [[ "$BEAD_STATUS" == "closed" ]]; then
+# If bone done and workspace merged, it wouldn't show in current list
+if [[ "$BEAD_STATUS" == "done" ]]; then
   WS_CREATED=true
 elif [[ "$WS_COUNT" -gt 0 ]]; then
   WS_CREATED=true
@@ -175,35 +175,35 @@ if echo "$CHANNEL_HISTORY" | grep -qi "workspace"; then
 fi
 check "Workspace created with maw ws create" "$($WS_CREATED && echo 0 || echo 1)" 3
 
-# Check 9: Claims staked (bead:// and workspace://) (4 pts)
+# Check 9: Claims staked (bone:// and workspace://) (4 pts)
 echo ""
 echo "--- Check 9: Claims staked ---"
 CLAIMS_STAKED=false
 # Check artifacts or channel history for claim evidence
-if echo "$CHANNEL_HISTORY" | grep -qi "claim.*stake\|claimed.*bead\|claimed.*workspace"; then
+if echo "$CHANNEL_HISTORY" | grep -qi "claim.*stake\|claimed.*bone\|claimed.*workspace"; then
   CLAIMS_STAKED=true
 fi
-# If bead reached in_progress and workspace created, claims were likely staked
-if [[ "$BEAD_STATUS" == "closed" || "$BEAD_STATUS" == "in_progress" ]]; then
+# If bone reached doing and workspace created, claims were likely staked
+if [[ "$BEAD_STATUS" == "done" || "$BEAD_STATUS" == "doing" ]]; then
   CLAIMS_STAKED=true
 fi
-check "Claims staked (bead:// and workspace://)" "$($CLAIMS_STAKED && echo 0 || echo 1)" 4
+check "Claims staked (bone:// and workspace://)" "$($CLAIMS_STAKED && echo 0 || echo 1)" 4
 
 # Check 10: Claims released (5 pts)
 echo ""
 echo "--- Check 10: Claims released ---"
 CLAIMS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list --agent "$DEV_AGENT" 2>/dev/null || true)
-WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bead://|workspace://" || true)
+WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bone://|workspace://" || true)
 check "Claims released after work" "$([ "$WORK_CLAIM_COUNT" -eq 0 ] && echo 0 || echo 1)" 5
 
-# Check 11: br sync called (2 pts)
+# Check 11: bn commands used (2 pts)
 echo ""
-echo "--- Check 11: br sync called ---"
-BR_SYNC_CALLED=false
-if echo "$DEV_LOG" | grep -qi "br sync"; then
-  BR_SYNC_CALLED=true
+echo "--- Check 11: bn commands used ---"
+BN_USED=false
+if echo "$DEV_LOG" | grep -qi "bn "; then
+  BN_USED=true
 fi
-check "br sync called" "$($BR_SYNC_CALLED && echo 0 || echo 1)" 2
+check "bn commands used" "$($BN_USED && echo 0 || echo 1)" 2
 
 # Check 12: Bus labels correct (4 pts)
 echo ""
@@ -449,7 +449,7 @@ PATH_CONFUSION=$((_PC_DEV + _PC_REV))
 
 # Count duplicate operations
 DUPLICATE_OPS=0
-if grep -q "bead.*already.*exists\|workspace.*already" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null; then
+if grep -q "bone.*already.*exists\|workspace.*already" "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null; then
   DUPLICATE_OPS=$((DUPLICATE_OPS + 1))
 fi
 

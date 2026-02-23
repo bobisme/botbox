@@ -78,7 +78,7 @@ echo ""
 # --- Send task-request (triggers alpha router hook → dev-loop) ---
 echo "--- Sending task-request to alpha channel ($(date +%H:%M:%S)) ---"
 BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus send --agent setup alpha \
-  "New task: Add POST /users registration endpoint with email validation. Must support standard email formats including subaddressing (user+tag@example.com). Use beta's validate_email for validation. See bead $ALPHA_BEAD for full requirements." \
+  "New task: Add POST /users registration endpoint with email validation. Must support standard email formats including subaddressing (user+tag@example.com). Use beta's validate_email for validation. See bone $ALPHA_BEAD for full requirements." \
   -L task-request
 echo "Task-request sent. Alpha router hook should fire shortly."
 echo ""
@@ -182,16 +182,16 @@ while true; do
   PREV_ALPHA_SEC_RUNNING="$ALPHA_SEC_RUNNING"
   PREV_BETA_DEV_RUNNING="$BETA_DEV_RUNNING"
 
-  # Check alpha bead status
+  # Check alpha bone status
   cd "$ALPHA_DIR"
-  BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$ALPHA_BEAD" --format json 2>/dev/null || echo "[]")
-  BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-  echo "  Alpha bead $ALPHA_BEAD: $BEAD_STATUS"
+  BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$ALPHA_BEAD" --format json 2>/dev/null || echo "[]")
+  BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+  echo "  Alpha bone $ALPHA_BEAD: $BEAD_STATUS"
 
   if [[ "$BEAD_STATUS" != "$LAST_BEAD_STATUS" ]]; then
     LAST_BEAD_STATUS="$BEAD_STATUS"
     LAST_ACTIVITY_TIME=$(date +%s)
-    if [[ "$BEAD_STATUS" == "closed" && -z "$BEAD_CLOSED_TIME" ]]; then
+    if [[ "$BEAD_STATUS" == "done" && -z "$BEAD_CLOSED_TIME" ]]; then
       BEAD_CLOSED_TIME=$ELAPSED
       PHASE_TIMES+="bead_closed=${BEAD_CLOSED_TIME}s\n"
     fi
@@ -221,16 +221,16 @@ while true; do
     LAST_REVIEW_COUNT=$REVIEW_COUNT
   fi
 
-  # Check for beta beads (cross-project signal)
+  # Check for beta bones (cross-project signal)
   cd "$BETA_DIR"
-  BETA_BEAD_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br ready 2>/dev/null | wc -l || echo "0")
+  BETA_BEAD_COUNT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn next 2>/dev/null | wc -l || echo "0")
   if [[ "$BETA_BEAD_COUNT" -gt 0 ]]; then
-    echo "  Beta ready beads: $BETA_BEAD_COUNT"
+    echo "  Beta ready bones: $BETA_BEAD_COUNT"
   fi
 
   # Check for completion
-  if [[ "$BEAD_STATUS" == "closed" ]]; then
-    echo "  Alpha bead is CLOSED — workflow completed!"
+  if [[ "$BEAD_STATUS" == "done" ]]; then
+    echo "  Alpha bone is DONE — workflow completed!"
     FINAL_STATUS_ALPHA_DEV="completed-still-running"
     FINAL_STATUS_ALPHA_SECURITY="completed"
     FINAL_STATUS_BETA_DEV="completed"
@@ -256,9 +256,9 @@ while true; do
   IDLE_TIME=$(( $(date +%s) - LAST_ACTIVITY_TIME ))
   if [[ $IDLE_TIME -ge $STUCK_THRESHOLD ]]; then
     echo "  WARNING: No activity for ${IDLE_TIME}s (threshold: ${STUCK_THRESHOLD}s)"
-    # If ALL agents have exited without closing bead, it's a failure
+    # If ALL agents have exited without closing bone, it's a failure
     if [[ -z "$ALPHA_DEV_RUNNING" && -z "$ALPHA_SEC_RUNNING" && -z "$BETA_DEV_RUNNING" && -z "$RESPOND_RUNNING" ]]; then
-      echo "  All agents exited without closing bead — marking as agent-exited"
+      echo "  All agents exited without closing bone — marking as agent-exited"
       FINAL_STATUS_ALPHA_DEV="agent-exited"
       FINAL_STATUS_ALPHA_SECURITY="agent-exited"
       FINAL_STATUS_BETA_DEV="agent-exited"
@@ -323,19 +323,19 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history beta -n 200 > "$ARTIFACTS/channel
 echo "  alpha channel: $ARTIFACTS/channel-alpha-history.log"
 echo "  beta channel: $ARTIFACTS/channel-beta-history.log"
 
-# Bead state (both projects)
+# Bone state (both projects)
 cd "$ALPHA_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$ALPHA_BEAD" --format json > "$ARTIFACTS/alpha-bead-state.json" 2>/dev/null || \
-  echo "[]" > "$ARTIFACTS/alpha-bead-state.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$ALPHA_BEAD" --format json > "$ARTIFACTS/alpha-bone-state.json" 2>/dev/null || \
+  echo "[]" > "$ARTIFACTS/alpha-bone-state.json"
 
-# Beta beads (may have been created by cross-project communication)
+# Beta bones (may have been created by cross-project communication)
 cd "$BETA_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br ready > "$ARTIFACTS/beta-beads-ready.txt" 2>/dev/null || \
-  echo "(no beta beads)" > "$ARTIFACTS/beta-beads-ready.txt"
-# List all beads in beta for forensics
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --format json > "$ARTIFACTS/beta-beads-all.json" 2>/dev/null || \
-  echo '{"beads":[]}' > "$ARTIFACTS/beta-beads-all.json"
-echo "  beta beads: $ARTIFACTS/beta-beads-all.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn next > "$ARTIFACTS/beta-bones-ready.txt" 2>/dev/null || \
+  echo "(no beta bones)" > "$ARTIFACTS/beta-bones-ready.txt"
+# List all bones in beta for forensics
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --format json > "$ARTIFACTS/beta-bones-all.json" 2>/dev/null || \
+  echo '{"bones":[]}' > "$ARTIFACTS/beta-bones-all.json"
+echo "  beta bones: $ARTIFACTS/beta-bones-all.json"
 
 # Workspace state (both projects)
 cd "$ALPHA_DIR"
@@ -397,7 +397,7 @@ echo "Phase timing:"
 [[ -n "$ALPHA_DEV_SPAWN_TIME" ]] && echo "  alpha-dev spawn: ${ALPHA_DEV_SPAWN_TIME}s"
 [[ -n "$BETA_DEV_SPAWN_TIME" ]] && echo "  beta-dev spawn: ${BETA_DEV_SPAWN_TIME}s"
 [[ -n "$ALPHA_SECURITY_SPAWN_TIME" ]] && echo "  alpha-security spawn: ${ALPHA_SECURITY_SPAWN_TIME}s"
-[[ -n "$BEAD_CLOSED_TIME" ]] && echo "  Alpha bead closed: ${BEAD_CLOSED_TIME}s"
+[[ -n "$BEAD_CLOSED_TIME" ]] && echo "  Alpha bone done: ${BEAD_CLOSED_TIME}s"
 echo ""
 echo "Artifacts: $ARTIFACTS/"
 echo "EVAL_DIR=$EVAL_DIR"

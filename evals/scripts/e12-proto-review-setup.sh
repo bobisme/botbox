@@ -7,7 +7,7 @@ set -euo pipefail
 # Tests the full protocol review → finish review gate flow.
 
 # --- Preflight ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -28,7 +28,7 @@ bus init
 # --- Tool versions ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e12-proto-review"
@@ -122,12 +122,12 @@ jj new
 # Initialize with botbox
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name greeter --type cli --tools beads,maw,crit,botbus,botty \
+  botbox init --name greeter --type cli --tools bones,maw,crit,botbus,botty \
     --language rust --no-seed-work --no-interactive
 
-# Safety net: ensure beads is initialized (botbox init may skip it in bare repo mode)
+# Safety net: ensure bones is initialized (botbox init may skip it in bare repo mode)
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br init 2>/dev/null || true
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- bn init 2>/dev/null || true
 
 # ============================================================
 # Patch .botbox.json: ENABLE review with security reviewer
@@ -194,23 +194,22 @@ _fix_hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1
 
 # ============================================================
-# Create the bead for the worker to implement
+# Create the bone for the worker to implement
 # ============================================================
 cd "$PROJECT_DIR"
-BEAD_OUTPUT=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create \
-  --actor "$AGENT_NAME" --owner "$AGENT_NAME" \
-  --title="Implement greet::hello function" \
-  --description="Replace the todo!() in src/greet.rs with a working implementation. The function should return \"hello, {name}\" for any given name. Two tests are already provided — make them pass. Run cargo test to verify." \
-  --type=task --priority=2 --labels=risk:medium 2>&1)
+BONE_OUTPUT=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT="$AGENT_NAME" maw exec default -- bn create \
+  --title "Implement greet::hello function" \
+  --description "Replace the todo!() in src/greet.rs with a working implementation. The function should return \"hello, {name}\" for any given name. Two tests are already provided — make them pass. Run cargo test to verify." \
+  --kind task 2>&1)
 
-# Extract bead ID from output like "✓ Created bd-xxxx: ..."
-BEAD_ID=$(echo "$BEAD_OUTPUT" | grep -oP 'bd-[a-z0-9]+' | head -1)
-if [[ -z "$BEAD_ID" ]]; then
-  echo "FATAL: Could not create bead"
-  echo "$BEAD_OUTPUT"
+# Extract bone ID from output like "✓ Created bn-xxxx: ..."
+BONE_ID=$(echo "$BONE_OUTPUT" | grep -oP 'bn-[a-z0-9]+' | head -1)
+if [[ -z "$BONE_ID" ]]; then
+  echo "FATAL: Could not create bone"
+  echo "$BONE_OUTPUT"
   exit 1
 fi
-echo "Created bead: $BEAD_ID"
+echo "Created bone: $BONE_ID"
 
 # ============================================================
 # Projects registry
@@ -228,7 +227,7 @@ export EVAL_DIR="$EVAL_DIR"
 export BOTBUS_DATA_DIR="$EVAL_DIR/.botbus"
 export PROJECT_DIR="$PROJECT_DIR"
 export AGENT_NAME="$AGENT_NAME"
-export BEAD_ID="$BEAD_ID"
+export BONE_ID="$BONE_ID"
 EOF
 
 echo ""
@@ -236,10 +235,10 @@ echo "=== E12-Proto-Review Setup Complete ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
 echo "AGENT_NAME=$AGENT_NAME"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo ""
 echo "Project: greeter — minimal Rust project with todo!() in greet.rs"
-echo "Bead: $BEAD_ID — Implement greet::hello function"
+echo "Bone: $BONE_ID — Implement greet::hello function"
 echo "Review: ENABLED (reviewers: [security])"
 echo "Worker model: $EVAL_MODEL"
 echo ""

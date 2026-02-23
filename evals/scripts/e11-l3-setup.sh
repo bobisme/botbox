@@ -14,7 +14,7 @@ set -euo pipefail
 # Does NOT send the task-request — that goes in the run script.
 
 # --- Preflight ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -39,7 +39,7 @@ bus init
 # --- Tool versions ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e11-l3"
@@ -255,11 +255,11 @@ jj new
 # to ws/default/ and creates the bare repo structure.
 cd "$BETA_DIR"
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name beta --type library --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+  botbox init --name beta --type library --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 cd "$ALPHA_DIR"
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name alpha --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
+  botbox init --name alpha --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
 
 # ============================================================
 # Fix workspace path dependency
@@ -310,12 +310,12 @@ _fix_hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1
 
 # ============================================================
-# Seed work (alpha bead — task-request sent by run script)
+# Seed work (alpha bone — task-request sent by run script)
 # ============================================================
 cd "$ALPHA_DIR"
-ALPHA_BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create --actor setup --owner "$ALPHA_DEV" \
-  --title="Add user registration with email validation" \
-  --description="Implement POST /users with beta::validate_email. Must support plus-addressing (user+tag@example.com).
+ALPHA_BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT=setup maw exec default -- bn create \
+  --title "Add user registration with email validation" \
+  --description "Implement POST /users with beta::validate_email. Must support plus-addressing (user+tag@example.com).
 
 Requirements:
 1. Accept JSON body with 'name' and 'email' fields
@@ -325,7 +325,7 @@ Requirements:
 5. Increment the ID counter for each new user
 
 The beta library (path dependency) provides validate_email(). Test with plus-addresses like user+tag@example.com — if validation fails, investigate the beta library and follow cross-channel.md to report the issue." \
-  --type=feature --priority=2 2>&1 | grep -oP 'bd-\w+')
+  --kind task 2>&1 | grep -oP 'bn-\w+')
 
 # ============================================================
 # Projects registry

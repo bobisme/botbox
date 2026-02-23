@@ -111,8 +111,8 @@ pub struct ProjectConfig {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolsConfig {
-    #[serde(default)]
-    pub beads: bool,
+    #[serde(default, alias = "beads")]
+    pub bones: bool,
     #[serde(default)]
     pub maw: bool,
     #[serde(default)]
@@ -127,8 +127,8 @@ impl ToolsConfig {
     /// Returns a list of enabled tool names
     pub fn enabled_tools(&self) -> Vec<String> {
         let mut tools = Vec::new();
-        if self.beads {
-            tools.push("beads".to_string());
+        if self.bones {
+            tools.push("bones".to_string());
         }
         if self.maw {
             tools.push("maw".to_string());
@@ -146,15 +146,13 @@ impl ToolsConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReviewConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
     pub reviewers: Vec<String>,
 }
-
 
 /// Model tier configuration for cross-provider load balancing.
 ///
@@ -253,7 +251,10 @@ pub struct MissionsConfig {
     pub max_workers: u32,
     #[serde(default = "default_max_children", alias = "maxChildren")]
     pub max_children: u32,
-    #[serde(default = "default_checkpoint_interval", alias = "checkpointIntervalSec")]
+    #[serde(
+        default = "default_checkpoint_interval",
+        alias = "checkpointIntervalSec"
+    )]
     pub checkpoint_interval_sec: u64,
 }
 
@@ -300,24 +301,60 @@ pub struct ResponderAgentConfig {
 }
 
 // Default value functions for serde
-fn default_model_dev() -> String { "opus".into() }
-fn default_model_worker() -> String { "balanced".into() }
-fn default_model_reviewer() -> String { "strong".into() }
-fn default_model_responder() -> String { "balanced".into() }
-fn default_max_loops() -> u32 { 100 }
-fn default_pause() -> u32 { 2 }
-fn default_timeout_300() -> u64 { 300 }
-fn default_timeout_900() -> u64 { 900 }
-fn default_timeout_1800() -> u64 { 1800 }
-fn default_true() -> bool { true }
-fn default_max_workers() -> u32 { 4 }
-fn default_max_children() -> u32 { 12 }
-fn default_checkpoint_interval() -> u64 { 30 }
-fn default_max_leads() -> u32 { 3 }
-fn default_merge_timeout() -> u64 { 120 }
-fn default_max_conversations() -> u32 { 10 }
-fn default_missions() -> Option<MissionsConfig> { Some(MissionsConfig::default()) }
-fn default_multi_lead() -> Option<MultiLeadConfig> { Some(MultiLeadConfig::default()) }
+fn default_model_dev() -> String {
+    "opus".into()
+}
+fn default_model_worker() -> String {
+    "balanced".into()
+}
+fn default_model_reviewer() -> String {
+    "strong".into()
+}
+fn default_model_responder() -> String {
+    "balanced".into()
+}
+fn default_max_loops() -> u32 {
+    100
+}
+fn default_pause() -> u32 {
+    2
+}
+fn default_timeout_300() -> u64 {
+    300
+}
+fn default_timeout_900() -> u64 {
+    900
+}
+fn default_timeout_1800() -> u64 {
+    1800
+}
+fn default_true() -> bool {
+    true
+}
+fn default_max_workers() -> u32 {
+    4
+}
+fn default_max_children() -> u32 {
+    12
+}
+fn default_checkpoint_interval() -> u64 {
+    30
+}
+fn default_max_leads() -> u32 {
+    3
+}
+fn default_merge_timeout() -> u64 {
+    120
+}
+fn default_max_conversations() -> u32 {
+    10
+}
+fn default_missions() -> Option<MissionsConfig> {
+    Some(MissionsConfig::default())
+}
+fn default_multi_lead() -> Option<MultiLeadConfig> {
+    Some(MultiLeadConfig::default())
+}
 
 impl Default for MissionsConfig {
     fn default() -> Self {
@@ -343,8 +380,8 @@ impl Default for MultiLeadConfig {
 impl Config {
     /// Load config from a file (TOML or JSON, auto-detected by extension).
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        let contents = std::fs::read_to_string(path)
-            .with_context(|| format!("reading {}", path.display()))?;
+        let contents =
+            std::fs::read_to_string(path).with_context(|| format!("reading {}", path.display()))?;
         let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
         match ext {
             "toml" => Self::parse_toml(&contents),
@@ -358,29 +395,29 @@ impl Config {
 
     /// Parse config from a TOML string.
     pub fn parse_toml(toml_str: &str) -> anyhow::Result<Self> {
-        toml::from_str(toml_str).map_err(|e| {
-            ExitError::Config(format!("invalid .botbox.toml: {e}")).into()
-        })
+        toml::from_str(toml_str)
+            .map_err(|e| ExitError::Config(format!("invalid .botbox.toml: {e}")).into())
     }
 
     /// Parse config from a JSON string (for backwards compatibility).
     pub fn parse_json(json: &str) -> anyhow::Result<Self> {
-        serde_json::from_str(json).map_err(|e| {
-            ExitError::Config(format!("invalid .botbox.json: {e}")).into()
-        })
+        serde_json::from_str(json)
+            .map_err(|e| ExitError::Config(format!("invalid .botbox.json: {e}")).into())
     }
 
     /// Serialize config to a TOML string with helpful comments.
     pub fn to_toml(&self) -> anyhow::Result<String> {
-        let raw = toml::to_string_pretty(self)
-            .context("serializing config to TOML")?;
+        let raw = toml::to_string_pretty(self).context("serializing config to TOML")?;
 
         // Use toml_edit to add comments for default values
-        let mut doc: toml_edit::DocumentMut = raw.parse()
+        let mut doc: toml_edit::DocumentMut = raw
+            .parse()
             .context("parsing generated TOML for comment injection")?;
 
         // Add header comment
-        doc.decor_mut().set_prefix("# Botbox project configuration\n# See: https://github.com/anthropics/botbox\n\n");
+        doc.decor_mut().set_prefix(
+            "# Botbox project configuration\n# See: https://github.com/anthropics/botbox\n\n",
+        );
 
         // Add comments before section headers using item decor
         fn set_table_comment(doc: &mut toml_edit::DocumentMut, key: &str, comment: &str) {
@@ -393,8 +430,16 @@ impl Config {
 
         set_table_comment(&mut doc, "tools", "\n# Companion tools to enable\n");
         set_table_comment(&mut doc, "review", "\n# Code review configuration\n");
-        set_table_comment(&mut doc, "agents", "\n# Agent configuration (omit sections to use defaults)\n");
-        set_table_comment(&mut doc, "models", "\n# Model tier pools for load balancing\n# Each tier maps to a list of \"provider/model:thinking\" strings\n");
+        set_table_comment(
+            &mut doc,
+            "agents",
+            "\n# Agent configuration (omit sections to use defaults)\n",
+        );
+        set_table_comment(
+            &mut doc,
+            "models",
+            "\n# Model tier pools for load balancing\n# Each tier maps to a list of \"provider/model:thinking\" strings\n",
+        );
 
         Ok(doc.to_string())
     }
@@ -500,7 +545,7 @@ check_command = "cargo clippy && cargo test"
 default_agent = "myapp-dev"
 
 [tools]
-beads = true
+bones = true
 maw = true
 crit = true
 botbus = true
@@ -531,7 +576,7 @@ timeout = 600
         assert_eq!(config.project.name, "myapp");
         assert_eq!(config.default_agent(), "myapp-dev");
         assert_eq!(config.channel(), "myapp");
-        assert!(config.tools.beads);
+        assert!(config.tools.bones);
         assert!(config.tools.maw);
         assert!(config.review.enabled);
         assert_eq!(config.review.reviewers, vec!["security"]);
@@ -563,7 +608,7 @@ timeout = 600
                 "checkCommand": "cargo clippy && cargo test",
                 "defaultAgent": "myapp-dev"
             },
-            "tools": { "beads": true, "maw": true, "crit": true, "botbus": true, "botty": true },
+            "tools": { "bones": true, "maw": true, "crit": true, "botbus": true, "botty": true },
             "review": { "enabled": true, "reviewers": ["security"] },
             "pushMain": false,
             "agents": {
@@ -577,7 +622,7 @@ timeout = 600
         assert_eq!(config.project.name, "myapp");
         assert_eq!(config.default_agent(), "myapp-dev");
         assert_eq!(config.channel(), "myapp");
-        assert!(config.tools.beads);
+        assert!(config.tools.bones);
         assert!(config.review.enabled);
         assert!(!config.push_main);
 
@@ -599,7 +644,7 @@ name = "test"
         assert_eq!(config.project.name, "test");
         assert_eq!(config.default_agent(), "test-dev");
         assert_eq!(config.channel(), "test");
-        assert!(!config.tools.beads);
+        assert!(!config.tools.bones);
         assert!(!config.review.enabled);
         assert!(!config.push_main);
         assert!(config.agents.dev.is_none());
@@ -627,40 +672,71 @@ model = "sonnet"
 
     #[test]
     fn resolve_model_tier_names() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let fast = config.resolve_model("fast");
-        assert!(fast.contains('/'), "fast tier should resolve to provider/model, got: {fast}");
+        assert!(
+            fast.contains('/'),
+            "fast tier should resolve to provider/model, got: {fast}"
+        );
 
         let balanced = config.resolve_model("balanced");
-        assert!(balanced.contains('/'), "balanced tier should resolve to provider/model, got: {balanced}");
+        assert!(
+            balanced.contains('/'),
+            "balanced tier should resolve to provider/model, got: {balanced}"
+        );
 
         let strong = config.resolve_model("strong");
-        assert!(strong.contains('/'), "strong tier should resolve to provider/model, got: {strong}");
+        assert!(
+            strong.contains('/'),
+            "strong tier should resolve to provider/model, got: {strong}"
+        );
     }
 
     #[test]
     fn resolve_model_passthrough() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
-        assert_eq!(config.resolve_model("anthropic/claude-sonnet-4-6:medium"), "anthropic/claude-sonnet-4-6:medium");
-        assert_eq!(config.resolve_model("some-unknown-model"), "some-unknown-model");
-        assert_eq!(config.resolve_model("opus"), "anthropic/claude-opus-4-6:high");
-        assert_eq!(config.resolve_model("sonnet"), "anthropic/claude-sonnet-4-6:medium");
-        assert_eq!(config.resolve_model("haiku"), "anthropic/claude-haiku-4-5:low");
+        assert_eq!(
+            config.resolve_model("anthropic/claude-sonnet-4-6:medium"),
+            "anthropic/claude-sonnet-4-6:medium"
+        );
+        assert_eq!(
+            config.resolve_model("some-unknown-model"),
+            "some-unknown-model"
+        );
+        assert_eq!(
+            config.resolve_model("opus"),
+            "anthropic/claude-opus-4-6:high"
+        );
+        assert_eq!(
+            config.resolve_model("sonnet"),
+            "anthropic/claude-sonnet-4-6:medium"
+        );
+        assert_eq!(
+            config.resolve_model("haiku"),
+            "anthropic/claude-haiku-4-5:low"
+        );
     }
 
     #[test]
     fn resolve_model_custom_tiers() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
@@ -668,7 +744,9 @@ name = "test"
 fast = ["custom/model-a"]
 balanced = ["custom/model-b"]
 strong = ["custom/model-c"]
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         assert_eq!(config.resolve_model("fast"), "custom/model-a");
         assert_eq!(config.resolve_model("balanced"), "custom/model-b");
@@ -677,11 +755,14 @@ strong = ["custom/model-c"]
 
     #[test]
     fn default_model_tiers() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         assert!(!config.models.fast.is_empty());
         assert!(!config.models.balanced.is_empty());
@@ -690,37 +771,58 @@ name = "test"
 
     #[test]
     fn resolve_model_pool_tiers() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         let pool = config.resolve_model_pool("balanced");
         assert_eq!(pool.len(), 3, "balanced tier should have 3 models");
-        assert!(pool.iter().all(|m| m.contains('/')), "all models should be provider/model format");
+        assert!(
+            pool.iter().all(|m| m.contains('/')),
+            "all models should be provider/model format"
+        );
     }
 
     #[test]
     fn resolve_model_pool_legacy_names() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
-        assert_eq!(config.resolve_model_pool("opus"), vec!["anthropic/claude-opus-4-6:high"]);
-        assert_eq!(config.resolve_model_pool("sonnet"), vec!["anthropic/claude-sonnet-4-6:medium"]);
-        assert_eq!(config.resolve_model_pool("haiku"), vec!["anthropic/claude-haiku-4-5:low"]);
+        assert_eq!(
+            config.resolve_model_pool("opus"),
+            vec!["anthropic/claude-opus-4-6:high"]
+        );
+        assert_eq!(
+            config.resolve_model_pool("sonnet"),
+            vec!["anthropic/claude-sonnet-4-6:medium"]
+        );
+        assert_eq!(
+            config.resolve_model_pool("haiku"),
+            vec!["anthropic/claude-haiku-4-5:low"]
+        );
     }
 
     #[test]
     fn resolve_model_pool_explicit_model() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
-"#).unwrap();
+"#,
+        )
+        .unwrap();
 
         assert_eq!(
             config.resolve_model_pool("anthropic/claude-sonnet-4-6:medium"),
@@ -764,7 +866,7 @@ channel = "myapp"
 install_command = "just install"
 
 [tools]
-beads = true
+bones = true
 maw = true
 crit = true
 botbus = true
@@ -776,7 +878,7 @@ botty = true
         let config2 = Config::parse_toml(&output).unwrap();
         assert_eq!(config.project.name, config2.project.name);
         assert_eq!(config.project.default_agent, config2.project.default_agent);
-        assert_eq!(config.tools.beads, config2.tools.beads);
+        assert_eq!(config.tools.bones, config2.tools.bones);
     }
 
     #[test]
@@ -789,7 +891,7 @@ botty = true
                 "defaultAgent": "test-dev",
                 "channel": "test"
             },
-            "tools": { "beads": true, "maw": true },
+            "tools": { "bones": true, "maw": true },
             "pushMain": false
         }"#;
 
@@ -797,7 +899,7 @@ botty = true
         let config = Config::parse_toml(&toml_str).unwrap();
         assert_eq!(config.project.name, "test");
         assert_eq!(config.project.default_agent, Some("test-dev".to_string()));
-        assert!(config.tools.beads);
+        assert!(config.tools.bones);
         assert!(config.tools.maw);
         assert!(!config.push_main);
     }
@@ -888,18 +990,26 @@ botty = true
         let dir = tempfile::tempdir().unwrap();
         let result = find_config_in_project(dir.path());
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no .botbox.toml or .botbox.json"));
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("no .botbox.toml or .botbox.json")
+        );
     }
 
     #[test]
     fn to_toml_includes_comments() {
-        let config = Config::parse_toml(r#"
+        let config = Config::parse_toml(
+            r#"
 version = "1.0.0"
 [project]
 name = "test"
 [tools]
-beads = true
-"#).unwrap();
+bones = true
+"#,
+        )
+        .unwrap();
         let output = config.to_toml().unwrap();
         assert!(output.contains("# Botbox project configuration"));
         assert!(output.contains("# Companion tools to enable"));

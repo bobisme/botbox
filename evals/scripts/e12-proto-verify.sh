@@ -11,7 +11,7 @@ source "${1:?Usage: e12-proto-verify.sh <path-to-.eval-env>}"
 echo "=== E12-Proto Verification ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo ""
 
 PASS=0
@@ -45,8 +45,8 @@ warn() {
 AGENT_LOG=$(cat "$ARTIFACTS/agent-worker.log" 2>/dev/null || echo "")
 CHANNEL_HISTORY=$(cat "$ARTIFACTS/channel-history.log" 2>/dev/null || echo "")
 FINAL_STATUS=$(cat "$ARTIFACTS/final-status.txt" 2>/dev/null || echo "")
-BEAD_FINAL_JSON=$(cat "$ARTIFACTS/bead-final.json" 2>/dev/null || echo "[]")
-BEAD_COMMENTS=$(cat "$ARTIFACTS/bead-comments.txt" 2>/dev/null || echo "")
+BONE_FINAL_JSON=$(cat "$ARTIFACTS/bone-final.json" 2>/dev/null || echo "[]")
+BONE_COMMENTS=$(cat "$ARTIFACTS/bone-comments.txt" 2>/dev/null || echo "")
 CLAIMS_FINAL=$(cat "$ARTIFACTS/claims-final.txt" 2>/dev/null || echo "")
 WS_STATE=$(cat "$ARTIFACTS/workspace-state.json" 2>/dev/null || echo "{}")
 TEST_OUTPUT=$(cat "$ARTIFACTS/test-output.txt" 2>/dev/null || echo "")
@@ -71,7 +71,7 @@ check "Agent invoked 'botbox protocol resume'" "$($USED_RESUME && echo 0 || echo
 echo ""
 echo "--- Check 2: protocol start ---"
 USED_START=false
-if echo "$AGENT_LOG" | grep -qi "botbox protocol start.*$BEAD_ID\|botbox.*protocol.*start"; then
+if echo "$AGENT_LOG" | grep -qi "botbox protocol start.*$BONE_ID\|botbox.*protocol.*start"; then
   USED_START=true
 fi
 check "Agent invoked 'botbox protocol start'" "$($USED_START && echo 0 || echo 1)" 10
@@ -102,7 +102,7 @@ check "Agent handled review step (protocol or manual or skip)" "$($USED_REVIEW &
 echo ""
 echo "--- Check 4: protocol finish ---"
 USED_FINISH=false
-if echo "$AGENT_LOG" | grep -qi "botbox protocol finish.*$BEAD_ID\|botbox.*protocol.*finish"; then
+if echo "$AGENT_LOG" | grep -qi "botbox protocol finish.*$BONE_ID\|botbox.*protocol.*finish"; then
   USED_FINISH=true
 fi
 check "Agent invoked 'botbox protocol finish'" "$($USED_FINISH && echo 0 || echo 1)" 10
@@ -131,11 +131,11 @@ if echo "$AGENT_LOG" | grep -qi "status.*Fresh\|status.*Ready\|status.*Resumable
   START_OK=true
 fi
 # Also check for the structured output lines from protocol commands
-if echo "$AGENT_LOG" | grep -qi "WORKSPACE:\|BEAD:\|AGENT:"; then
+if echo "$AGENT_LOG" | grep -qi "WORKSPACE:\|BONE:\|AGENT:"; then
   START_OK=true
 fi
-# If the agent successfully created workspace and claimed bead, the protocol worked
-if echo "$AGENT_LOG" | grep -qi "maw ws create\|bus claims stake.*bead://"; then
+# If the agent successfully created workspace and claimed bone, the protocol worked
+if echo "$AGENT_LOG" | grep -qi "maw ws create\|bus claims stake.*bone://"; then
   START_OK=true
 fi
 check "protocol start returned valid status (not error)" "$($START_OK && echo 0 || echo 1)" 10
@@ -147,9 +147,9 @@ FINISH_OK=false
 if echo "$AGENT_LOG" | grep -qi "status.*Ready\|finish.*Ready\|merge.*workspace\|maw ws merge"; then
   FINISH_OK=true
 fi
-# Bead being closed is strong evidence finish worked
-BEAD_FINAL_STATUS=$(echo "$BEAD_FINAL_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-if [[ "$BEAD_FINAL_STATUS" == "closed" ]]; then
+# Bone being done is strong evidence finish worked
+BONE_FINAL_STATE=$(echo "$BONE_FINAL_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+if [[ "$BONE_FINAL_STATE" == "done" ]]; then
   FINISH_OK=true
 fi
 check "protocol finish returned valid status" "$($FINISH_OK && echo 0 || echo 1)" 10
@@ -174,25 +174,25 @@ echo ""
 echo "=== State Transitions (40 pts) ==="
 echo ""
 
-# Check 9: Bead transitioned to in_progress (10 pts)
-echo "--- Check 9: bead in_progress transition ---"
+# Check 9: Bone transitioned to doing (10 pts)
+echo "--- Check 9: bone doing transition ---"
 WAS_IN_PROGRESS=false
-if echo "$AGENT_LOG" | grep -qi "in.progress\|status.*in_progress\|br update.*in_progress"; then
+if echo "$AGENT_LOG" | grep -qi "doing\|state.*doing\|bn do"; then
   WAS_IN_PROGRESS=true
 fi
-if echo "$BEAD_COMMENTS" | grep -qi "in.progress\|Starting\|claimed"; then
+if echo "$BONE_COMMENTS" | grep -qi "doing\|Starting\|claimed"; then
   WAS_IN_PROGRESS=true
 fi
-check "Bead transitioned to in_progress" "$($WAS_IN_PROGRESS && echo 0 || echo 1)" 10
+check "Bone transitioned to doing" "$($WAS_IN_PROGRESS && echo 0 || echo 1)" 10
 
-# Check 10: Bead is CLOSED at end (10 pts)
+# Check 10: Bone is DONE at end (10 pts)
 echo ""
-echo "--- Check 10: bead closed ---"
+echo "--- Check 10: bone done ---"
 IS_CLOSED=false
-if [[ "$BEAD_FINAL_STATUS" == "closed" ]]; then
+if [[ "$BONE_FINAL_STATE" == "done" ]]; then
   IS_CLOSED=true
 fi
-check "Bead is CLOSED at end (status=$BEAD_FINAL_STATUS)" "$($IS_CLOSED && echo 0 || echo 1)" 10
+check "Bone is DONE at end (state=$BONE_FINAL_STATE)" "$($IS_CLOSED && echo 0 || echo 1)" 10
 
 # Check 11: Workspace was created (10 pts)
 echo ""
@@ -225,10 +225,10 @@ fi
 if echo "$AGENT_LOG" | grep -qi "maw ws merge.*--destroy\|workspace.*merged\|workspace.*destroyed"; then
   WS_HANDLED=true
 fi
-# If bead is closed and claims are released, the workspace is handled
-if [[ "$BEAD_FINAL_STATUS" == "closed" ]]; then
+# If bone is done and claims are released, the workspace is handled
+if [[ "$BONE_FINAL_STATE" == "done" ]]; then
   WS_HANDLED=true
-  echo "  Bead closed — workspace lifecycle completed"
+  echo "  Bone done — workspace lifecycle completed"
 fi
 check "Workspace handled correctly ($NON_DEFAULT_COUNT non-default)" "$($WS_HANDLED && echo 0 || echo 1)" 10
 
@@ -278,7 +278,7 @@ check "cargo test passes" "$($TESTS_PASS && echo 0 || echo 1)" 10
 echo ""
 echo "--- Check 15: progress comments ---"
 HAS_COMMENT=false
-COMMENT_COUNT=$(echo "$BEAD_COMMENTS" | grep -c "at 20" || true)
+COMMENT_COUNT=$(echo "$BONE_COMMENTS" | grep -c "at 20" || true)
 if [[ "$COMMENT_COUNT" -ge 1 ]]; then
   HAS_COMMENT=true
 fi
@@ -327,10 +327,10 @@ if [[ "$PROTO_ERRORS" -gt 0 ]]; then
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi
 
-# Friction: duplicate beads
-DUP_BEADS=$(echo "$AGENT_LOG" | grep -c "br create.*--title" || true)
-if [[ "$DUP_BEADS" -gt 0 ]]; then
-  echo "FRICTION (-5): Agent created new beads ($DUP_BEADS creates — bead was pre-made)"
+# Friction: duplicate bones
+DUP_BONES=$(echo "$AGENT_LOG" | grep -c "bn create.*--title" || true)
+if [[ "$DUP_BONES" -gt 0 ]]; then
+  echo "FRICTION (-5): Agent created new bones ($DUP_BONES creates — bone was pre-made)"
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi
 
@@ -410,10 +410,10 @@ echo "=== Forensics ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo ""
 echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history greeter -n 50' for channel messages"
 echo "Run 'cat $ARTIFACTS/agent-worker.log' for agent output"
-echo "Run 'cat $ARTIFACTS/bead-comments.txt' for bead comments"
+echo "Run 'cat $ARTIFACTS/bone-comments.txt' for bone comments"
 echo ""
 echo "=== Verification Complete ==="

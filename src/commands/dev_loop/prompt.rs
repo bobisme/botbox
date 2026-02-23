@@ -1,4 +1,3 @@
-
 use super::journal::LastIteration;
 use super::{LoopContext, SiblingLead};
 
@@ -22,14 +21,8 @@ pub fn build(
     };
 
     let missions_enabled = ctx.missions_enabled;
-    let max_workers = ctx
-        .missions_config
-        .as_ref()
-        .map_or(4, |m| m.max_workers);
-    let max_children = ctx
-        .missions_config
-        .as_ref()
-        .map_or(12, |m| m.max_children);
+    let max_workers = ctx.missions_config.as_ref().map_or(4, |m| m.max_workers);
+    let max_children = ctx.missions_config.as_ref().map_or(12, |m| m.max_children);
     let checkpoint_interval = ctx
         .missions_config
         .as_ref()
@@ -57,11 +50,7 @@ pub fn build(
         .unwrap_or_default();
 
     let status_section = status_snapshot
-        .map(|s| {
-            format!(
-                "\n## CURRENT STATUS (pre-gathered — no need to re-fetch)\n\n{s}\n"
-            )
-        })
+        .map(|s| format!("\n## CURRENT STATUS (pre-gathered — no need to re-fetch)\n\n{s}\n"))
         .unwrap_or_default();
 
     let sibling_section = if !sibling_leads.is_empty() {
@@ -87,10 +76,10 @@ Other lead agents are currently active on this project. Coordinate through claim
 Active leads:
 {leads_list}
 
-**Bead claim rule**: Before starting work on ANY bead, check if it is already claimed:
+**Bone claim rule**: Before starting work on ANY bone, check if it is already claimed:
   bus claims list --format json
-  Look for `bead://{project}/<id>` — if claimed by another agent, SKIP that bead and pick the next one.
-  Only work on beads you can successfully claim.
+  Look for `bone://{project}/<id>` — if claimed by another agent, SKIP that bone and pick the next one.
+  Only work on bones you can successfully claim.
 "#
         )
     } else {
@@ -108,14 +97,14 @@ Active leads:
             r#"
 ### Mission-Aware Triage
 
-Check for active missions (beads with label "mission" that are in_progress):
-  maw exec default -- br list -l mission --status in_progress --json
+Check for active missions (bones with label "mission" that are doing):
+  maw exec default -- bn list -l mission --state doing --json
 {mission_focus}
 For each active mission:
-  1. List children: maw exec default -- br list -l "mission:<mission-id>" --json
-  2. Count status: N open, M in_progress, K closed, J blocked
+  1. List children: maw exec default -- bn list -l "mission:<mission-id>" --json
+  2. Count status: N open, M doing, K done, J blocked
   3. If any children are ready (open, unblocked): include them in the dispatch plan
-  4. If all children are done: close the mission bead (see step 5c "Closing a Mission")
+  4. If all children are done: close the mission bone (see step 5c "Closing a Mission")
   5. If children are blocked: investigate — can you unblock them? Reassign?
 "#
         )
@@ -130,7 +119,7 @@ For each active mission:
     };
 
     let mission_level4_signals = if missions_enabled {
-        "\n**Level 4 signals:** Task mentions multiple components, description reads like a spec/PRD, human explicitly requested coordinated work (BOTBOX_MISSION env), or beads share a common feature/goal."
+        "\n**Level 4 signals:** Task mentions multiple components, description reads like a spec/PRD, human explicitly requested coordinated work (BOTBOX_MISSION env), or bones share a common feature/goal."
     } else {
         ""
     };
@@ -151,25 +140,25 @@ For each active mission:
             r#"
 ## 5c. MISSION (Level 4 — large task decomposition)
 
-Use when: a large coherent task needs decomposition into related beads with shared context.
+Use when: a large coherent task needs decomposition into related bones with shared context.
 {mission_env_note}
 ### Creating a Mission
 
-1. Create the mission bead (if not already created by !mission handler):
-   maw exec default -- br create --actor {agent} --owner {agent} \
-     --title="<mission title>" --labels mission --type=task --priority=2 \
-     --description="Outcome: <what done looks like>\nSuccess metric: <how to verify>\nConstraints: <scope/budget/forbidden>\nStop criteria: <when to stop>"
-2. Plan decomposition: break the mission into {max_children} or fewer child beads.
+1. Create the mission bone (if not already created by !mission handler):
+   maw exec default -- bn create \
+     --title "<mission title>" --labels mission --kind task --urgency default \
+     --description "Outcome: <what done looks like>\nSuccess metric: <how to verify>\nConstraints: <scope/budget/forbidden>\nStop criteria: <when to stop>"
+2. Plan decomposition: break the mission into {max_children} or fewer child bones.
    Consider dependencies between children — which can run in parallel, which are sequential.
-3. Create child beads:
+3. Create child bones:
    For each child:
-   maw exec default -- br create --actor {agent} --owner {agent} \
-     --title="<child title>" --parent <mission-id> \
-     --labels "mission:<mission-id>" --type=task --priority=2
+   maw exec default -- bn create \
+     --title "<child title>" --parent <mission-id> \
+     --labels "mission:<mission-id>" --kind task --urgency default
 4. Wire dependencies between children if needed:
-   maw exec default -- br dep add --actor {agent} <blocked-child> <blocker-child>
+   maw exec default -- bn dep add <blocked-child> <blocker-child>
 5. Post plan to channel:
-   bus send --agent {agent} {project} "Mission <mission-id>: <title> — created N child beads" -L task-claim
+   bus send --agent {agent} {project} "Mission <mission-id>: <title> — created N child bones" -L task-claim
 
 ### Dispatch Mission Workers
 
@@ -179,24 +168,24 @@ Use `botty spawn` for mission workers — NOT the Task tool. See step 5b for why
 
 For independent children (unblocked), dispatch workers (max {max_workers} concurrent):
 - Follow the same dispatch pattern as step 5b — INCLUDING claim staking for EACH worker:
-  bus claims stake --agent {agent} "bead://{project}/<child-id>" -m "dispatched to <worker-name>"
+  bus claims stake --agent {agent} "bone://{project}/<child-id>" -m "dispatched to <worker-name>"
   bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<child-id>"
 - Add mission labels and sibling context env vars:
     --label "mission:<mission-id>" \
     --env "BOTBOX_MISSION=<mission-id>" \
-    --env "BOTBOX_MISSION_OUTCOME=<outcome from mission bead description>" \
+    --env "BOTBOX_MISSION_OUTCOME=<outcome from mission bone description>" \
     --env "BOTBOX_SIBLINGS=<sibling-id> (<title>) [owner:<owner>, status:<status>]\n..." \
     --env "BOTBOX_FILE_HINTS=<sibling-id>: likely edits <files>\n..." \
 
 Build the sibling context BEFORE dispatching:
-1. List all children: maw exec default -- br list -l "mission:<mission-id>" --json
+1. List all children: maw exec default -- bn list -l "mission:<mission-id>" --json
 2. For each child: extract id, title, owner, status
 3. Format BOTBOX_SIBLINGS as one line per child: "<id> (<title>) [owner:<owner>, status:<status>]"
-4. Estimate file ownership hints from bead titles/descriptions (advisory, not enforced)
-5. Extract the Outcome line from the mission bead description for BOTBOX_MISSION_OUTCOME
+4. Estimate file ownership hints from bone titles/descriptions (advisory, not enforced)
+5. Extract the Outcome line from the mission bone description for BOTBOX_MISSION_OUTCOME
 
-- Include mission context in each worker's bead comment:
-  maw exec default -- br comments add --actor {agent} --author {agent} <child-id> \
+- Include mission context in each worker's bone comment:
+  maw exec default -- bn bone comment add <child-id> \
     "Mission context: <mission-id> — <outcome>. Siblings: <sibling-ids>."
 
 ### Checkpoint Loop (step 17)
@@ -205,34 +194,34 @@ After dispatching workers, enter a checkpoint loop. Run checkpoints every {check
 
 Each checkpoint:
 1. Count children by status:
-   maw exec default -- br list --all -l "mission:<mission-id>" --json
-   Tally: N open, M in_progress, K closed, J blocked
+   maw exec default -- bn list --all -l "mission:<mission-id>" --json
+   Tally: N open, M doing, K done, J blocked
 2. Check alive workers:
    botty list --format json
    Cross-reference with dispatched worker names ({agent}/<suffix>)
 3. Check for completions (cursor-based — track last-seen message ID to avoid rescanning):
    bus history {project} -n 20 -L task-done --since <last-checkpoint-time>
-   Look for "Completed <bead-id>" messages from workers
+   Look for "Completed <bone-id>" messages from workers
 4. Post checkpoint to channel (REQUIRED — crash recovery depends on this):
    bus send --agent {agent} {project} "Mission <mission-id> checkpoint: K/$TOTAL done, J blocked, M active" -L feedback
    If this session crashes, the next iteration uses these messages to reconstruct mission state.
 5. Detect failures:
-   If a worker is not in botty list but its bead is still in_progress → crash recovery (see step 6)
+   If a worker is not in botty list but its bone is still doing → crash recovery (see step 6)
 6. Decide:
    - All children closed → exit checkpoint loop, proceed to Mission Close (step 18)
-   - Some blocked, none in_progress → investigate blockers or rescope
+   - Some blocked, none doing → investigate blockers or rescope
    - Workers still alive → continue checkpoint loop
 
-Exit the checkpoint loop when: all children are closed, OR no workers alive and all remaining beads are blocked.
+Exit the checkpoint loop when: all children are closed, OR no workers alive and all remaining bones are blocked.
 
 ### Mission Close and Synthesis (step 18)
 
 When all children are closed:
-1. Verify: maw exec default -- br list -l "mission:<mission-id>" — all should be closed
-2. Write mission log as a bead comment (synthesis of what happened):
-   maw exec default -- br comments add --actor {agent} --author {agent} <mission-id> \
+1. Verify: maw exec default -- bn list -l "mission:<mission-id>" — all should be closed
+2. Write mission log as a bone comment (synthesis of what happened):
+   maw exec default -- bn bone comment add <mission-id> \
      "Mission complete.\n\nChildren: N total, all closed.\nKey decisions: <what changed during execution>\nWhat worked: <patterns that succeeded>\nWhat to avoid: <patterns that failed>\nKey artifacts: <files/modules created or modified>"
-3. Close the mission: maw exec default -- br close --actor {agent} <mission-id> --reason="All children completed"
+3. Close the mission: maw exec default -- bn done <mission-id> --reason "All children completed"
 4. Announce: bus send --agent {agent} {project} "Mission <mission-id> complete: <title> — N children, all done" -L task-done
 "#
         )
@@ -241,7 +230,7 @@ When all children are closed:
     };
 
     let multi_lead_rules = if ctx.multi_lead_enabled {
-        "\n- MULTI-LEAD: Other leads may be active. Always check bead claims before picking work. Use bus claims stake to claim beads atomically — if it fails, another lead got there first. Skip to the next bead.".to_string()
+        "\n- MULTI-LEAD: Other leads may be active. Always check bone claims before picking work. Use bus claims stake to claim bones atomically — if it fails, another lead got there first. Skip to the next bone.".to_string()
     } else {
         String::new()
     };
@@ -251,7 +240,9 @@ When all children are closed:
             .as_deref()
             .map(|m| format!(" Focus on mission: {m}"))
             .unwrap_or_default();
-        format!("\n- MISSIONS: Enabled. Max {max_workers} concurrent workers, max {max_children} children per mission. Checkpoint every {checkpoint_interval}s.{mission_focus}\n- COORDINATION: Watch for coord:interface, coord:blocker, coord:handoff labels on bus messages from workers. React to coord:blocker by unblocking or reassigning.")
+        format!(
+            "\n- MISSIONS: Enabled. Max {max_workers} concurrent workers, max {max_children} children per mission. Checkpoint every {checkpoint_interval}s.{mission_focus}\n- COORDINATION: Watch for coord:interface, coord:blocker, coord:handoff labels on bus messages from workers. React to coord:blocker by unblocking or reassigning."
+        )
     } else {
         String::new()
     };
@@ -261,30 +252,27 @@ When all children are closed:
     let project_dir = &ctx.project_dir;
     let worker_timeout = ctx.worker_timeout;
 
-    let check_command = ctx
-        .check_command
-        .as_deref()
-        .unwrap_or("just check");
+    let check_command = ctx.check_command.as_deref().unwrap_or("just check");
 
     format!(
         r#"You are lead dev agent "{agent}" for project "{project}".
 
-IMPORTANT: Use --agent {agent} on ALL bus and crit commands. Use --actor {agent} on ALL mutating br commands. Use --author {agent} on br comments add. Set BOTBOX_PROJECT={project}. {review_instructions}.
+IMPORTANT: Use --agent {agent} on ALL bus and crit commands. bn resolves agent identity from $AGENT/$BOTBUS_AGENT env automatically. Set BOTBOX_PROJECT={project}. {review_instructions}.
 
 CRITICAL - HUMAN MESSAGE PRIORITY: If you see a system reminder with "STOP:" showing unread bus messages, these are from humans or other agents trying to reach you. IMMEDIATELY check inbox and respond before continuing your current task. Human questions, clarifications, and redirects take priority over heads-down work.
 
-COMMAND PATTERN — maw exec: All br/bv commands run in the default workspace. All crit/jj commands run in their workspace.
-  br/bv: maw exec default -- br <args>       or  maw exec default -- bv <args>
-  crit:  maw exec $WS -- crit <args>
-  jj:    maw exec $WS -- jj <args>
+COMMAND PATTERN — maw exec: All bn commands run in the default workspace. All crit/jj commands run in their workspace.
+  bn:   maw exec default -- bn <args>
+  crit: maw exec $WS -- crit <args>
+  jj:   maw exec $WS -- jj <args>
   other: maw exec $WS -- <command>           (cargo test, etc.)
 Inside `maw exec <ws>`, CWD is already `ws/<ws>/`. Use `maw exec default -- ls src/`, NOT `maw exec default -- ls ws/default/src/`
 For file reads/edits outside maw exec, use the full absolute path: `ws/<ws>/src/...`
-{previous_context}{status_section}{sibling_section}Execute exactly ONE dev cycle. Triage inbox, assess ready beads, either work on one yourself
+{previous_context}{status_section}{sibling_section}Execute exactly ONE dev cycle. Triage inbox, assess ready bones, either work on one yourself
 or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
 
 At the end of your work, output:
-1. A summary for the next iteration: <iteration-summary>Brief summary of what you did: beads worked on, workers dispatched, reviews processed, etc.</iteration-summary>
+1. A summary for the next iteration: <iteration-summary>Brief summary of what you did: bones worked on, workers dispatched, reviews processed, etc.</iteration-summary>
 2. Completion signal:
    - <promise>COMPLETE</promise> if you completed work or determined no work available
    - <promise>END_OF_STORY</promise> if iteration done but more work remains
@@ -293,10 +281,10 @@ At the end of your work, output:
 
 Check CURRENT STATUS above for UNFINISHED BEADS. If none listed, skip to step 2.
 
-If any in_progress beads are owned by you, you have unfinished work from a previous session that was interrupted.
+If any doing bones are owned by you, you have unfinished work from a previous session that was interrupted.
 
-For EACH unfinished bead:
-1. Read the bead and its comments: maw exec default -- br show <id> and maw exec default -- br comments <id>
+For EACH unfinished bone:
+1. Read the bone and its comments: maw exec default -- bn show <id> and maw exec default -- bn comments <id>
 2. Check if you still hold claims: bus claims list --agent {agent} --mine
 3. Determine state:
    - If "Review created: <review-id>" comment exists:
@@ -320,10 +308,10 @@ For EACH unfinished bead:
      * Verify workspace still exists: maw ws list
      * If workspace exists: Resume work in that workspace, complete the task, then proceed to review/finish
      * If workspace was destroyed: Re-create workspace and resume from scratch (check comments for what was done)
-   - If no workspace comment (bead was just started):
+   - If no workspace comment (bone was just started):
      * Re-create workspace and start fresh
 
-After handling all unfinished beads, proceed to step 2 (RESUME CHECK).
+After handling all unfinished bones, proceed to step 2 (RESUME CHECK).
 
 ## 2. RESUME CHECK (check for active claims)
 
@@ -332,9 +320,9 @@ Read the output carefully. If status is Resumable or HasResources, follow the su
 If it fails (exit 1 = command unavailable), fall back to manual resume check:
   Check CURRENT STATUS above for ACTIVE CLAIMS. If none listed, skip to step 3.
 
-  If you hold any claims not covered by unfinished beads in step 1:
-  - bead:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.
-  - bead:// claim without review: Complete the work, then review or finish.
+  If you hold any claims not covered by unfinished bones in step 1:
+  - bone:// claim with review comment: Check crit review status. If LGTM, proceed to merge/finish.
+  - bone:// claim without review: Complete the work, then review or finish.
   - workspace:// claims: These are dispatched workers. Skip to step 7 (MONITOR).
 
   If no additional claims: proceed to step 2.5 (ORPHAN CLEANUP).
@@ -346,14 +334,14 @@ Read the output carefully. If status is HasResources, run the suggested cleanup 
 If it fails (exit 1 = command unavailable), fall back to manual cleanup:
   Check for orphaned claims from completed or failed work:
   1. List all your claims: bus claims list --agent {agent} --mine --format json
-  2. For each bead:// claim:
-     - Extract bead ID from the URI (e.g., "bead://{project}/bd-abc" → "bd-abc")
-     - Check bead status: maw exec default -- br show <id> --json
-     - If bead is CLOSED or BLOCKED: the claim is orphaned
-     - Release it: bus claims release --agent {agent} "bead://{project}/<id>"
+  2. For each bone:// claim:
+     - Extract bone ID from the URI (e.g., "bone://{project}/bd-abc" → "bd-abc")
+     - Check bone status: maw exec default -- bn show <id> --json
+     - If bone is done or blocked: the claim is orphaned
+     - Release it: bus claims release --agent {agent} "bone://{project}/<id>"
      - If there's a matching workspace:// claim, release that too:
        bus claims release --agent {agent} "workspace://{project}/<ws>"
-  3. For each workspace:// claim without a matching bead:// claim:
+  3. For each workspace:// claim without a matching bone:// claim:
      - Extract workspace name from the URI
      - Check if workspace exists: maw ws list --format json
      - If workspace doesn't exist: release the claim
@@ -367,30 +355,30 @@ Check CURRENT STATUS above for INBOX messages. If none, skip to step 4.
 To process and mark read: bus inbox --agent {agent} --channels {project} --mark-read
 
 Process each message:
-- Task requests (-L task-request): create beads with maw exec default -- br create
-- Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bead. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
+- Task requests (-L task-request): create bones with maw exec default -- bn create
+- Feedback (-L feedback): if it contains a bug report, feature request, or actionable work — create a bone. Evaluate critically: is this a real issue? Is it well-scoped? Set priority accordingly. Then acknowledge on bus.
 - Status/questions: reply on bus
 - Announcements ("Working on...", "Completed...", "online"): ignore, no action
-- Duplicate requests: note existing bead, don't create another
+- Duplicate requests: note existing bone, don't create another
 
 ## 4. TRIAGE
 
 Run: botbox triage
 This gives you scored top picks, blockers, quick wins, and project health in one command.
-If no actionable beads and inbox created none: output <promise>COMPLETE</promise> and stop.
+If no actionable bones and inbox created none: output <promise>COMPLETE</promise> and stop.
 {mission_triage}
-GROOM each ready bead:
-- maw exec default -- br show <id> — ensure clear title, description, acceptance criteria, priority, and risk label
+GROOM each ready bone:
+- maw exec default -- bn show <id> — ensure clear title, description, acceptance criteria, priority, and risk label
 - Evaluate as lead dev: is this worth doing now? Is the approach sound? Reprioritize, close as wontfix, or ask for clarification if needed.
-- RISK ASSESSMENT: If the bead lacks a risk label, assign one based on: blast radius, data sensitivity, reversibility, dependency uncertainty.
-  - risk:low — typo fixes, doc updates, config tweaks (maw exec default -- br label add --actor {agent} -l risk:low <id>)
+- RISK ASSESSMENT: If the bone lacks a risk label, assign one based on: blast radius, data sensitivity, reversibility, dependency uncertainty.
+  - risk:low — typo fixes, doc updates, config tweaks (maw exec default -- bn bone tag <id> risk:low)
   - risk:medium — standard features/bugs (default, no label needed)
   - risk:high — security-sensitive, data integrity, user-visible behavior changes
   - risk:critical — irreversible actions, migrations, regulated changes
   Risk can be escalated upward by any agent. Downgrades require lead approval with justification comment.
-- Comment what you changed: maw exec default -- br comments add --actor {agent} --author {agent} <id> "..."
-- CLAIM CHECK: Before working on or dispatching a bead, verify it is not already claimed by another agent:
-  bus claims list --format json — look for bead://{project}/<id>. If claimed by another agent, skip it.
+- Comment what you changed: maw exec default -- bn bone comment add <id> "..."
+- CLAIM CHECK: Before working on or dispatching a bone, verify it is not already claimed by another agent:
+  bus claims list --format json — look for bone://{project}/<id>. If claimed by another agent, skip it.
 
 ## EXECUTION LEVEL DECISION
 
@@ -398,51 +386,51 @@ After grooming, decide the execution level for this iteration:
 
 | Level | Name | When to use |
 |-------|------|-------------|
-| 2 | Sequential | 1 small clear bead, or tightly coupled beads (same files, must be done in order) |
-| 3 | Parallel dispatch | 2+ independent beads unrelated to each other. Different bugs, unrelated features. |
-| 4 | Mission | Large task needing decomposition into related beads with shared context{mission_level4_disabled} |
+| 2 | Sequential | 1 small clear bone, or tightly coupled bones (same files, must be done in order) |
+| 3 | Parallel dispatch | 2+ independent bones unrelated to each other. Different bugs, unrelated features. |
+| 4 | Mission | Large task needing decomposition into related bones with shared context{mission_level4_disabled} |
 
-**Level 3 vs 4:** Level 3 dispatches workers for *pre-existing independent beads*. Level 4 *creates the beads as part of planning* under a mission envelope with shared outcome, constraints, and sibling awareness.
+**Level 3 vs 4:** Level 3 dispatches workers for *pre-existing independent bones*. Level 4 *creates the bones as part of planning* under a mission envelope with shared outcome, constraints, and sibling awareness.
 {mission_level4_signals}
-Assess bead count:
-- 0 ready beads (but dispatched workers pending): just monitor, skip to step 7.
-- 1 ready bead: do it yourself sequentially (follow steps 5a below).
-- 2+ independent ready beads: dispatch workers in parallel (follow steps 5b below). Do NOT work on them yourself sequentially — parallel dispatch is REQUIRED.{mission_triage_option}
+Assess bone count:
+- 0 ready bones (but dispatched workers pending): just monitor, skip to step 7.
+- 1 ready bone: do it yourself sequentially (follow steps 5a below).
+- 2+ independent ready bones: dispatch workers in parallel (follow steps 5b below). Do NOT work on them yourself sequentially — parallel dispatch is REQUIRED.{mission_triage_option}
 
-## 5a. SEQUENTIAL (1 bead — do it yourself)
+## 5a. SEQUENTIAL (1 bone — do it yourself)
 
-START: Try protocol command: botbox protocol start <bead-id> --agent {agent}
+START: Try protocol command: botbox protocol start <bone-id> --agent {agent}
 Read the output carefully. If status is Ready, run the suggested commands.
 If it fails (exit 1 = command unavailable), fall back to manual start:
-  1. maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}
-  2. bus claims stake --agent {agent} "bead://{project}/<id>" -m "<id>"
+  1. maw exec default -- bn do <id>
+  2. bus claims stake --agent {agent} "bone://{project}/<id>" -m "<id>"
   3. maw ws create --random — note workspace NAME and absolute PATH
   4. bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>"
-  5. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Started in workspace $WS ($WS_PATH)"
+  5. maw exec default -- bn bone comment add <id> "Started in workspace $WS ($WS_PATH)"
   6. bus statuses set --agent {agent} "Working: <id>" --ttl 30m
   7. Announce: bus send --agent {agent} {project} "Working on <id>: <title>" -L task-claim
 
 WORK:
 8. Implement the task. All file operations use absolute WS_PATH.
    For commands in workspace: maw exec $WS -- <command>. Do NOT cd into workspace and stay there.
-9. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Progress: ..."
+9. maw exec default -- bn bone comment add <id> "Progress: ..."
 10. Describe: maw exec $WS -- jj describe -m "<id>: <summary>"
 
 REVIEW (risk-aware):
-Check the bead's risk label (maw exec default -- br show <id>). No risk label = risk:medium.
+Check the bone's risk label (maw exec default -- bn show <id>). No risk label = risk:medium.
 
 RISK:LOW (evals, docs, tests, config) — Self-review and merge directly:
   No security review needed regardless of REVIEW setting.
-  Add self-review comment: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+  Add self-review comment: maw exec default -- bn bone comment add <id> "Self-review (risk:low): <what you verified>"
   Proceed directly to merge/finish below.
 
 RISK:MEDIUM — Standard review (if REVIEW is true):
-  Try protocol command: botbox protocol review <bead-id> --agent {agent}
+  Try protocol command: botbox protocol review <bone-id> --agent {agent}
   Read the output carefully. If status is Ready, run the suggested commands.
   If it fails (exit 1 = command unavailable), fall back to manual review:
-    CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+    CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
     Create review with reviewer (if none exists): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
-    IMMEDIATELY record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace $WS"
+    IMMEDIATELY record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace $WS"
     Spawn reviewer via @mention: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
   STOP this iteration — wait for reviewer.
 
@@ -456,33 +444,33 @@ RISK:CRITICAL — Security review + human approval:
 
 If REVIEW is false:
   Merge: maw ws merge $WS --destroy (produces linear squashed history and auto-moves main)
-  maw exec default -- br close --actor {agent} <id> --reason="Completed"
+  maw exec default -- bn done <id> --reason="Completed"
   bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
   bus claims release --agent {agent} --all
-  maw exec default -- br sync --flush-only{push_main_step}
+  (bn is event-sourced — no sync needed){push_main_step}
 
-## 5b. PARALLEL DISPATCH (2+ beads)
+## 5b. PARALLEL DISPATCH (2+ bones)
 
-For EACH independent ready bead, assess and dispatch:
+For EACH independent ready bone, assess and dispatch:
 
 ### Model Selection
-Read each bead (maw exec default -- br show <id>) and select a tier based on complexity:
+Read each bone (maw exec default -- bn show <id>) and select a tier based on complexity:
 - **fast**: Small scope, clear criteria. E.g., add endpoint, fix typo, update config, simple test.
 - **balanced**: Multiple files, moderate complexity. E.g., refactor module, add feature with tests, wire up integration.
 - **strong**: Deep debugging, architecture, complex algorithms. E.g., fix race condition, redesign data flow.
 
-Default from config: **{worker_model}**. Override per-bead based on your complexity assessment.
+Default from config: **{worker_model}**. Override per-bone based on your complexity assessment.
 
 IMPORTANT: Always pass the tier name (fast, balanced, strong) as `--model`, NOT a specific provider/model string.
 The worker resolves tier names to a provider pool at runtime for cross-provider load balancing.
 
-### For each bead being dispatched:
+### For each bone being dispatched:
 1. maw ws create --random — note NAME and PATH
 2. bus generate-name — get a worker identity
-3. maw exec default -- br update --actor {agent} <id> --status=in_progress --owner={agent}
-4. bus claims stake --agent {agent} "bead://{project}/<id>" -m "dispatched to <worker-name>"
+3. maw exec default -- bn do <id>
+4. bus claims stake --agent {agent} "bone://{project}/<id>" -m "dispatched to <worker-name>"
 5. bus claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>"
-6. maw exec default -- br comments add --actor {agent} --author {agent} <id> "Dispatched worker <worker-name> (model: <model>) in workspace $WS ($WS_PATH)"
+6. maw exec default -- bn bone comment add <id> "Dispatched worker <worker-name> (model: <model>) in workspace $WS ($WS_PATH)"
 7. bus statuses set --agent {agent} "Dispatch: <id>" --ttl 5m
 8. bus send --agent {agent} {project} "Dispatching <worker-name> for <id>: <title>" -L task-claim
 
@@ -493,13 +481,13 @@ Why: botty workers are independently observable (`botty tail`, `botty list`), su
 have independent timeouts, participate in botbus coordination (claims, messages, status), and respect maxWorkers limits.
 The Task tool creates in-process subagents that bypass all of this infrastructure — no crash recovery, no observability, no coordination.
 
-For each dispatched bead, spawn a worker via botty with hierarchical naming:
+For each dispatched bone, spawn a worker via botty with hierarchical naming:
 
   botty spawn --name "{agent}/<worker-suffix>" \
-    --label worker --label "bead:<id>" \
+    --label worker --label "bone:<id>" \
     --env-inherit BOTBUS_CHANNEL,BOTBUS_DATA_DIR \
     --env "AGENT={agent}/<worker-suffix>" \
-    --env "BOTBOX_BEAD=<id>" \
+    --env "BOTBOX_BONE=<id>" \
     --env "BOTBOX_WORKSPACE=$WS" \
     --env "BOTBUS_CHANNEL={project}" \
     --env "BOTBOX_PROJECT={project}" \
@@ -510,7 +498,7 @@ For each dispatched bead, spawn a worker via botty with hierarchical naming:
 Set --timeout to {worker_timeout} (from config agents.worker.timeout).
 
 The hierarchical name ({agent}/<suffix>) lets you find all your workers via `botty list`.
-The BOTBOX_BEAD and BOTBOX_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
+The BOTBOX_BONE and BOTBOX_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
 
 After dispatching all workers, skip to step 6 (MONITOR).
 {mission_section_5c}
@@ -546,42 +534,42 @@ Check worker results:
 - Check workspace status: maw ws list
 
 For each completed worker:
-- Read their progress comments: maw exec default -- br comments <id>
+- Read their progress comments: maw exec default -- bn comments <id>
 - Verify the work looks reasonable (spot check key files)
 
 ### Crash Recovery (dead worker detection)
 
 Check which workers are still alive: botty list --format json
-Cross-reference with your dispatched beads (check your bead:// claims).
+Cross-reference with your dispatched bones (check your bone:// claims).
 
-For each dispatched bead where the worker is NOT in botty list but the bead is still in_progress:
-1. Check bead comments for a "RETRY:1" marker (from a previous crash recovery attempt).
+For each dispatched bone where the worker is NOT in botty list but the bone is still doing:
+1. Check bone comments for a "RETRY:1" marker (from a previous crash recovery attempt).
 2. If NO retry marker — first failure, reassign once:
-   - maw exec default -- br comments add --actor {agent} --author {agent} <id> "Worker <worker-name> died. RETRY:1 — reassigning."
+   - maw exec default -- bn bone comment add <id> "Worker <worker-name> died. RETRY:1 — reassigning."
    - Check if workspace still exists (maw ws list). If destroyed, create a new one.
    - Re-dispatch following step 5b (new worker name, same or new workspace).
-3. If "RETRY:1" marker already exists — second failure, block the bead:
-   - maw exec default -- br comments add --actor {agent} --author {agent} <id> "Worker died again after retry. Blocking bead."
-   - maw exec default -- br update --actor {agent} <id> --status=blocked
-   - bus send --agent {agent} {project} "Bead <id> blocked: worker died twice" -L task-blocked
+3. If "RETRY:1" marker already exists — second failure, block the bone:
+   - maw exec default -- bn bone comment add <id> "Worker died again after retry. Blocking bone."
+   - maw exec default -- bn bone tag <id> blocked
+   - bus send --agent {agent} {project} "Bone <id> blocked: worker died twice" -L task-blocked
    - If workspace still exists: maw ws destroy <ws> (don't merge broken work)
-   - bus claims release --agent {agent} "bead://{project}/<id>"
+   - bus claims release --agent {agent} "bone://{project}/<id>"
 
 ## 7. FINISH (merge completed work)
 
-For each completed bead with a workspace, ALWAYS try protocol merge first:
+For each completed bone with a workspace, ALWAYS try protocol merge first:
 
   botbox protocol merge <workspace> --agent {agent}
 
-This checks bead status, review gate, and conflicts in one step. Read the output:
+This checks bone status, review gate, and conflicts in one step. Read the output:
   - Ready → proceed with Merge Protocol below, then follow the post-merge steps from the output
-    (mark review merged, sync beads, announce).
+    (mark review merged, sync bones, announce).
   - NeedsReview → review required before merging (see NeedsReview handling below).
-  - Blocked → read diagnostics for recovery steps (conflicts, bead not closed, review blocked).
+  - Blocked → read diagnostics for recovery steps (conflicts, bone not closed, review blocked).
   - Unavailable (exit 1) → fall back to manual merge paths at the bottom of this section.
 
-After protocol merge reports Ready, close the bead:
-  maw exec default -- br close --actor {agent} <id> --reason="Completed"
+After protocol merge reports Ready, close the bone:
+  maw exec default -- bn done <id> --reason="Completed"
   bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
 ### Merge Protocol (used by all paths that call "maw ws merge")
@@ -609,7 +597,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
   c. AUTHORITATIVE REBASE (under mutex — catches merges that landed during wait):
      maw exec $WS -- jj rebase -d main
      If conflicts: resolve them before proceeding. Use this workflow:
-       1. Identify the bead: maw exec default -- br show <id> — read what the worker was trying to do
+       1. Identify the bone: maw exec default -- bn show <id> — read what the worker was trying to do
        2. See what changed in main since the worker started: maw exec default -- jj log -n 10
        3. Read the conflicted files in the workspace (ws/$WS/<path>) — understand both sides
        4. Resolve by keeping BOTH sides' intent: the worker's new code AND main's recent additions.
@@ -620,8 +608,8 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
      maw ws merge $WS --destroy
 
   d2. RELEASE WORKER CLAIMS (for dispatched workers only):
-      For workspace that was dispatched to a worker (check bead comments for "Dispatched worker"):
-        bus claims release --agent {agent} "bead://{project}/<id>"
+      For workspace that was dispatched to a worker (check bone comments for "Dispatched worker"):
+        bus claims release --agent {agent} "bone://{project}/<id>"
         bus claims release --agent {agent} "workspace://{project}/$WS"
       For work you did yourself (no "Dispatched worker" comment): skip this step.
 
@@ -632,7 +620,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
       not together (e.g., disagreeing type signatures, duplicate symbol names, missing imports).
       Fix it immediately:
         - Read the error output carefully — compiler errors point to the exact incompatibility
-        - Check the bead for context: maw exec default -- br show <id> — what was the worker's intent?
+        - Check the bone for context: maw exec default -- bn show <id> — what was the worker's intent?
         - Common patterns: mismatched function signatures (reconcile the API), duplicate definitions
           (keep one, update callers), missing imports (add them)
         - Make targeted fixes in the default workspace (use maw exec default -- to edit)
@@ -643,49 +631,49 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
      bus send --agent {agent} {project} "Merged $WS (<id>): <summary>" -L coord:merge
 
   f. SYNC:
-     maw exec default -- br sync --flush-only{push_main_step}
+     (bn is event-sourced — no sync needed){push_main_step}
 
   g. RELEASE MUTEX (always, even on failure — use try/finally):
      bus claims release --agent {agent} "workspace://{project}/default"
 
 ### NeedsReview handling (protocol merge returned NeedsReview):
 
-  CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+  CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
   Create review (if none): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
-  Record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace <ws-name>"
+  Record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace <ws-name>"
   Announce: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
   STOP — wait for reviewer
   For risk:high add failure-mode checklist to review description, for risk:critical add human approval request.
 
 ### Manual fallback (only if protocol merge is unavailable):
 
-  Try protocol command: botbox protocol finish <bead-id> --agent {agent}
+  Try protocol command: botbox protocol finish <bone-id> --agent {agent}
   It will tell you the review status and exact commands to run.
   If it fails (exit 1 = command unavailable), fall back to the manual paths below.
 
   Already reviewed and approved (LGTM):
     maw exec default -- crit reviews mark-merged <review-id> --agent {agent}
     Run MERGE PROTOCOL above for $WS
-    maw exec default -- br close --actor {agent} <id> --reason="Completed"
+    maw exec default -- bn done <id> --reason="Completed"
     bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
   Not yet reviewed — RISK:LOW (evals, docs, tests, config):
     Self-review and merge directly.
-    maw exec default -- br comments add --actor {agent} --author {agent} <id> "Self-review (risk:low): <what you verified>"
+    maw exec default -- bn bone comment add <id> "Self-review (risk:low): <what you verified>"
     Run MERGE PROTOCOL above for $WS
-    maw exec default -- br close --actor {agent} <id> --reason="Completed"
+    maw exec default -- bn done <id> --reason="Completed"
     bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
   Not yet reviewed — RISK:MEDIUM/HIGH/CRITICAL (REVIEW is true):
-    CHECK for existing review: maw exec default -- br comments <id> | grep "Review created:"
+    CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
     Create review (if none): maw exec $WS -- crit reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
-    Record: maw exec default -- br comments add --actor {agent} --author {agent} <id> "Review created: <review-id> in workspace <ws-name>"
+    Record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace <ws-name>"
     Announce: bus send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
     STOP — wait for reviewer. For risk:high add failure-mode checklist, for risk:critical add human approval request.
 
   If REVIEW is false (regardless of risk):
     Run MERGE PROTOCOL above for $WS
-    maw exec default -- br close --actor {agent} <id>
+    maw exec default -- bn done <id>
     bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
 
 After finishing all ready work:
@@ -715,13 +703,13 @@ Before outputting COMPLETE, check if a release is needed:
 3. If only "chore:", "docs:", "refactor:" commits, no release needed.
 4. RELEASE MUTEX: bus claims release --agent {agent} "release://{project}"
 
-Output: <promise>END_OF_STORY</promise> if more beads remain, else <promise>COMPLETE</promise>
+Output: <promise>END_OF_STORY</promise> if more bones remain, else <promise>COMPLETE</promise>
 
 Key rules:
 - Triage first, then decide: sequential vs parallel
 - Monitor dispatched workers, merge when ready
 - All bus/crit commands use --agent {agent}
-- All br/bv commands: maw exec default -- br/bv ...
+- All bn commands: maw exec default -- bn ...
 - All crit/jj commands in a workspace: maw exec $WS -- crit/jj ...
 - For parallel dispatch, note limitations of this prompt-based approach
 - RISK LABELS: Always assess risk during grooming. risk:low (evals, docs, tests, config) skips security review entirely — self-review and merge directly. risk:medium gets standard review (when REVIEW is true). risk:high requires failure-mode checklist. risk:critical requires human approval.{mission_rules}{multi_lead_rules}
@@ -817,4 +805,3 @@ mod tests {
         }
     }
 }
-

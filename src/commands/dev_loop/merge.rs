@@ -28,10 +28,15 @@ pub fn acquire_merge_mutex(
     loop {
         let result = Tool::new("bus")
             .args(&[
-                "claims", "stake", "--agent", agent,
+                "claims",
+                "stake",
+                "--agent",
+                agent,
                 &format!("workspace://{project}/default"),
-                "--ttl", "120",
-                "-m", &memo,
+                "--ttl",
+                "120",
+                "-m",
+                &memo,
             ])
             .run();
 
@@ -54,7 +59,9 @@ pub fn acquire_merge_mutex(
                 } else {
                     0
                 };
-                let actual_delay = base_delay.saturating_sub(jitter_range).saturating_add(jitter);
+                let actual_delay = base_delay
+                    .saturating_sub(jitter_range)
+                    .saturating_add(jitter);
 
                 attempt += 1;
                 eprintln!(
@@ -64,14 +71,22 @@ pub fn acquire_merge_mutex(
                 // Check if a coord:merge message appeared (lock might be free)
                 if let Ok(output) = Tool::new("bus")
                     .args(&[
-                        "history", project, "-L", "coord:merge",
-                        "-n", "1", "--since", "2 minutes ago",
+                        "history",
+                        project,
+                        "-L",
+                        "coord:merge",
+                        "-n",
+                        "1",
+                        "--since",
+                        "2 minutes ago",
                     ])
                     .run()
-                    && output.success() && !output.stdout.trim().is_empty() {
-                        eprintln!("coord:merge detected — retrying immediately");
-                        continue;
-                    }
+                    && output.success()
+                    && !output.stdout.trim().is_empty()
+                {
+                    eprintln!("coord:merge detected — retrying immediately");
+                    continue;
+                }
 
                 thread::sleep(Duration::from_secs(actual_delay));
             }
@@ -83,7 +98,10 @@ pub fn acquire_merge_mutex(
 pub fn release_merge_mutex(agent: &str, project: &str) {
     let _ = Tool::new("bus")
         .args(&[
-            "claims", "release", "--agent", agent,
+            "claims",
+            "release",
+            "--agent",
+            agent,
             &format!("workspace://{project}/default"),
         ])
         .run();
@@ -106,11 +124,10 @@ pub fn merge_workspace(ws: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Sync beads after merge.
-pub fn sync_beads() {
-    let _ = Tool::new("br")
-        .args(&["sync", "--flush-only"])
-        .in_workspace("default")
-        .ok()
-        .and_then(|t| t.run().ok());
+/// Sync bones after merge.
+///
+/// bones is event-sourced — no sync step needed. This is a no-op retained
+/// for call-site compatibility during migration.
+pub fn sync_bones() {
+    // bn is event-sourced, no sync required
 }

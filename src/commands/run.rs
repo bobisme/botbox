@@ -72,7 +72,7 @@ pub enum RunCommand {
         #[arg(long)]
         model: Option<String>,
     },
-    /// Run triage (bead scoring and recommendations)
+    /// Run triage (bone scoring and recommendations)
     Triage {
         /// Project root directory
         #[arg(long)]
@@ -92,36 +92,58 @@ pub enum RunCommand {
 impl RunCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
-            RunCommand::Agent { prompt, model, timeout, format, runner, skip_permissions } => {
-                crate::commands::run_agent::run_agent(runner, prompt, model.as_deref(), *timeout, format.as_deref(), *skip_permissions)
-            }
-            RunCommand::DevLoop { project_root, agent, model } => {
-                crate::commands::dev_loop::run(
-                    project_root.as_deref(),
-                    agent.as_deref(),
-                    model.as_deref(),
-                )
-            }
-            RunCommand::WorkerLoop { project_root, agent, model } => {
-                crate::commands::worker_loop::run_worker_loop(
-                    project_root.clone(),
-                    agent.clone(),
-                    model.clone(),
-                )
-            }
-            RunCommand::ReviewerLoop { project_root, agent, model } => {
-                crate::commands::run_reviewer_loop::run_reviewer_loop(
-                    project_root.clone(),
-                    agent.clone(),
-                    model.clone(),
-                )
-            }
-            RunCommand::Responder { project_root, agent, model } => {
-                crate::commands::responder::run_responder(project_root.clone(), agent.clone(), model.clone())
-            }
-            RunCommand::Triage { .. } => {
-                crate::commands::triage::run_triage()
-            }
+            RunCommand::Agent {
+                prompt,
+                model,
+                timeout,
+                format,
+                runner,
+                skip_permissions,
+            } => crate::commands::run_agent::run_agent(
+                runner,
+                prompt,
+                model.as_deref(),
+                *timeout,
+                format.as_deref(),
+                *skip_permissions,
+            ),
+            RunCommand::DevLoop {
+                project_root,
+                agent,
+                model,
+            } => crate::commands::dev_loop::run(
+                project_root.as_deref(),
+                agent.as_deref(),
+                model.as_deref(),
+            ),
+            RunCommand::WorkerLoop {
+                project_root,
+                agent,
+                model,
+            } => crate::commands::worker_loop::run_worker_loop(
+                project_root.clone(),
+                agent.clone(),
+                model.clone(),
+            ),
+            RunCommand::ReviewerLoop {
+                project_root,
+                agent,
+                model,
+            } => crate::commands::run_reviewer_loop::run_reviewer_loop(
+                project_root.clone(),
+                agent.clone(),
+                model.clone(),
+            ),
+            RunCommand::Responder {
+                project_root,
+                agent,
+                model,
+            } => crate::commands::responder::run_responder(
+                project_root.clone(),
+                agent.clone(),
+                model.clone(),
+            ),
+            RunCommand::Triage { .. } => crate::commands::triage::run_triage(),
             RunCommand::IterationStart { agent, .. } => {
                 crate::commands::iteration_start::run_iteration_start(agent.as_deref())
             }

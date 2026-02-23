@@ -3,7 +3,7 @@ set -euo pipefail
 
 # E12-Proto-Review Eval — Run
 # Spawns a worker-loop agent, waits for review creation, auto-LGTMs it,
-# then waits for bead completion. Captures artifacts for verification.
+# then waits for bone completion. Captures artifacts for verification.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OVERALL_TIMEOUT=${E12_TIMEOUT:-360}  # 6 minutes (extra time for review round-trip)
@@ -37,12 +37,12 @@ ARTIFACTS="$EVAL_DIR/artifacts"
 echo "--- setup: OK (EVAL_DIR=$EVAL_DIR) ---"
 echo ""
 
-# --- Verify bead exists ---
-echo "--- Verifying bead ---"
+# --- Verify bone exists ---
+echo "--- Verifying bone ---"
 cd "$PROJECT_DIR"
-BEAD_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" 2>&1 || echo "ERROR")
-echo "$BEAD_STATUS" | head -3
-echo "--- bead: OK ---"
+BONE_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" 2>&1 || echo "ERROR")
+echo "$BONE_STATUS" | head -3
+echo "--- bone: OK ---"
 echo ""
 
 # --- Spawn worker ---
@@ -51,7 +51,7 @@ WORKER_AGENT="$AGENT_NAME/$WORKER_NAME"
 
 echo "--- Spawning worker: $WORKER_NAME ---"
 echo "  Agent: $WORKER_AGENT"
-echo "  Bead: $BEAD_ID"
+echo "  Bone: $BONE_ID"
 echo "  Timeout: ${OVERALL_TIMEOUT}s"
 echo "  Review: ENABLED"
 echo ""
@@ -61,7 +61,7 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty spawn \
   --cwd "$PROJECT_DIR" \
   --env-inherit BOTBUS_DATA_DIR,SSH_AUTH_SOCK \
   -e "AGENT=$WORKER_AGENT" \
-  -e "BOTBOX_BEAD=$BEAD_ID" \
+  -e "BOTBOX_BEAD=$BONE_ID" \
   -t "$OVERALL_TIMEOUT" \
   -- botbox run worker-loop --agent "$WORKER_AGENT"
 
@@ -118,11 +118,11 @@ while true; do
     FINAL_STATUS="worker-exited"
   fi
 
-  # Check bead status
+  # Check bone state
   cd "$PROJECT_DIR"
-  BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" --format json 2>/dev/null || echo "[]")
-  BEAD_CUR_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-  echo "  bead $BEAD_ID: $BEAD_CUR_STATUS"
+  BONE_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" --format json 2>/dev/null || echo "[]")
+  BONE_CUR_STATE=$(echo "$BONE_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+  echo "  bone $BONE_ID: $BONE_CUR_STATE"
 
   # Check bus for review-request messages
   REVIEW_MSG=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history greeter -n 50 2>/dev/null | grep -i "review" || true)
@@ -131,7 +131,7 @@ while true; do
   fi
 
   # --- Auto-LGTM: find and approve review ---
-  if [[ "$REVIEW_LGTM_DONE" == "false" ]] && [[ "$BEAD_CUR_STATUS" == "in_progress" ]]; then
+  if [[ "$REVIEW_LGTM_DONE" == "false" ]] && [[ "$BONE_CUR_STATE" == "doing" ]]; then
     if _find_review; then
       echo ""
       echo "  >>> REVIEW FOUND: $REVIEW_ID_FOUND in workspace $REVIEW_WS_FOUND"
@@ -164,9 +164,9 @@ while true; do
     echo "  review: waiting..."
   fi
 
-  # Check for bead closed
-  if [[ "$BEAD_CUR_STATUS" == "closed" ]]; then
-    echo "  Bead is CLOSED — worker completed!"
+  # Check for bone done
+  if [[ "$BONE_CUR_STATE" == "done" ]]; then
+    echo "  Bone is DONE — worker completed!"
     FINAL_STATUS="completed"
 
     # Grace period for worker to exit
@@ -183,7 +183,7 @@ while true; do
     break
   fi
 
-  # If worker exited but bead not closed — re-spawn for iteration 2 after LGTM
+  # If worker exited but bone not done — re-spawn for iteration 2 after LGTM
   if [[ "$FINAL_STATUS" == "worker-exited" ]]; then
     if [[ "$REVIEW_LGTM_DONE" == "true" ]] && [[ "$WORKER_RESPAWNED" == "false" ]]; then
       echo ""
@@ -202,7 +202,7 @@ while true; do
         --cwd "$PROJECT_DIR" \
         --env-inherit BOTBUS_DATA_DIR,SSH_AUTH_SOCK \
         -e "AGENT=$WORKER_AGENT" \
-        -e "BOTBOX_BEAD=$BEAD_ID" \
+        -e "BOTBOX_BEAD=$BONE_ID" \
         -t "$REMAINING" \
         -- botbox run worker-loop --agent "$WORKER_AGENT"
 
@@ -212,12 +212,12 @@ while true; do
       continue
     fi
 
-    echo "  Worker exited without closing bead (status=$BEAD_CUR_STATUS)"
+    echo "  Worker exited without completing bone (state=$BONE_CUR_STATE)"
     break
   fi
 
   # Activity tracking
-  if [[ "$BEAD_CUR_STATUS" == "in_progress" ]]; then
+  if [[ "$BONE_CUR_STATE" == "doing" ]]; then
     LAST_ACTIVITY_TIME=$(date +%s)
   fi
 
@@ -256,13 +256,13 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history greeter -n 200 > "$ARTIFACTS/chan
   echo "(no history)" > "$ARTIFACTS/channel-history.log"
 echo "  channel: $ARTIFACTS/channel-history.log"
 
-# Bead state
+# Bone state
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" --format json > "$ARTIFACTS/bead-final.json" 2>/dev/null || \
-  echo "[]" > "$ARTIFACTS/bead-final.json"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" > "$ARTIFACTS/bead-final.txt" 2>/dev/null || true
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br comments "$BEAD_ID" > "$ARTIFACTS/bead-comments.txt" 2>/dev/null || true
-echo "  bead: $ARTIFACTS/bead-final.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" --format json > "$ARTIFACTS/bone-final.json" 2>/dev/null || \
+  echo "[]" > "$ARTIFACTS/bone-final.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" > "$ARTIFACTS/bone-final.txt" 2>/dev/null || true
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn bone comment list "$BONE_ID" > "$ARTIFACTS/bone-comments.txt" 2>/dev/null || true
+echo "  bone: $ARTIFACTS/bone-final.json"
 
 # Workspace state
 maw ws list --format json > "$ARTIFACTS/workspace-state.json" 2>/dev/null || \
@@ -299,8 +299,8 @@ echo "  tests: $ARTIFACTS/test-output.txt"
 # Final status
 cat > "$ARTIFACTS/final-status.txt" << EOF
 FINAL_STATUS=$FINAL_STATUS
-BEAD_ID=$BEAD_ID
-BEAD_STATUS=$BEAD_CUR_STATUS
+BONE_ID=$BONE_ID
+BONE_STATUS=$BONE_CUR_STATE
 WORKER_NAME=$WORKER_NAME
 WORKER_AGENT=$WORKER_AGENT
 REVIEW_LGTM_DONE=$REVIEW_LGTM_DONE
@@ -330,7 +330,7 @@ echo "=== E12-Proto-Review Complete ($(date +%H:%M:%S)) ==="
 echo "============================================="
 echo ""
 echo "Final status: $FINAL_STATUS"
-echo "Bead: $BEAD_ID ($BEAD_CUR_STATUS)"
+echo "Bone: $BONE_ID ($BONE_CUR_STATE)"
 echo "Review: $REVIEW_ID_FOUND (LGTM: $REVIEW_LGTM_DONE)"
 echo "Elapsed: $(( $(date +%s) - START_TIME ))s"
 echo ""

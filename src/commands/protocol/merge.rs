@@ -1,7 +1,7 @@
 //! Protocol merge command: lead-facing command to check preconditions and
 //! output merge steps for a worker's completed workspace.
 //!
-//! Validates: workspace exists, has changes, associated bead is closed,
+//! Validates: workspace exists, has changes, associated bone is closed,
 //! review is approved (if enabled). Outputs merge steps with conflict
 //! recovery guidance.
 
@@ -72,39 +72,36 @@ pub fn execute(
         return Ok(());
     }
 
-    // Try to find the associated bead from workspace claims
-    let bead_id = find_bead_for_workspace(&ctx, workspace);
+    // Try to find the associated bone from workspace claims
+    let bone_id = find_bone_for_workspace(&ctx, workspace);
 
-    if let Some(ref bead_id) = bead_id {
-        guidance.bead = Some(render::BeadRef {
-            id: bead_id.clone(),
-            title: String::new(), // filled below if bead found
+    if let Some(ref bone_id) = bone_id {
+        guidance.bone = Some(render::BoneRef {
+            id: bone_id.clone(),
+            title: String::new(), // filled below if bone found
         });
 
-        // Check bead status
-        match ctx.bead_status(bead_id) {
-            Ok(bead_info) => {
-                guidance.bead = Some(render::BeadRef {
-                    id: bead_id.clone(),
-                    title: bead_info.title.clone(),
+        // Check bone status
+        match ctx.bone_status(bone_id) {
+            Ok(bone_info) => {
+                guidance.bone = Some(render::BoneRef {
+                    id: bone_id.clone(),
+                    title: bone_info.title.clone(),
                 });
 
-                if bead_info.status != "closed" && !force {
+                if bone_info.state != "done" && !force {
                     guidance.status = ProtocolStatus::Blocked;
                     guidance.diagnostic(format!(
-                        "Bead {} is '{}', expected 'closed'. Worker may still be working.",
-                        bead_id, bead_info.status
+                        "Bone {} is '{}', expected 'done'. Worker may still be working.",
+                        bone_id, bone_info.state
                     ));
                     guidance.advise(format!(
-                        "Wait for worker to close bead {}, or use --force to merge anyway.",
-                        bead_id
+                        "Wait for worker to finish bone {}, or use --force to merge anyway.",
+                        bone_id
                     ));
 
                     let mut steps = Vec::new();
-                    steps.push(format!(
-                        "maw exec default -- br show {}",
-                        bead_id
-                    ));
+                    steps.push(format!("maw exec default -- bn show {}", bone_id));
                     guidance.steps(steps);
 
                     print_guidance(&guidance, format)?;
@@ -113,14 +110,14 @@ pub fn execute(
             }
             Err(_) => {
                 guidance.diagnostic(format!(
-                    "Could not fetch bead {} — it may have been deleted. Proceeding with merge.",
-                    bead_id
+                    "Could not fetch bone {} — it may have been deleted. Proceeding with merge.",
+                    bone_id
                 ));
             }
         }
     } else {
         guidance.diagnostic(
-            "No associated bead found for this workspace. Proceeding without bead check."
+            "No associated bone found for this workspace. Proceeding without bone check."
                 .to_string(),
         );
     }
@@ -198,7 +195,7 @@ pub fn execute(
                     );
 
                     let mut steps = Vec::new();
-                    let title = bead_id
+                    let title = bone_id
                         .as_ref()
                         .map(|id| format!("Work from {}", id))
                         .unwrap_or_else(|| format!("Work from {}", workspace));
@@ -230,9 +227,8 @@ pub fn execute(
                     ));
                 }
                 if check.stale {
-                    guidance.diagnostic(
-                        "Workspace is stale — run `maw ws sync` first.".to_string(),
-                    );
+                    guidance
+                        .diagnostic("Workspace is stale — run `maw ws sync` first.".to_string());
                 }
                 add_conflict_recovery_guidance(&mut guidance, workspace);
                 print_guidance(&guidance, format)?;
@@ -260,7 +256,7 @@ pub fn execute(
         &mut guidance,
         workspace,
         project,
-        bead_id.as_deref(),
+        bone_id.as_deref(),
         review_id.as_deref(),
         config.push_main,
     );
@@ -272,7 +268,7 @@ pub fn execute(
 
     if force {
         guidance.advise(format!(
-            "Force-merging workspace {} (review/bead checks bypassed). \
+            "Force-merging workspace {} (review/bone checks bypassed). \
              Run these commands to merge.",
             workspace
         ));
@@ -294,21 +290,19 @@ fn run_merge_check(workspace: &str) -> Result<MergeCheckResult, String> {
         .output()
         .map_err(|e| format!("failed to run maw ws merge --check: {}", e))?;
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| format!("invalid UTF-8: {}", e))?;
+    let stdout = String::from_utf8(output.stdout).map_err(|e| format!("invalid UTF-8: {}", e))?;
 
     // Parse JSON even on non-zero exit (--check exits non-zero on conflicts)
-    serde_json::from_str(&stdout)
-        .map_err(|e| format!("failed to parse --check output: {}", e))
+    serde_json::from_str(&stdout).map_err(|e| format!("failed to parse --check output: {}", e))
 }
 
 /// Build the merge steps: merge, mark-merged, sync, push.
-/// Also includes conflict recovery guidance as comments.
+/// Also includes conflict recovery guidance as diagnostics.
 fn build_merge_steps(
     guidance: &mut ProtocolGuidance,
     workspace: &str,
     project: &str,
-    bead_id: Option<&str>,
+    bone_id: Option<&str>,
     review_id: Option<&str>,
     push_main: bool,
 ) {
@@ -325,22 +319,22 @@ fn build_merge_steps(
         ));
     }
 
-    // 3. Sync beads
-    steps.push(shell::br_sync_cmd());
-
-    // 4. Push (if enabled)
+    // 3. Push (if enabled)
     if push_main {
         steps.push("maw push".to_string());
     }
 
-    // 5. Announce merge
-    let merge_msg = if let Some(bid) = bead_id {
+    // 4. Announce merge
+    let merge_msg = if let Some(bid) = bone_id {
         format!("Merged workspace {} ({})", workspace, bid)
     } else {
         format!("Merged workspace {}", workspace)
     };
     steps.push(shell::bus_send_cmd(
-        "agent", project, &merge_msg, "task-done",
+        "agent",
+        project,
+        &merge_msg,
+        "task-done",
     ));
 
     guidance.steps(steps);
@@ -349,48 +343,55 @@ fn build_merge_steps(
     add_conflict_recovery_guidance(guidance, workspace);
 }
 
-/// Append comprehensive jj conflict recovery guidance as diagnostics.
+/// Append comprehensive maw/git conflict recovery guidance as diagnostics.
 fn add_conflict_recovery_guidance(guidance: &mut ProtocolGuidance, workspace: &str) {
     guidance.diagnostic(format!(
         "Conflict recovery — workspace is preserved (not destroyed). Steps:\n\
          \n\
-         1. View conflicted files:\n\
+         1. Inspect conflicts and stale state:\n\
          \n\
-         maw exec {} -- jj status\n\
-         maw exec {} -- jj resolve --list\n\
+         maw ws conflicts {} --format json\n\
+         maw ws sync {}\n\
          \n\
-         2. For auto-resolvable files (.beads/, .claude/, .agents/):\n\
+         2. For auto-resolvable files (.bones/, .claude/, .agents/):\n\
          \n\
-         maw exec {} -- jj restore --from main .beads/\n\
+         maw exec {} -- git restore --source refs/heads/main -- .bones/ .claude/ .agents/\n\
          \n\
-         3. For code conflicts — edit files to remove <<<<<<< markers:\n\
+         3. For code conflicts — resolve, stage, and commit in workspace:\n\
          \n\
-         maw exec {} -- jj resolve              # launches merge tool\n\
-         maw exec {} -- jj resolve --tool :ours  # take workspace version\n\
-         maw exec {} -- jj resolve --tool :theirs # take main version\n\
+         maw exec {} -- git status\n\
+         maw exec {} -- git add <resolved-file>\n\
+         maw exec {} -- git commit -m 'resolve: merge conflicts in {}'\n\
          \n\
          4. After resolving:\n\
          \n\
-         maw exec {} -- jj describe -m 'resolve: merge conflicts in {}'\n\
          maw ws merge {} --destroy              # retry merge\n\
          \n\
          5. To UNDO the merge entirely (recover pre-merge state):\n\
          \n\
-         maw exec {} -- jj op undo              # revert the merge operation\n\
+         maw ws undo {}                         # reset workspace to its base\n\
          \n\
          6. To recover a destroyed workspace:\n\
          \n\
-         maw ws restore {}                      # recovers workspace from jj op log",
-        workspace, workspace, workspace, workspace, workspace,
-        workspace, workspace, workspace, workspace, workspace, workspace,
+         maw ws restore {}                      # recreate workspace at current epoch",
+        workspace,
+        workspace,
+        workspace,
+        workspace,
+        workspace,
+        workspace,
+        workspace,
+        workspace,
+        workspace,
+        workspace,
     ));
 }
 
-/// Try to find the bead associated with a workspace.
+/// Try to find the bone associated with a workspace.
 ///
-/// Checks claims first (workspace claim memo = bead ID), then falls back
-/// to checking all held bead claims (for workers with one bead).
-fn find_bead_for_workspace(ctx: &ProtocolContext, workspace: &str) -> Option<String> {
+/// Checks claims first (workspace claim memo = bone ID), then falls back
+/// to checking all held bone claims (for workers with one bone).
+fn find_bone_for_workspace(ctx: &ProtocolContext, workspace: &str) -> Option<String> {
     // Method 1: check workspace claims for memo (when bus includes memo in JSON)
     for claim in ctx.claims() {
         if let Some(memo) = &claim.memo {
@@ -407,10 +408,10 @@ fn find_bead_for_workspace(ctx: &ProtocolContext, workspace: &str) -> Option<Str
         }
     }
 
-    // Method 2: if there's exactly one bead claim, use that
-    let bead_claims = ctx.held_bead_claims();
-    if bead_claims.len() == 1 {
-        return Some(bead_claims[0].0.to_string());
+    // Method 2: if there's exactly one bone claim, use that
+    let bone_claims = ctx.held_bone_claims();
+    if bone_claims.len() == 1 {
+        return Some(bone_claims[0].0.to_string());
     }
 
     None
@@ -520,17 +521,47 @@ mod tests {
 
         // Should have merge, mark-merged, sync, push, announce
         assert!(guidance.steps.len() >= 4);
-        assert!(guidance.steps.iter().any(|s| s.contains("maw ws merge frost-castle --destroy")));
-        assert!(guidance.steps.iter().any(|s| s.contains("crit reviews mark-merged cr-123")));
-        assert!(guidance.steps.iter().any(|s| s.contains("br sync")));
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("maw ws merge frost-castle --destroy"))
+        );
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("crit reviews mark-merged cr-123"))
+        );
+        // br sync removed — bones is event-sourced
         assert!(guidance.steps.iter().any(|s| s.contains("maw push")));
         assert!(guidance.steps.iter().any(|s| s.contains("task-done")));
 
         // Should include conflict recovery guidance
-        assert!(guidance.diagnostics.iter().any(|d| d.contains("jj resolve")));
-        assert!(guidance.diagnostics.iter().any(|d| d.contains("jj op undo")));
-        assert!(guidance.diagnostics.iter().any(|d| d.contains("maw ws restore")));
-        assert!(guidance.diagnostics.iter().any(|d| d.contains("Conflict recovery")));
+        assert!(
+            guidance
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("maw ws conflicts"))
+        );
+        assert!(
+            guidance
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("maw ws undo"))
+        );
+        assert!(
+            guidance
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("maw ws restore"))
+        );
+        assert!(
+            guidance
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("Conflict recovery"))
+        );
     }
 
     #[test]
@@ -552,7 +583,7 @@ mod tests {
         assert!(!guidance.steps.iter().any(|s| s.contains("mark-merged")));
         // Should still have merge, sync, announce
         assert!(guidance.steps.iter().any(|s| s.contains("maw ws merge")));
-        assert!(guidance.steps.iter().any(|s| s.contains("br sync")));
+        // br sync removed — bones is event-sourced
     }
 
     #[test]
@@ -566,7 +597,8 @@ mod tests {
 
     #[test]
     fn test_merge_check_result_parsing_conflicts() {
-        let json = r#"{"ready": false, "conflicts": ["src/main.rs", "src/lib.rs"], "stale": false}"#;
+        let json =
+            r#"{"ready": false, "conflicts": ["src/main.rs", "src/lib.rs"], "stale": false}"#;
         let result: MergeCheckResult = serde_json::from_str(json).unwrap();
         assert!(!result.ready);
         assert_eq!(result.conflicts.len(), 2);
@@ -589,7 +621,7 @@ mod tests {
     }
 
     #[test]
-    fn test_build_merge_steps_announce_includes_bead() {
+    fn test_build_merge_steps_announce_includes_bone() {
         let mut guidance = ProtocolGuidance::new("merge");
 
         build_merge_steps(
@@ -601,7 +633,11 @@ mod tests {
             false,
         );
 
-        let announce = guidance.steps.iter().find(|s| s.contains("bus send")).unwrap();
+        let announce = guidance
+            .steps
+            .iter()
+            .find(|s| s.contains("bus send"))
+            .unwrap();
         assert!(announce.contains("bd-abc"));
     }
 }

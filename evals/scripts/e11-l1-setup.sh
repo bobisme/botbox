@@ -7,10 +7,10 @@ set -euo pipefail
 # that goes in the run script (it triggers the hook → botty spawn).
 #
 # This is the simplest possible botty-native eval: one project, one agent,
-# one bead. Tests the full spawn chain: message → hook → botty → loop script.
+# one bone. Tests the full spawn chain: message → hook → botty → loop script.
 
 # --- Preflight: fail fast on missing dependencies ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -30,7 +30,7 @@ bus init
 # --- Capture tool versions for forensics ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e11-l1"
@@ -84,9 +84,9 @@ jj describe -m "echo: initial API with health endpoint"
 jj bookmark create main -r @
 jj new
 
-# botbox init handles: maw init (-> bare repo + ws/default/), br init, crit init, hooks
+# botbox init handles: maw init (-> bare repo + ws/default/), bn init, crit init, hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name echo --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
+  botbox init --name echo --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
 
 # --- Fix hooks: add BOTBUS_DATA_DIR to --env-inherit ---
 # botty starts agents with a clean env. botbox init registers hooks with
@@ -136,10 +136,10 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-
 
 # --- Seed work ---
 cd "$PROJECT_DIR"
-BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create --actor setup --owner "$ECHO_DEV" \
-  --title="Add GET /version endpoint returning JSON with name and version" \
-  --description="Implement a GET /version endpoint that returns {\"name\":\"echo\",\"version\":\"0.1.0\"}. Add the route to the existing Router. The response must be JSON with Content-Type application/json." \
-  --type=task --priority=2 2>&1 | grep -oP 'bd-\w+')
+BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT=setup maw exec default -- bn create \
+  --title "Add GET /version endpoint returning JSON with name and version" \
+  --description "Implement a GET /version endpoint that returns {\"name\":\"echo\",\"version\":\"0.1.0\"}. Add the route to the existing Router. The response must be JSON with Content-Type application/json." \
+  --kind task 2>&1 | grep -oP 'bn-\w+')
 
 # Do NOT send task-request yet — that goes in the run script (triggers the hook)
 

@@ -11,7 +11,7 @@ set -euo pipefail
 # review from security reviewer, reviewer BLOCKs, dev fixes, reviewer LGTMs.
 
 # --- Preflight: fail fast on missing dependencies ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -32,7 +32,7 @@ bus init
 # --- Capture tool versions for forensics ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e11-l2"
@@ -91,9 +91,9 @@ jj describe -m "echo: initial API with health endpoint"
 jj bookmark create main -r @
 jj new
 
-# botbox init handles: maw init (-> bare repo + ws/default/), br init, crit init, hooks
+# botbox init handles: maw init (-> bare repo + ws/default/), bn init, crit init, hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name echo --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
+  botbox init --name echo --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
 
 # --- Fix hooks: add BOTBUS_DATA_DIR to --env-inherit ---
 # botty starts agents with a clean env. botbox init registers hooks with
@@ -143,9 +143,9 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-
 
 # --- Seed work ---
 cd "$PROJECT_DIR"
-BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create --actor setup --owner "$DEV_AGENT" \
-  --title="Add GET /files/:name endpoint that reads and returns file contents" \
-  --description="Implement a GET /files/:name endpoint that:
+BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT=setup maw exec default -- bn create \
+  --title "Add GET /files/:name endpoint that reads and returns file contents" \
+  --description "Implement a GET /files/:name endpoint that:
 1. Accepts a file name as a path parameter
 2. Reads the file from the files/ directory
 3. Returns the file contents as text with 200 OK
@@ -155,7 +155,7 @@ BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create --actor
 Example: GET /files/README.txt should return the contents of files/README.txt.
 
 The endpoint should handle errors gracefully and return appropriate status codes." \
-  --type=task --priority=2 2>&1 | grep -oP 'bd-\w+')
+  --kind task 2>&1 | grep -oP 'bn-\w+')
 
 # Do NOT send task-request yet — that goes in the run script (triggers the hook)
 

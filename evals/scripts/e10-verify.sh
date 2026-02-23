@@ -41,14 +41,14 @@ warn() {
 echo "--- Alpha State ---"
 cd "$ALPHA_DIR"
 
-# Bead should be closed
-BEAD_STATUS=$(maw exec default -- br show "$BEAD" --format json 2>/dev/null | jq -r '.[0].status // "unknown"' || echo "unknown")
-check "Alpha bead $BEAD is closed" "$([ "$BEAD_STATUS" = "closed" ] && echo 0 || echo 1)"
+# Bone should be done
+BEAD_STATUS=$(maw exec default -- bn show "$BEAD" --format json 2>/dev/null | jq -r '.[0].state // "unknown"' || echo "unknown")
+check "Alpha bone $BEAD is done" "$([ "$BEAD_STATUS" = "done" ] && echo 0 || echo 1)"
 
-# No ready beads (task is done)
-READY_COUNT=$(maw exec default -- br ready --format json 2>/dev/null | jq 'length' || echo "0")
+# No ready bones (task is done)
+READY_COUNT=$(maw exec default -- bn next --format json 2>/dev/null | jq 'length' || echo "0")
 if [[ "$READY_COUNT" -gt 0 ]]; then
-  warn "Alpha has $READY_COUNT ready beads (may include backlog)"
+  warn "Alpha has $READY_COUNT ready bones (may include backlog)"
 fi
 
 # Non-default workspaces should be cleaned up
@@ -57,8 +57,8 @@ check "Alpha workspaces cleaned up" "$([ "$WS_COUNT" -eq 0 ] && echo 0 || echo 1
 
 # Work claims should be released
 CLAIMS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list --agent "$ALPHA_DEV" 2>/dev/null || true)
-# Only count bead:// and workspace:// claims — agent:// claims are managed by hooks, not the agent
-WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bead://|workspace://" || true)
+# Only count bone:// and workspace:// claims — agent:// claims are managed by hooks, not the agent
+WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bone://|workspace://" || true)
 check "Alpha-dev work claims released" "$([ "$WORK_CLAIM_COUNT" -eq 0 ] && echo 0 || echo 1)"
 
 # Project should compile (from default workspace)
@@ -273,7 +273,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "ALPHA_DIR=$ALPHA_DIR"
 echo "BETA_DIR=$BETA_DIR"
-echo "Run 'bus history <channel>' or 'maw exec default -- br show <id>' for details"
+echo "Run 'bus history <channel>' or 'maw exec default -- bn show <id>' for details"
 echo "Phase artifacts in: $EVAL_DIR/artifacts/"
 echo ""
 echo "=== Verification Complete ==="

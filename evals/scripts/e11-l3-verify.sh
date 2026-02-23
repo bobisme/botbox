@@ -209,25 +209,25 @@ if echo "$ALPHA_LABELS" | grep -q "task-done\|feedback"; then
 fi
 check "Beta-dev announced fix on alpha channel" "$($BETA_ANNOUNCED && echo 0 || echo 1)" 4
 
-# Check 12: Alpha-dev created tracking bead for cross-project issue (3 pts)
+# Check 12: Alpha-dev created tracking bone for cross-project issue (3 pts)
 echo ""
-echo "--- Check 12: Tracking bead ---"
+echo "--- Check 12: Tracking bone ---"
 TRACKING_BEAD=false
-if echo "$ALPHA_DEV_LOG" | grep -qi "tracking.*bead\|br create.*tracking\|cross.*project.*bead"; then
+if echo "$ALPHA_DEV_LOG" | grep -qi "tracking.*bone\|bn create.*tracking\|cross.*project.*bone"; then
   TRACKING_BEAD=true
 fi
-# Or created any bead referencing beta
-if echo "$ALPHA_DEV_LOG" | grep -qi "br create.*beta\|br create.*validate"; then
+# Or created any bone referencing beta
+if echo "$ALPHA_DEV_LOG" | grep -qi "bn create.*beta\|bn create.*validate"; then
   TRACKING_BEAD=true
 fi
-# Check if beta has a bead (alpha-dev may have filed it there)
+# Check if beta has a bone (alpha-dev may have filed it there)
 cd "$BETA_DIR"
-BETA_BEAD_LIST=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --format json 2>/dev/null || echo '{"beads":[]}')
-BETA_HAS_BUG_BEAD=$(echo "$BETA_BEAD_LIST" | jq '[.beads[] | select(.title | test("validate|email|plus|bug"; "i"))] | length' 2>/dev/null || echo "0")
+BETA_BEAD_LIST=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --format json 2>/dev/null || echo '{"bones":[]}')
+BETA_HAS_BUG_BEAD=$(echo "$BETA_BEAD_LIST" | jq '[.bones[] | select(.title | test("validate|email|plus|bug"; "i"))] | length' 2>/dev/null || echo "0")
 if [[ "$BETA_HAS_BUG_BEAD" -gt 0 ]]; then
   TRACKING_BEAD=true
 fi
-check "Cross-project tracking bead created" "$($TRACKING_BEAD && echo 0 || echo 1)" 3
+check "Cross-project tracking bone created" "$($TRACKING_BEAD && echo 0 || echo 1)" 3
 
 # ============================================================
 # Protocol Compliance (25 pts)
@@ -238,19 +238,19 @@ echo ""
 
 cd "$ALPHA_DIR"
 
-# Check 13: Alpha bead status transitions (5 pts)
-echo "--- Check 13: Alpha bead transitions ---"
-ALPHA_BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$ALPHA_BEAD" --format json 2>/dev/null || echo "[]")
-ALPHA_BEAD_STATUS=$(echo "$ALPHA_BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+# Check 13: Alpha bone state transitions (5 pts)
+echo "--- Check 13: Alpha bone transitions ---"
+ALPHA_BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$ALPHA_BEAD" --format json 2>/dev/null || echo "[]")
+ALPHA_BEAD_STATUS=$(echo "$ALPHA_BEAD_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
 BEAD_OK=false
-[[ "$ALPHA_BEAD_STATUS" == "closed" ]] && BEAD_OK=true
-check "Alpha bead closed (status=$ALPHA_BEAD_STATUS)" "$($BEAD_OK && echo 0 || echo 1)" 5
+[[ "$ALPHA_BEAD_STATUS" == "done" ]] && BEAD_OK=true
+check "Alpha bone done (state=$ALPHA_BEAD_STATUS)" "$($BEAD_OK && echo 0 || echo 1)" 5
 
 # Check 14: Progress comments (3 pts)
 echo ""
 echo "--- Check 14: Progress comments ---"
 COMMENT_COUNT=$(echo "$ALPHA_BEAD_JSON" | jq -r '.[0].comments // [] | length' 2>/dev/null || echo "0")
-check "Progress comments on alpha bead (count=$COMMENT_COUNT)" "$([ "$COMMENT_COUNT" -gt 1 ] && echo 0 || echo 1)" 3
+check "Progress comments on alpha bone (count=$COMMENT_COUNT)" "$([ "$COMMENT_COUNT" -gt 1 ] && echo 0 || echo 1)" 3
 
 # Check 15: Workspace management (3 pts)
 echo ""
@@ -259,9 +259,9 @@ WS_JSON=$(cat "$ARTIFACTS/alpha-workspace-state.json" 2>/dev/null || echo "{}")
 WS_LEAKED=$(echo "$WS_JSON" | jq '[.workspaces[] | select(.is_default == false)] | length' 2>/dev/null || echo "0")
 WS_OK=false
 # If bead closed and no leaked workspaces, workspace was managed correctly
-if [[ "$ALPHA_BEAD_STATUS" == "closed" && "$WS_LEAKED" -eq 0 ]]; then
+if [[ "$ALPHA_BEAD_STATUS" == "done" && "$WS_LEAKED" -eq 0 ]]; then
   WS_OK=true
-elif [[ "$ALPHA_BEAD_STATUS" == "closed" ]]; then
+elif [[ "$ALPHA_BEAD_STATUS" == "done" ]]; then
   WS_OK=true  # bead closed means workspace was merged
 fi
 check "Alpha workspace created and merged (leaked=$WS_LEAKED)" "$($WS_OK && echo 0 || echo 1)" 3
@@ -270,7 +270,7 @@ check "Alpha workspace created and merged (leaked=$WS_LEAKED)" "$($WS_OK && echo
 echo ""
 echo "--- Check 16: Claims released ---"
 AD_CLAIMS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list --agent "$ALPHA_DEV" 2>/dev/null || true)
-WORK_CLAIMS=$(echo "$AD_CLAIMS" | grep -cE "bead://|workspace://" || true)
+WORK_CLAIMS=$(echo "$AD_CLAIMS" | grep -cE "bone://|workspace://" || true)
 check "Alpha-dev claims released (remaining=$WORK_CLAIMS)" "$([ "$WORK_CLAIMS" -eq 0 ] && echo 0 || echo 1)" 4
 
 # Check 17: Bus labels correct (5 pts)
@@ -294,12 +294,12 @@ $HAS_REVIEW_DONE || { warn "No review-done label"; LABELS_OK=false; }
 $HAS_TASK_DONE || { warn "No task-done label"; LABELS_OK=false; }
 check "Bus labels on alpha channel (task-claim, review-request, review-done, task-done)" "$($LABELS_OK && echo 0 || echo 1)" 5
 
-# Check 18: br sync called (2 pts)
+# Check 18: bn commands used (2 pts)
 echo ""
-echo "--- Check 18: br sync ---"
-BR_SYNC=false
-echo "$ALPHA_DEV_LOG" | grep -qi "br sync" && BR_SYNC=true
-check "br sync called by alpha-dev" "$($BR_SYNC && echo 0 || echo 1)" 2
+echo "--- Check 18: bn commands ---"
+BN_USED=false
+echo "$ALPHA_DEV_LOG" | grep -qi "bn " && BN_USED=true
+check "bn commands used by alpha-dev" "$($BN_USED && echo 0 || echo 1)" 2
 
 # Check 19: Channel announcements (3 pts)
 echo ""
@@ -566,7 +566,7 @@ HAS_BLOCK_NO_LGTM=false
 for review_row in $(echo "$REVIEW_STATE_JSON" | jq -c '.reviews[]' 2>/dev/null || true); do
   LGTM_COUNT=$(echo "$review_row" | jq -r '.vote_summary.lgtm // 0' 2>/dev/null || echo "0")
   BLOCK_COUNT=$(echo "$review_row" | jq -r '.vote_summary.block // 0' 2>/dev/null || echo "0")
-  if [[ "$BLOCK_COUNT" -gt 0 && "$LGTM_COUNT" -eq 0 && "$ALPHA_BEAD_STATUS" == "closed" ]]; then
+  if [[ "$BLOCK_COUNT" -gt 0 && "$LGTM_COUNT" -eq 0 && "$ALPHA_BEAD_STATUS" == "done" ]]; then
     HAS_BLOCK_NO_LGTM=true
   fi
 done
@@ -609,7 +609,7 @@ fi
 # CF4: Missing identity flags
 echo ""
 echo "--- CF4: Identity flags ---"
-# Spot check: mutating bus/br/crit commands should have --agent/--actor
+# Spot check: mutating bus/bn/crit commands should have --agent
 MISSING_IDENTITY=false
 if echo "$ALPHA_DEV_LOG" | grep -P "bus send(?!.*--agent)" | grep -v "^\s*$" | head -1 | grep -q "."; then
   MISSING_IDENTITY=true

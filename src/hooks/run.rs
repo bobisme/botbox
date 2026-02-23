@@ -28,14 +28,14 @@ pub fn run_init_agent(project_root: &Path) -> Result<()> {
                 .unwrap_or("unknown")
                 .to_string()
         };
-        println!("Agent ID for use with botbus/crit/br: {agent}");
+        println!("Agent ID for use with botbus/crit/bn: {agent}");
         println!("Project channel: {channel}");
     } else if let Some(ref cp) = config_path {
         let config = Config::load(cp)?;
         let agent = config.default_agent();
         let channel = config.channel();
 
-        println!("Agent ID for use with botbus/crit/br: {agent}");
+        println!("Agent ID for use with botbus/crit/bn: {agent}");
         println!("Project channel: {channel}");
     } else {
         // Fallback to bus whoami
@@ -43,7 +43,7 @@ pub fn run_init_agent(project_root: &Path) -> Result<()> {
             .context("running bus whoami")?;
 
         if let Some(agent_id) = output.trim().lines().next() {
-            println!("Agent ID for use with botbus/crit/br: {agent_id}");
+            println!("Agent ID for use with botbus/crit/bn: {agent_id}");
         }
     }
 
@@ -55,10 +55,14 @@ pub fn run_check_jj(project_root: &Path) -> Result<()> {
     let jj_dir = project_root.join(".jj");
 
     if jj_dir.exists() || is_jj_repo(project_root) {
-        println!("IMPORTANT: This project uses Jujutsu (jj) for version control with GitHub for sharing. Use jj commands instead of git (e.g., `jj status`, `jj describe`, `jj log`). To push to GitHub, use bookmarks and `jj bookmark set <name> -r @` then `jj git push`.");
+        println!(
+            "IMPORTANT: This project uses Jujutsu (jj) for version control with GitHub for sharing. Use jj commands instead of git (e.g., `jj status`, `jj describe`, `jj log`). To push to GitHub, use bookmarks and `jj bookmark set <name> -r @` then `jj git push`."
+        );
 
         if is_maw_repo(project_root) {
-            println!("This project uses maw for workspace management. Use `maw ws create <name>` to create isolated workspaces, `maw ws merge <name> --destroy` to merge back to main.");
+            println!(
+                "This project uses maw for workspace management. Use `maw ws create <name>` to create isolated workspaces, `maw ws merge <name> --destroy` to merge back to main."
+            );
         }
     }
 
@@ -98,13 +102,20 @@ pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Re
         .ok()
         .filter(|a| validate_agent_name(a))
         .or_else(|| {
-            config_path.as_ref()
+            config_path
+                .as_ref()
                 .and_then(|cp| Config::load(cp).ok())
                 .map(|c| c.default_agent())
         });
 
     // Build bus inbox command for count check
-    let mut count_args = vec!["inbox", "--count-only", "--mentions", "--channels", &channel];
+    let mut count_args = vec![
+        "inbox",
+        "--count-only",
+        "--mentions",
+        "--channels",
+        &channel,
+    ];
     let agent_flag = agent.as_ref().map(|a| format!("--agent={a}"));
     if let Some(ref flag) = agent_flag {
         count_args.insert(1, flag);
@@ -167,9 +178,7 @@ pub fn run_check_bus_inbox(project_root: &Path, _hook_input: Option<&str>) -> Re
 
 /// Run the claim-agent hook: stake/refresh/release agent claim
 pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<()> {
-    let agent = match std::env::var("AGENT")
-        .or_else(|_| std::env::var("BOTBUS_AGENT"))
-    {
+    let agent = match std::env::var("AGENT").or_else(|_| std::env::var("BOTBUS_AGENT")) {
         Ok(a) if validate_agent_name(&a) => a,
         _ => return Ok(()), // Silent exit if AGENT/BOTBUS_AGENT not set or invalid
     };
@@ -180,9 +189,7 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
 
     // Parse hook event from stdin JSON
     let event = hook_input
-        .and_then(|input| {
-            serde_json::from_str::<serde_json::Value>(input).ok()
-        })
+        .and_then(|input| serde_json::from_str::<serde_json::Value>(input).ok())
         .and_then(|v| v["hook_event_name"].as_str().map(String::from))
         .unwrap_or_default();
 
@@ -206,13 +213,7 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
         let list_output = run_command(
             "bus",
             &[
-                "claims",
-                "list",
-                "--mine",
-                "--agent",
-                &agent,
-                "--format",
-                "json",
+                "claims", "list", "--mine", "--agent", &agent, "--format", "json",
             ],
             Some(project_root),
         )
@@ -220,31 +221,25 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
 
         if let Some(output) = list_output
             && let Ok(data) = serde_json::from_str::<serde_json::Value>(&output)
-                && let Some(claims) = data["claims"].as_array() {
-                    for claim in claims {
-                        if let Some(patterns) = claim["patterns"].as_array()
-                            && patterns
-                                .iter()
-                                .any(|p| p.as_str() == Some(&claim_uri))
-                                && let Some(expires_in) = claim["expires_in_secs"].as_i64()
-                                    && expires_in < refresh_threshold {
-                                        let _ = run_command(
-                                            "bus",
-                                            &[
-                                                "claims",
-                                                "refresh",
-                                                "--agent",
-                                                &agent,
-                                                &claim_uri,
-                                                "--ttl",
-                                                claim_ttl,
-                                                "-q",
-                                            ],
-                                            Some(project_root),
-                                        );
-                                    }
-                    }
+            && let Some(claims) = data["claims"].as_array()
+        {
+            for claim in claims {
+                if let Some(patterns) = claim["patterns"].as_array()
+                    && patterns.iter().any(|p| p.as_str() == Some(&claim_uri))
+                    && let Some(expires_in) = claim["expires_in_secs"].as_i64()
+                    && expires_in < refresh_threshold
+                {
+                    let _ = run_command(
+                        "bus",
+                        &[
+                            "claims", "refresh", "--agent", &agent, &claim_uri, "--ttl", claim_ttl,
+                            "-q",
+                        ],
+                        Some(project_root),
+                    );
                 }
+            }
+        }
         return Ok(());
     }
 
@@ -252,14 +247,7 @@ pub fn run_claim_agent(project_root: &Path, hook_input: Option<&str>) -> Result<
     let _ = run_command(
         "bus",
         &[
-            "claims",
-            "stake",
-            "--agent",
-            &agent,
-            &claim_uri,
-            "--ttl",
-            claim_ttl,
-            "-q",
+            "claims", "stake", "--agent", &agent, &claim_uri, "--ttl", claim_ttl, "-q",
         ],
         Some(project_root),
     );
@@ -286,44 +274,43 @@ fn parse_inbox_previews(inbox_json: &str, agent: Option<&str>) -> String {
     let mut previews = Vec::new();
 
     // Extract messages from JSON (mentions[] or messages[])
-    let messages: Vec<&serde_json::Map<String, serde_json::Value>> = if let Some(arr) =
-        data["mentions"].as_array()
-    {
-        arr.iter()
-            .filter_map(|m| m["message"].as_object())
-            .collect()
-    } else if let Some(arr) = data["messages"].as_array() {
-        arr.iter().filter_map(|m| m.as_object()).collect()
-    } else {
-        Vec::new()
-    };
+    let messages: Vec<&serde_json::Map<String, serde_json::Value>> =
+        if let Some(arr) = data["mentions"].as_array() {
+            arr.iter()
+                .filter_map(|m| m["message"].as_object())
+                .collect()
+        } else if let Some(arr) = data["messages"].as_array() {
+            arr.iter().filter_map(|m| m.as_object()).collect()
+        } else {
+            Vec::new()
+        };
 
     for msg in messages {
-            let sender = msg
-                .get("agent")
-                .and_then(|v| v.as_str())
-                .unwrap_or("unknown");
-            let body = msg.get("body").and_then(|v| v.as_str()).unwrap_or("");
+        let sender = msg
+            .get("agent")
+            .and_then(|v| v.as_str())
+            .unwrap_or("unknown");
+        let body = msg.get("body").and_then(|v| v.as_str()).unwrap_or("");
 
-            // Tag messages that @mention this agent
-            let tag = if let Some(a) = agent {
-                if body.contains(&format!("@{a}")) {
-                    "[MENTIONS YOU] "
-                } else {
-                    ""
-                }
+        // Tag messages that @mention this agent
+        let tag = if let Some(a) = agent {
+            if body.contains(&format!("@{a}")) {
+                "[MENTIONS YOU] "
             } else {
                 ""
-            };
-
-            // Build preview and truncate
-            let mut preview = format!("{tag}{sender}: {body}");
-            if preview.len() > 100 {
-                preview.truncate(97);
-                preview.push_str("...");
             }
+        } else {
+            ""
+        };
 
-            previews.push(format!("  - {preview}"));
+        // Build preview and truncate
+        let mut preview = format!("{tag}{sender}: {body}");
+        if preview.len() > 100 {
+            preview.truncate(97);
+            preview.push_str("...");
+        }
+
+        previews.push(format!("  - {preview}"));
     }
 
     previews.join("\n")

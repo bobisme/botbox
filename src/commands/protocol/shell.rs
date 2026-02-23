@@ -26,20 +26,20 @@ pub fn shell_escape(s: &str) -> String {
     out
 }
 
-/// Validate a bead ID (e.g., `bd-3cqv`, `bn-m80`).
+/// Validate a bone ID (e.g., `bd-3cqv`, `bn-m80`).
 ///
-/// Bead ID prefixes vary by project, so we validate the format
+/// Bone ID prefixes vary by project, so we validate the format
 /// (short alphanumeric with hyphens) without hardcoding a prefix.
-pub fn validate_bead_id(id: &str) -> Result<(), ValidationError> {
+pub fn validate_bone_id(id: &str) -> Result<(), ValidationError> {
     if id.is_empty() {
-        return Err(ValidationError::Empty("bead ID"));
+        return Err(ValidationError::Empty("bone ID"));
     }
     let valid = id.len() <= 20
         && id.contains('-')
         && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !valid {
         return Err(ValidationError::InvalidFormat {
-            field: "bead ID",
+            field: "bone ID",
             value: id.to_string(),
             expected: "<prefix>-[a-z0-9]+",
         });
@@ -64,9 +64,7 @@ pub fn validate_workspace_name(name: &str) -> Result<(), ValidationError> {
         .next()
         .map(|c| c.is_ascii_alphanumeric())
         .unwrap_or(false)
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '-');
+        && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
     if !valid {
         return Err(ValidationError::InvalidFormat {
             field: "workspace name",
@@ -172,9 +170,8 @@ pub fn validate_review_id(id: &str) -> Result<(), ValidationError> {
     if id.is_empty() {
         return Err(ValidationError::Empty("review ID"));
     }
-    let valid = id.starts_with("cr-")
-        && id.len() > 3
-        && id[3..].chars().all(|c| c.is_ascii_alphanumeric());
+    let valid =
+        id.starts_with("cr-") && id.len() > 3 && id[3..].chars().all(|c| c.is_ascii_alphanumeric());
     if !valid {
         return Err(ValidationError::InvalidFormat {
             field: "review ID",
@@ -187,7 +184,7 @@ pub fn validate_review_id(id: &str) -> Result<(), ValidationError> {
 
 /// Ensure a structural value is safe for direct shell interpolation.
 ///
-/// Structural values (bead IDs, workspace names, project names, statuses, labels)
+/// Structural values (bone IDs, workspace names, project names, statuses, labels)
 /// are expected to be pre-validated identifiers. As defense-in-depth, if a value
 /// contains shell metacharacters, it is escaped rather than interpolated raw.
 fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
@@ -202,18 +199,23 @@ fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
-
 // --- Command builders ---
 // These produce shell-safe command strings. All dynamic values are validated
 // or escaped before inclusion. Structural identifiers pass through safe_ident()
 // for defense-in-depth against unvalidated callers.
 
-/// Build: `bus claims stake --agent <agent> "bead://<project>/<id>" -m "<memo>"`
+/// Build: `bus claims stake --agent <agent> "bone://<project>/<id>" -m "<memo>"`
 pub fn claims_stake_cmd(agent: &str, uri: &str, memo: &str) -> String {
     validate_identifier("agent", agent).expect("invalid agent name");
     let agent_safe = safe_ident(agent);
     let mut cmd = String::new();
-    write!(cmd, "bus claims stake --agent {} {}", agent_safe, shell_escape(uri)).unwrap();
+    write!(
+        cmd,
+        "bus claims stake --agent {} {}",
+        agent_safe,
+        shell_escape(uri)
+    )
+    .unwrap();
     if !memo.is_empty() {
         write!(cmd, " -m {}", shell_escape(memo)).unwrap();
     }
@@ -282,83 +284,50 @@ pub fn bus_send_cmd(agent: &str, project: &str, message: &str, label: &str) -> S
     cmd
 }
 
-/// Build: `maw exec default -- br update --actor <agent> <id> --status=<status> [--owner=<agent>]`
+/// Build: `maw exec default -- bn do <id>`
 #[allow(dead_code)]
-pub fn br_update_cmd(
-    agent: &str,
-    bead_id: &str,
-    status: &str,
-    set_owner: bool,
-) -> String {
-    validate_identifier("agent", agent).expect("invalid agent name");
-    let agent_safe = safe_ident(agent);
-
-    // Validate bead_id before use - escape if validation fails
-    let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
-        safe_ident(bead_id)
+pub fn bn_do_cmd(bone_id: &str) -> String {
+    // Validate bone_id before use - escape if validation fails
+    let bone_id_safe = if validate_bone_id(bone_id).is_ok() {
+        safe_ident(bone_id)
     } else {
-        std::borrow::Cow::Owned(shell_escape(bead_id))
+        std::borrow::Cow::Owned(shell_escape(bone_id))
     };
 
-    // Validate status - escape if validation fails
-    let status_safe = if validate_identifier("status", status).is_ok() {
-        safe_ident(status)
-    } else {
-        std::borrow::Cow::Owned(shell_escape(status))
-    };
-
-    let mut cmd = format!(
-        "maw exec default -- br update --actor {} {} --status={}",
-        agent_safe,
-        bead_id_safe,
-        status_safe
-    );
-    if set_owner {
-        write!(cmd, " --owner={}", agent_safe).unwrap();
-    }
-    cmd
+    format!("maw exec default -- bn do {}", bone_id_safe)
 }
 
-/// Build: `maw exec default -- br comments add --actor <agent> --author <agent> <id> '<message>'`
+/// Build: `maw exec default -- bn bone comment add <id> '<message>'`
 #[allow(dead_code)]
-pub fn br_comment_cmd(agent: &str, bead_id: &str, message: &str) -> String {
-    validate_identifier("agent", agent).expect("invalid agent name");
-    let agent_safe = safe_ident(agent);
-
-    // Validate bead_id before use
-    let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
-        safe_ident(bead_id)
+pub fn bn_comment_cmd(bone_id: &str, message: &str) -> String {
+    // Validate bone_id before use
+    let bone_id_safe = if validate_bone_id(bone_id).is_ok() {
+        safe_ident(bone_id)
     } else {
-        std::borrow::Cow::Owned(shell_escape(bead_id))
+        std::borrow::Cow::Owned(shell_escape(bone_id))
     };
 
     format!(
-        "maw exec default -- br comments add --actor {} --author {} {} {}",
-        agent_safe,
-        agent_safe,
-        bead_id_safe,
+        "maw exec default -- bn bone comment add {} {}",
+        bone_id_safe,
         shell_escape(message)
     )
 }
 
-/// Build: `maw exec default -- br close --actor <agent> <id> --reason='<reason>'`
-pub fn br_close_cmd(agent: &str, bead_id: &str, reason: &str) -> String {
-    validate_identifier("agent", agent).expect("invalid agent name");
-    let agent_safe = safe_ident(agent);
-
-    // Validate bead_id before use
-    let bead_id_safe = if validate_bead_id(bead_id).is_ok() {
-        safe_ident(bead_id)
+/// Build: `maw exec default -- bn done <id> --reason '<reason>'`
+pub fn bn_done_cmd(bone_id: &str, reason: &str) -> String {
+    // Validate bone_id before use
+    let bone_id_safe = if validate_bone_id(bone_id).is_ok() {
+        safe_ident(bone_id)
     } else {
-        std::borrow::Cow::Owned(shell_escape(bead_id))
+        std::borrow::Cow::Owned(shell_escape(bone_id))
     };
 
-    format!(
-        "maw exec default -- br close --actor {} {} --reason={}",
-        agent_safe,
-        bead_id_safe,
-        shell_escape(reason)
-    )
+    let mut cmd = format!("maw exec default -- bn done {}", bone_id_safe);
+    if !reason.is_empty() {
+        write!(cmd, " --reason {}", shell_escape(reason)).unwrap();
+    }
+    cmd
 }
 
 /// Build: `maw ws create --random`
@@ -378,18 +347,8 @@ pub fn ws_merge_cmd(workspace: &str) -> String {
     format!("maw ws merge {} --destroy", workspace_safe)
 }
 
-/// Build: `maw exec default -- br sync --flush-only`
-pub fn br_sync_cmd() -> String {
-    "maw exec default -- br sync --flush-only".to_string()
-}
-
 /// Build: `maw exec <ws> -- crit reviews create --agent <agent> --title '<title>' --reviewers <reviewers>`
-pub fn crit_create_cmd(
-    workspace: &str,
-    agent: &str,
-    title: &str,
-    reviewers: &str,
-) -> String {
+pub fn crit_create_cmd(workspace: &str, agent: &str, title: &str, reviewers: &str) -> String {
     validate_identifier("agent", agent).expect("invalid agent name");
     let agent_safe = safe_ident(agent);
 
@@ -416,12 +375,7 @@ pub fn crit_create_cmd(
 }
 
 /// Build: `maw exec <ws> -- crit reviews request <id> --reviewers <reviewers> --agent <agent>`
-pub fn crit_request_cmd(
-    workspace: &str,
-    review_id: &str,
-    reviewers: &str,
-    agent: &str,
-) -> String {
+pub fn crit_request_cmd(workspace: &str, review_id: &str, reviewers: &str, agent: &str) -> String {
     validate_identifier("agent", agent).expect("invalid agent name");
     let agent_safe = safe_ident(agent);
 
@@ -446,10 +400,7 @@ pub fn crit_request_cmd(
 
     format!(
         "maw exec {} -- crit reviews request {} --reviewers {} --agent {}",
-        workspace_safe,
-        review_id_safe,
-        reviewers_safe,
-        agent_safe
+        workspace_safe, review_id_safe, reviewers_safe, agent_safe
     )
 }
 
@@ -470,8 +421,7 @@ pub fn crit_show_cmd(workspace: &str, review_id: &str) -> String {
 
     format!(
         "maw exec {} -- crit review {}",
-        workspace_safe,
-        review_id_safe
+        workspace_safe, review_id_safe
     )
 }
 
@@ -545,41 +495,38 @@ mod tests {
 
     #[test]
     fn escape_all_metacharacters() {
-        assert_eq!(
-            shell_escape("$(rm -rf /)"),
-            "'$(rm -rf /)'"
-        );
+        assert_eq!(shell_escape("$(rm -rf /)"), "'$(rm -rf /)'");
     }
 
-    // --- validate_bead_id tests ---
+    // --- validate_bone_id tests ---
 
     #[test]
-    fn valid_bead_id() {
-        assert!(validate_bead_id("bd-3cqv").is_ok());
-        assert!(validate_bead_id("bd-abc123").is_ok());
-        assert!(validate_bead_id("bd-a").is_ok());
+    fn valid_bone_id() {
+        assert!(validate_bone_id("bd-3cqv").is_ok());
+        assert!(validate_bone_id("bd-abc123").is_ok());
+        assert!(validate_bone_id("bd-a").is_ok());
         // Other project prefixes
-        assert!(validate_bead_id("bn-m80").is_ok());
-        assert!(validate_bead_id("bm-xyz").is_ok());
-        assert!(validate_bead_id("xx-3cqv").is_ok());
+        assert!(validate_bone_id("bn-m80").is_ok());
+        assert!(validate_bone_id("bm-xyz").is_ok());
+        assert!(validate_bone_id("xx-3cqv").is_ok());
     }
 
     #[test]
-    fn invalid_bead_id_empty() {
-        assert!(validate_bead_id("").is_err());
+    fn invalid_bone_id_empty() {
+        assert!(validate_bone_id("").is_err());
     }
 
     #[test]
-    fn invalid_bead_id_no_hyphen() {
-        assert!(validate_bead_id("3cqv").is_err());
-        assert!(validate_bead_id("abcdef").is_err());
+    fn invalid_bone_id_no_hyphen() {
+        assert!(validate_bone_id("3cqv").is_err());
+        assert!(validate_bone_id("abcdef").is_err());
     }
 
     #[test]
-    fn invalid_bead_id_special_chars() {
-        assert!(validate_bead_id("bd-abc def").is_err());
-        assert!(validate_bead_id("bd-abc;rm").is_err());
-        assert!(validate_bead_id("bd-abc/def").is_err());
+    fn invalid_bone_id_special_chars() {
+        assert!(validate_bone_id("bd-abc def").is_err());
+        assert!(validate_bone_id("bd-abc;rm").is_err());
+        assert!(validate_bone_id("bd-abc/def").is_err());
     }
 
     // --- validate_review_id tests ---
@@ -697,28 +644,28 @@ mod tests {
 
     #[test]
     fn claims_stake_basic() {
-        let cmd = claims_stake_cmd("crimson-storm", "bead://myproject/bd-abc", "bd-abc");
+        let cmd = claims_stake_cmd("crimson-storm", "bone://myproject/bd-abc", "bd-abc");
         assert_eq!(
             cmd,
-            "bus claims stake --agent crimson-storm 'bead://myproject/bd-abc' -m 'bd-abc'"
+            "bus claims stake --agent crimson-storm 'bone://myproject/bd-abc' -m 'bd-abc'"
         );
     }
 
     #[test]
     fn claims_stake_no_memo() {
-        let cmd = claims_stake_cmd("crimson-storm", "bead://myproject/bd-abc", "");
+        let cmd = claims_stake_cmd("crimson-storm", "bone://myproject/bd-abc", "");
         assert_eq!(
             cmd,
-            "bus claims stake --agent crimson-storm 'bead://myproject/bd-abc'"
+            "bus claims stake --agent crimson-storm 'bone://myproject/bd-abc'"
         );
     }
 
     #[test]
     fn claims_release_basic() {
-        let cmd = claims_release_cmd("crimson-storm", "bead://myproject/bd-abc");
+        let cmd = claims_release_cmd("crimson-storm", "bone://myproject/bd-abc");
         assert_eq!(
             cmd,
-            "bus claims release --agent crimson-storm 'bead://myproject/bd-abc'"
+            "bus claims release --agent crimson-storm 'bone://myproject/bd-abc'"
         );
     }
 
@@ -730,7 +677,12 @@ mod tests {
 
     #[test]
     fn bus_send_basic() {
-        let cmd = bus_send_cmd("crimson-storm", "myproject", "Task claimed: bd-abc", "task-claim");
+        let cmd = bus_send_cmd(
+            "crimson-storm",
+            "myproject",
+            "Task claimed: bd-abc",
+            "task-claim",
+        );
         assert_eq!(
             cmd,
             "bus send --agent crimson-storm myproject 'Task claimed: bd-abc' -L task-claim"
@@ -753,39 +705,33 @@ mod tests {
     }
 
     #[test]
-    fn br_update_with_owner() {
-        let cmd = br_update_cmd("crimson-storm", "bd-abc", "in_progress", true);
+    fn bn_do_basic() {
+        let cmd = bn_do_cmd("bd-abc");
+        assert_eq!(cmd, "maw exec default -- bn do bd-abc");
+    }
+
+    #[test]
+    fn bn_comment_with_escaping() {
+        let cmd = bn_comment_cmd("bd-abc", "Started work in ws/frost-castle/");
         assert_eq!(
             cmd,
-            "maw exec default -- br update --actor crimson-storm bd-abc --status=in_progress --owner=crimson-storm"
+            "maw exec default -- bn bone comment add bd-abc 'Started work in ws/frost-castle/'"
         );
     }
 
     #[test]
-    fn br_update_without_owner() {
-        let cmd = br_update_cmd("crimson-storm", "bd-abc", "in_progress", false);
+    fn bn_done_basic() {
+        let cmd = bn_done_cmd("bd-abc", "Completed");
         assert_eq!(
             cmd,
-            "maw exec default -- br update --actor crimson-storm bd-abc --status=in_progress"
+            "maw exec default -- bn done bd-abc --reason 'Completed'"
         );
     }
 
     #[test]
-    fn br_comment_with_escaping() {
-        let cmd = br_comment_cmd("crimson-storm", "bd-abc", "Started work in ws/frost-castle/");
-        assert_eq!(
-            cmd,
-            "maw exec default -- br comments add --actor crimson-storm --author crimson-storm bd-abc 'Started work in ws/frost-castle/'"
-        );
-    }
-
-    #[test]
-    fn br_close_basic() {
-        let cmd = br_close_cmd("crimson-storm", "bd-abc", "Completed");
-        assert_eq!(
-            cmd,
-            "maw exec default -- br close --actor crimson-storm bd-abc --reason='Completed'"
-        );
+    fn bn_done_no_reason() {
+        let cmd = bn_done_cmd("bd-abc", "");
+        assert_eq!(cmd, "maw exec default -- bn done bd-abc");
     }
 
     #[test]
@@ -796,7 +742,12 @@ mod tests {
 
     #[test]
     fn crit_create_with_escaping() {
-        let cmd = crit_create_cmd("frost-castle", "crimson-storm", "feat: add login", "myproject-security");
+        let cmd = crit_create_cmd(
+            "frost-castle",
+            "crimson-storm",
+            "feat: add login",
+            "myproject-security",
+        );
         assert_eq!(
             cmd,
             "maw exec frost-castle -- crit reviews create --agent crimson-storm --title 'feat: add login' --reviewers myproject-security"
@@ -805,7 +756,12 @@ mod tests {
 
     #[test]
     fn crit_request_basic() {
-        let cmd = crit_request_cmd("frost-castle", "cr-123", "myproject-security", "crimson-storm");
+        let cmd = crit_request_cmd(
+            "frost-castle",
+            "cr-123",
+            "myproject-security",
+            "crimson-storm",
+        );
         assert_eq!(
             cmd,
             "maw exec frost-castle -- crit reviews request cr-123 --reviewers myproject-security --agent crimson-storm"
@@ -841,7 +797,7 @@ mod tests {
         // Embedded single quotes are broken out with \'
         assert!(escaped.contains("\\'"));
         // When used in a command, the entire escaped value appears as one arg
-        let cmd = br_comment_cmd("crimson-storm", "bd-abc", malicious);
+        let cmd = bn_comment_cmd("bd-abc", malicious);
         assert!(cmd.contains(&escaped));
         // Roundtrip: the escaped form should decode back to the original
         // (verified by the start/end quotes and \' escaping pattern)

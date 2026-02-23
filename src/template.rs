@@ -71,19 +71,19 @@ fn list_workflow_docs() -> Vec<DocEntry> {
     vec![
         DocEntry {
             name: "triage.md".to_string(),
-            description: "Find work from inbox and beads".to_string(),
+            description: "Find work from inbox and bones".to_string(),
         },
         DocEntry {
             name: "start.md".to_string(),
-            description: "Claim bead, create workspace, announce".to_string(),
+            description: "Claim bone, create workspace, announce".to_string(),
         },
         DocEntry {
             name: "update.md".to_string(),
-            description: "Change bead status (open/in_progress/blocked/done)".to_string(),
+            description: "Change bone state (open/doing/done)".to_string(),
         },
         DocEntry {
             name: "finish.md".to_string(),
-            description: "Close bead, merge workspace, release claims, sync".to_string(),
+            description: "Close bone, merge workspace, release claims".to_string(),
         },
         DocEntry {
             name: "worker-loop.md".to_string(),
@@ -91,7 +91,7 @@ fn list_workflow_docs() -> Vec<DocEntry> {
         },
         DocEntry {
             name: "planning.md".to_string(),
-            description: "Turn specs/PRDs into actionable beads".to_string(),
+            description: "Turn specs/PRDs into actionable bones".to_string(),
         },
         DocEntry {
             name: "scout.md".to_string(),
@@ -115,7 +115,8 @@ fn list_workflow_docs() -> Vec<DocEntry> {
         },
         DocEntry {
             name: "merge-check.md".to_string(),
-            description: "Merge a worker workspace (protocol merge + conflict recovery)".to_string(),
+            description: "Merge a worker workspace (protocol merge + conflict recovery)"
+                .to_string(),
         },
         DocEntry {
             name: "preflight.md".to_string(),
@@ -203,17 +204,16 @@ pub fn update_managed_section(content: &str, ctx: &TemplateContext) -> anyhow::R
 
     if let Some(start_idx) = content.find(MANAGED_START)
         && let Some(end_idx) = content.find(MANAGED_END)
-            && end_idx > start_idx {
-                // Valid markers, replace content between them
-                let before = &content[..start_idx];
-                let after = &content[end_idx + MANAGED_END.len()..];
-                return Ok(format!("{}{}{}", before, full_managed, after));
-            }
+        && end_idx > start_idx
+    {
+        // Valid markers, replace content between them
+        let before = &content[..start_idx];
+        let after = &content[end_idx + MANAGED_END.len()..];
+        return Ok(format!("{}{}{}", before, full_managed, after));
+    }
 
     // Missing or invalid markers — append a clean managed section
-    let temp = content
-        .replace(MANAGED_START, "")
-        .replace(MANAGED_END, "");
+    let temp = content.replace(MANAGED_START, "").replace(MANAGED_END, "");
     let cleaned = temp.trim_end();
     Ok(format!("{}\n\n{}\n", cleaned, full_managed))
 }
@@ -237,7 +237,7 @@ mod tests {
                 critical_approvers: None,
             },
             tools: ToolsConfig {
-                beads: true,
+                bones: true,
                 maw: true,
                 crit: true,
                 botbus: true,
@@ -255,7 +255,7 @@ mod tests {
         let result = render_agents_md(&config).unwrap();
 
         assert!(result.contains("# test-project"));
-        assert!(result.contains("Tools: `beads`, `maw`, `crit`, `botbus`, `botty`"));
+        assert!(result.contains("Tools: `bones`, `maw`, `crit`, `botbus`, `botty`"));
         assert!(result.contains("Reviewer roles: security"));
         assert!(result.contains(MANAGED_START));
         assert!(result.contains(MANAGED_END));
@@ -288,7 +288,7 @@ More custom content.
                 critical_approvers: None,
             },
             tools: ToolsConfig {
-                beads: true,
+                bones: true,
                 maw: false,
                 crit: false,
                 botbus: false,
@@ -314,5 +314,4 @@ More custom content.
         assert!(!result.contains("Old managed content"));
         assert!(result.contains("## Botbox Workflow"));
     }
-
 }

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # E10 Phase 1: Alpha Triage + Implement + Discover Issue (alpha-dev, Opus)
-# Alpha-dev triages inbox, claims bead, creates workspace, implements POST /users,
+# Alpha-dev triages inbox, claims bone, creates workspace, implements POST /users,
 # discovers beta's validate_email rejects +, communicates with beta-dev via bus.
 
 source "${1:?Usage: e10-phase1.sh <path-to-.eval-env>}"
@@ -21,20 +21,19 @@ echo "BEAD=$BEAD"
 PROMPT="You are dev agent \"${ALPHA_DEV}\" for project \"alpha\".
 Your project directory is: ${ALPHA_DIR}
 This project uses maw v2 (bare repo layout). Source files are in ws/default/.
-Use --agent ${ALPHA_DEV} on ALL bus, crit, and br mutation commands.
-Use --actor ${ALPHA_DEV} on br mutations and --author ${ALPHA_DEV} on br comments.
+Use --agent ${ALPHA_DEV} on ALL bus and crit mutation commands.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
 
 Execute the steps below, then STOP.
 
 1. TRIAGE:
    - Check inbox: bus inbox --agent ${ALPHA_DEV} --channels alpha --mark-read
-   - Check ready beads: maw exec default -- br ready
-   - Read the bead: maw exec default -- br show ${BEAD}
+   - Check ready bones: maw exec default -- bn next
+   - Read the bone: maw exec default -- bn show ${BEAD}
 
 2. START:
-   - maw exec default -- br update --actor ${ALPHA_DEV} ${BEAD} --status=in_progress
-   - bus claims stake --agent ${ALPHA_DEV} \"bead://alpha/${BEAD}\" -m \"${BEAD}\"
+   - maw exec default -- bn do ${BEAD}
+   - bus claims stake --agent ${ALPHA_DEV} \"bone://alpha/${BEAD}\" -m \"${BEAD}\"
    - maw ws create --random — note the workspace name (\$WS)
      Your workspace files will be at: ${ALPHA_DIR}/ws/\$WS/
    - bus claims stake --agent ${ALPHA_DEV} \"workspace://alpha/\$WS\" -m \"${BEAD}\"
@@ -59,14 +58,14 @@ Execute the steps below, then STOP.
    - Discover the beta project: bus history projects -n 10
    - Send a message to beta-dev asking about the behavior. Be collaborative — ask if the + exclusion is intentional, don't just file a bug:
      bus send --agent ${ALPHA_DEV} beta \"Hey @beta-dev — I'm using validate_email() in alpha's new registration endpoint and hit an issue: it rejects user+tag@example.com. We need subaddressing support (plus addressing). Is the + exclusion intentional? The local-part whitelist only allows alphanumeric, dots, hyphens, underscores.\" -L feedback
-   - Add a progress comment on the bead:
-     maw exec default -- br comments add --actor ${ALPHA_DEV} --author ${ALPHA_DEV} ${BEAD} \"Blocked: beta validate_email rejects + in local part. Asked beta-dev about it on bus.\"
+   - Add a progress comment on the bone:
+     maw exec default -- bn bone comment add ${BEAD} \"Blocked: beta validate_email rejects + in local part. Asked beta-dev about it on bus.\"
 
-5. STOP HERE. Do NOT close the bead. Do NOT merge the workspace. Wait for beta-dev's response.
+5. STOP HERE. Do NOT close the bone. Do NOT merge the workspace. Wait for beta-dev's response.
 
 Key rules:
 - All file operations use the absolute workspace path: ${ALPHA_DIR}/ws/\$WS/
-- Run br/bv commands via: maw exec default -- br ...
+- Run bn commands via: maw exec default -- bn ...
 - Run jj/cargo/crit via: maw exec \$WS -- <command>
 - Use jj (not git) via maw exec
 - The beta library source is at ${BETA_DIR}/ws/default/ — you can read its files to investigate"

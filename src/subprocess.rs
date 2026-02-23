@@ -127,8 +127,7 @@ impl Tool {
         let output: Output = if let Some(timeout) = self.timeout {
             run_with_timeout(&mut cmd, timeout, &self.program)?
         } else {
-            cmd.output()
-                .map_err(|e| self.not_found_or_other(e))?
+            cmd.output().map_err(|e| self.not_found_or_other(e))?
         };
 
         Ok(RunOutput {
@@ -245,10 +244,7 @@ mod tests {
 
     #[test]
     fn run_echo() {
-        let output = Tool::new("echo")
-            .arg("hello")
-            .run()
-            .unwrap();
+        let output = Tool::new("echo").arg("hello").run().unwrap();
         assert!(output.success());
         assert_eq!(output.stdout.trim(), "hello");
     }
@@ -290,23 +286,23 @@ mod tests {
     #[test]
     fn maw_exec_wrapper() {
         // Verify command construction (won't actually run since maw may not be available)
-        let tool = Tool::new("br").arg("ready").in_workspace("default").unwrap();
+        let tool = Tool::new("bn").arg("next").in_workspace("default").unwrap();
         let (program, args) = tool.build_command();
         assert_eq!(program, "maw");
-        assert_eq!(args, vec!["exec", "default", "--", "br", "ready"]);
+        assert_eq!(args, vec!["exec", "default", "--", "bn", "next"]);
     }
 
     #[test]
     fn invalid_workspace_names() {
-        assert!(Tool::new("br").in_workspace("").is_err());
-        assert!(Tool::new("br").in_workspace("--flag").is_err());
-        assert!(Tool::new("br").in_workspace("-starts-dash").is_err());
-        assert!(Tool::new("br").in_workspace("Has Uppercase").is_err());
-        assert!(Tool::new("br").in_workspace("has space").is_err());
+        assert!(Tool::new("bn").in_workspace("").is_err());
+        assert!(Tool::new("bn").in_workspace("--flag").is_err());
+        assert!(Tool::new("bn").in_workspace("-starts-dash").is_err());
+        assert!(Tool::new("bn").in_workspace("Has Uppercase").is_err());
+        assert!(Tool::new("bn").in_workspace("has space").is_err());
         // Valid names
-        assert!(Tool::new("br").in_workspace("default").is_ok());
-        assert!(Tool::new("br").in_workspace("northern-cedar").is_ok());
-        assert!(Tool::new("br").in_workspace("ws123").is_ok());
+        assert!(Tool::new("bn").in_workspace("default").is_ok());
+        assert!(Tool::new("bn").in_workspace("northern-cedar").is_ok());
+        assert!(Tool::new("bn").in_workspace("ws123").is_ok());
     }
 
     #[test]
@@ -344,9 +340,7 @@ pub fn ensure_bus_hook(description: &str, add_args: &[&str]) -> anyhow::Result<(
                         let desc = hook.get("description").and_then(|d| d.as_str());
                         if desc == Some(description) {
                             if let Some(id) = hook.get("id").and_then(|i| i.as_str()) {
-                                let _ = Tool::new("bus")
-                                    .args(&["hooks", "remove", id])
-                                    .run();
+                                let _ = Tool::new("bus").args(&["hooks", "remove", id]).run();
                                 removed = true;
                             }
                         }
@@ -363,10 +357,7 @@ pub fn ensure_bus_hook(description: &str, add_args: &[&str]) -> anyhow::Result<(
     let result = Tool::new("bus").args(&args).run()?;
 
     if !result.success() {
-        anyhow::bail!(
-            "bus hooks add failed: {}",
-            result.stderr.trim()
-        );
+        anyhow::bail!("bus hooks add failed: {}", result.stderr.trim());
     }
 
     // Extract hook ID from output (format: "Added: Hook hk-xxx created")

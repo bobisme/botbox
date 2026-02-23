@@ -77,7 +77,7 @@ INIT_RC=0
 INIT_OUTPUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" "$RUST_BINARY" init \
   --name testproj \
   --type cli \
-  --tools beads,maw,crit,botbus,botty \
+  --tools bones,maw,crit,botbus,botty \
   --no-interactive \
   --no-seed-work \
   --language rust \
@@ -265,7 +265,7 @@ REINIT_RC=0
 REINIT_OUTPUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" "$RUST_BINARY" init \
   --name testproj \
   --type cli \
-  --tools beads,maw,crit,botbus,botty \
+  --tools bones,maw,crit,botbus,botty \
   --no-interactive \
   --no-seed-work \
   --force \
@@ -295,7 +295,7 @@ echo ""
 echo "=== Capturing final state ==="
 
 # Final project structure
-find "$PROJECT_DIR" -maxdepth 3 -not -path '*/target/*' -not -path '*/.jj/*' -not -path '*/.git/*' -not -path '*/.beads/objects/*' | sort > "$ARTIFACTS/final-project-tree.txt" 2>&1 || true
+find "$PROJECT_DIR" -maxdepth 3 -not -path '*/target/*' -not -path '*/.jj/*' -not -path '*/.git/*' -not -path '*/.bones/objects/*' | sort > "$ARTIFACTS/final-project-tree.txt" 2>&1 || true
 
 # Final config
 cat "$PROJECT_DIR/.botbox.json" > "$ARTIFACTS/final-config.json" 2>&1 || true

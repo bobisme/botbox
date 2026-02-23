@@ -37,7 +37,9 @@ Run this when:
 
 3. After handling all threads:
    a. Verify fixes compile: `maw exec $WS -- cargo check` (or equivalent for the project)
-   b. Describe the change: `maw exec $WS -- jj describe -m "fix: address review feedback on <review-id>"`
+   b. Commit the fixes in your workspace:
+      - `maw exec $WS -- git add -A`
+      - `maw exec $WS -- git commit -m "fix: address review feedback on <review-id>"`
    c. Re-request review: `maw exec $WS -- crit reviews request <review-id> --agent $AGENT --reviewers <reviewer>`
    d. Announce (include workspace name so the reviewer can find the fixed code):
       `bus send --agent $AGENT $BOTBOX_PROJECT "Review feedback addressed: <review-id>, fixes in workspace $WS (ws/$WS/)" -L review-response`
@@ -50,7 +52,7 @@ When the reviewer approves:
 2. Mark review as merged: `maw exec $WS -- crit reviews mark-merged <review-id> --agent $AGENT`
 3. Continue with [finish](finish.md) to close the bead and merge the workspace
 
-The actual code merge is handled by `maw ws merge` in the finish step (maw v0.22.0+ rebases onto main and squashes into a single commit) — do not run `jj squash` manually.
+The actual code merge is handled by `maw ws merge` in the finish step — do not run manual squash commands.
 
 ## Assumptions
 

@@ -86,10 +86,10 @@ while true; do
   BOTTY_LIST=$(botty list 2>/dev/null || echo "(botty list failed)")
   echo "  Agents: $BOTTY_LIST"
 
-  # Check bead status
-  BEAD_JSON=$(cd "$PROJECT_DIR" && BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json 2>/dev/null || echo "[]")
-  BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-  echo "  Bead $BEAD: $BEAD_STATUS"
+  # Check bone status
+  BEAD_JSON=$(cd "$PROJECT_DIR" && BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json 2>/dev/null || echo "[]")
+  BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+  echo "  Bone $BEAD: $BEAD_STATUS"
 
   # Track activity for stuck detection
   if [[ "$BEAD_STATUS" != "$LAST_BEAD_STATUS" ]]; then
@@ -106,8 +106,8 @@ while true; do
   fi
 
   # Check for completion
-  if [[ "$BEAD_STATUS" == "closed" ]]; then
-    echo "  Bead is CLOSED — agent completed the task!"
+  if [[ "$BEAD_STATUS" == "done" ]]; then
+    echo "  Bone is DONE — agent completed the task!"
     FINAL_STATUS="completed"
     # Give agent a moment to finish cleanup (release claims, sync, etc.)
     sleep 10
@@ -120,7 +120,7 @@ while true; do
     echo "  WARNING: No activity for ${IDLE_TIME}s (threshold: ${STUCK_THRESHOLD}s)"
     # Check if agent is still alive
     if ! botty list 2>/dev/null | grep -q "echo"; then
-      echo "  Agent exited without closing bead — marking as agent-exited"
+      echo "  Agent exited without closing bone — marking as agent-exited"
       FINAL_STATUS="agent-exited"
       break
     fi
@@ -152,11 +152,11 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history echo -n 50 > "$ARTIFACTS/channel-
   echo "(no channel history)" > "$ARTIFACTS/channel-history.log"
 echo "  channel history: $ARTIFACTS/channel-history.log"
 
-# Bead state
+# Bone state
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json > "$ARTIFACTS/bead-state.json" 2>/dev/null || \
-  echo "[]" > "$ARTIFACTS/bead-state.json"
-echo "  bead state: $ARTIFACTS/bead-state.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json > "$ARTIFACTS/bone-state.json" 2>/dev/null || \
+  echo "[]" > "$ARTIFACTS/bone-state.json"
+echo "  bone state: $ARTIFACTS/bone-state.json"
 
 # Workspace state
 cd "$PROJECT_DIR"

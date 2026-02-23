@@ -23,7 +23,7 @@ If any check fails, the output explains why and what to do.
 
 ## Merge steps (output by protocol merge)
 
-1. `maw ws merge <workspace> --destroy` — squash-merge and clean up
+1. `maw ws merge <workspace> --destroy` — merge and clean up
 2. `crit reviews mark-merged <review-id>` — mark review as merged (if review exists)
 3. `br sync --flush-only` — sync beads ledger
 4. `maw push` — push to remote (if `pushMain` is enabled)
@@ -33,12 +33,13 @@ If any check fails, the output explains why and what to do.
 
 If merge produces conflicts, the workspace is preserved (not destroyed). Protocol merge outputs recovery steps:
 
-1. **View conflicts**: `maw exec <ws> -- jj status` and `jj resolve --list`
-2. **Auto-resolvable files** (.beads/, .claude/, .agents/): `maw exec <ws> -- jj restore --from main .beads/`
-3. **Code conflicts**: edit files or use `jj resolve --tool :ours` / `:theirs`
-4. **After resolving**: describe and retry `maw ws merge <ws> --destroy`
-5. **Undo merge entirely**: `maw exec <ws> -- jj op undo`
-6. **Recover destroyed workspace**: `maw ws restore <ws>`
+1. **Inspect conflicts**: `maw ws conflicts <ws> --format json`
+2. **Sync stale workspace first** (if reported): `maw ws sync <ws>`
+3. **Auto-resolve ledger/docs paths** (.beads/, .claude/, .agents/): `maw exec <ws> -- git restore --source refs/heads/main -- .beads/ .claude/ .agents/`
+4. **Resolve code conflicts manually**: edit files, then stage with `maw exec <ws> -- git add <resolved-file>`
+5. **Retry merge**: `maw ws merge <ws> --destroy`
+6. **Undo local merge attempt**: `maw ws undo <ws>`
+7. **Recover destroyed workspace**: `maw ws restore <ws>`
 
 ## Manual fallback
 

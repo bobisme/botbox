@@ -1,7 +1,7 @@
 //! Protocol cleanup command: check for held resources and suggest cleanup.
 //!
 //! Reads agent's active claims (from bus) and stale workspaces (from maw)
-//! to produce cleanup guidance. Skips release commands for active bead claims.
+//! to produce cleanup guidance. Skips release commands for active bone claims.
 //!
 //! Exit policy: always exits 0 with status in stdout (clean or has-resources).
 //! Operational failures (bus/maw unavailable) propagate as anyhow errors → exit 1.
@@ -31,16 +31,16 @@ pub fn execute(
 
     // Build guidance
     let mut guidance = ProtocolGuidance::new("cleanup");
-    guidance.bead = None;
+    guidance.bone = None;
     guidance.workspace = None;
     guidance.review = None;
 
     // Analyze active claims
-    let bead_claims = ctx.held_bead_claims();
+    let bone_claims = ctx.held_bone_claims();
     let workspace_claims = ctx.held_workspace_claims();
 
     // If no resources held, we're clean
-    if bead_claims.is_empty() && workspace_claims.is_empty() {
+    if bone_claims.is_empty() && workspace_claims.is_empty() {
         guidance.status = ProtocolStatus::Ready;
         guidance.advise("No cleanup needed.".to_string());
         // If execute is true but we're already clean, just report status (no execution needed)
@@ -54,37 +54,39 @@ pub fn execute(
     let mut steps = Vec::new();
 
     // Step 1: Post agent idle message
-    steps.push(shell::bus_send_cmd("agent", project, "Agent idle", "agent-idle"));
+    steps.push(shell::bus_send_cmd(
+        "agent",
+        project,
+        "Agent idle",
+        "agent-idle",
+    ));
 
     // Step 2: Clear statuses
     steps.push(shell::bus_statuses_clear_cmd("agent"));
 
-    // Step 3: Release claims (but warn if bead claims are active)
-    if !bead_claims.is_empty() {
+    // Step 3: Release claims (but warn if bone claims are active)
+    if !bone_claims.is_empty() {
         // Add diagnostic warning
-        let bead_list = bead_claims
+        let bone_list = bone_claims
             .iter()
             .map(|(id, _)| id.to_string())
             .collect::<Vec<_>>()
             .join(", ");
         guidance.diagnostic(format!(
-            "WARNING: Active bead claim(s) held: {}. Releasing these marks them as unowned in in_progress state.",
-            bead_list
+            "WARNING: Active bone claim(s) held: {}. Releasing these marks them as unowned in doing state.",
+            bone_list
         ));
     }
     steps.push(shell::claims_release_all_cmd("agent"));
-
-    // Step 4: Flush bead changes
-    steps.push(shell::br_sync_cmd());
 
     guidance.steps(steps);
 
     // Build summary for advice
     let summary = format!(
-        "Agent {} has {} bead claim(s) and {} workspace claim(s). \
+        "Agent {} has {} bone claim(s) and {} workspace claim(s). \
          Run these commands to clean up and mark as idle.",
         agent,
-        bead_claims.len(),
+        bone_claims.len(),
         workspace_claims.len()
     );
     guidance.advise(summary);
@@ -102,7 +104,11 @@ pub fn execute(
 /// If execute is true but status is Ready (clean), just reports clean status.
 ///
 /// All formats exit 0 — status is communicated via stdout content.
-fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat, execute: bool) -> anyhow::Result<()> {
+fn render_cleanup(
+    guidance: &ProtocolGuidance,
+    format: OutputFormat,
+    execute: bool,
+) -> anyhow::Result<()> {
     // If execute flag is set and we have resources to clean up, run the executor
     if execute && matches!(guidance.status, ProtocolStatus::HasResources) {
         let report = executor::execute_steps(&guidance.steps)?;
@@ -124,8 +130,10 @@ fn render_cleanup(guidance: &ProtocolGuidance, format: OutputFormat, execute: bo
 
             // Count claims if has-resources
             if matches!(guidance.status, ProtocolStatus::HasResources) {
-                let claim_count = guidance.diagnostics.iter()
-                    .find(|d| d.contains("Active bead claim"))
+                let claim_count = guidance
+                    .diagnostics
+                    .iter()
+                    .find(|d| d.contains("Active bone claim"))
                     .map(|_| guidance.diagnostics.len())
                     .unwrap_or(0);
                 println!("claims\t{} active", claim_count);
@@ -205,36 +213,32 @@ mod tests {
             "bus send --agent test-agent test-project \"Agent idle\" -L agent-idle".to_string(),
             "bus statuses clear --agent test-agent".to_string(),
             "bus claims release --agent test-agent --all".to_string(),
-            "maw exec default -- br sync --flush-only".to_string(),
         ]);
 
         assert_eq!(format!("{:?}", guidance.status), "HasResources");
-        assert_eq!(guidance.steps.len(), 4);
-        assert!(guidance
-            .steps
-            .iter()
-            .any(|s| s.contains("bus send")));
-        assert!(guidance
-            .steps
-            .iter()
-            .any(|s| s.contains("bus statuses clear")));
-        assert!(guidance
-            .steps
-            .iter()
-            .any(|s| s.contains("bus claims release")));
-        assert!(guidance
-            .steps
-            .iter()
-            .any(|s| s.contains("br sync")));
+        assert_eq!(guidance.steps.len(), 3);
+        assert!(guidance.steps.iter().any(|s| s.contains("bus send")));
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("bus statuses clear"))
+        );
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("bus claims release"))
+        );
     }
 
     #[test]
-    fn test_cleanup_warning_for_active_beads() {
-        // When active bead claims exist, should add warning diagnostic
+    fn test_cleanup_warning_for_active_bones() {
+        // When active bone claims exist, should add warning diagnostic
         let mut guidance = ProtocolGuidance::new("cleanup");
         guidance.diagnostic(
-            "WARNING: Active bead claim(s) held: bd-3cqv. \
-             Releasing these marks them as unowned in in_progress state."
+            "WARNING: Active bone claim(s) held: bd-3cqv. \
+             Releasing these marks them as unowned in doing state."
                 .to_string(),
         );
 

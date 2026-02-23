@@ -7,9 +7,9 @@ use std::os::unix::fs::PermissionsExt;
 fn run_agent_requires_prompt() {
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.arg("run").arg("agent");
-    cmd.assert()
-        .failure()
-        .stderr(predicate::str::contains("required arguments were not provided"));
+    cmd.assert().failure().stderr(predicate::str::contains(
+        "required arguments were not provided",
+    ));
 }
 
 #[test]
@@ -97,7 +97,11 @@ EVENTS
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.env(
         "PATH",
-        format!("{}:{}", tmp.path().display(), std::env::var("PATH").unwrap_or_default()),
+        format!(
+            "{}:{}",
+            tmp.path().display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
     )
     .arg("run")
     .arg("agent")
@@ -147,7 +151,11 @@ EVENTS
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.env(
         "PATH",
-        format!("{}:{}", tmp.path().display(), std::env::var("PATH").unwrap_or_default()),
+        format!(
+            "{}:{}",
+            tmp.path().display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
     )
     .arg("run")
     .arg("agent")
@@ -215,7 +223,11 @@ EVENTS
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.env(
         "PATH",
-        format!("{}:{}", tmp.path().display(), std::env::var("PATH").unwrap_or_default()),
+        format!(
+            "{}:{}",
+            tmp.path().display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
     )
     .arg("run")
     .arg("agent")
@@ -254,7 +266,11 @@ exit 1
     let mut cmd = Command::cargo_bin("botbox").unwrap();
     cmd.env(
         "PATH",
-        format!("{}:{}", tmp.path().display(), std::env::var("PATH").unwrap_or_default()),
+        format!(
+            "{}:{}",
+            tmp.path().display(),
+            std::env::var("PATH").unwrap_or_default()
+        ),
     )
     .arg("run")
     .arg("agent")

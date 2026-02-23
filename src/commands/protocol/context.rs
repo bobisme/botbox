@@ -1,17 +1,17 @@
 //! ProtocolContext: cross-tool shared state collector.
 //!
-//! Gathers bus claims, maw workspaces, and bead/review status in a single
+//! Gathers bus claims, maw workspaces, and bone/review status in a single
 //! structure to avoid duplicating subprocess calls across protocol commands.
 //! Lazy evaluation: state is fetched on-demand via subprocess calls, not upfront.
 
 use std::process::Command;
 
-use super::adapters::{self, BeadInfo, Claim, ReviewDetail, ReviewDetailResponse, Workspace};
+use super::adapters::{self, BoneInfo, Claim, ReviewDetail, ReviewDetailResponse, Workspace};
 
 /// Cross-tool state collector for protocol commands.
 ///
 /// Provides cached access to bus claims and maw workspaces (fetched on construction),
-/// plus lazy on-demand methods for bead/review status.
+/// plus lazy on-demand methods for bone/review status.
 #[derive(Debug, Clone)]
 pub struct ProtocolContext {
     #[allow(dead_code)]
@@ -31,7 +31,9 @@ impl ProtocolContext {
     /// Returns error if either subprocess fails or output is unparseable.
     pub fn collect(project: &str, agent: &str) -> Result<Self, ContextError> {
         // Fetch bus claims
-        let claims_output = Self::run_subprocess(&["bus", "claims", "list", "--agent", agent, "--format", "json"])?;
+        let claims_output = Self::run_subprocess(&[
+            "bus", "claims", "list", "--agent", agent, "--format", "json",
+        ])?;
         let claims_resp = adapters::parse_claims(&claims_output)
             .map_err(|e| ContextError::ParseFailed(format!("claims: {e}")))?;
 
@@ -48,14 +50,17 @@ impl ProtocolContext {
         })
     }
 
-    /// Get all held bead claims as (bead_id, pattern) tuples.
-    pub fn held_bead_claims(&self) -> Vec<(&str, &str)> {
+    /// Get all held bone claims as (bone_id, pattern) tuples.
+    pub fn held_bone_claims(&self) -> Vec<(&str, &str)> {
         let mut result = Vec::new();
         for claim in &self.claims {
             if claim.agent == self.agent {
                 for pattern in &claim.patterns {
-                    if let Some(bead_id) = pattern.strip_prefix("bead://").and_then(|rest| rest.split('/').nth(1)) {
-                        result.push((bead_id, pattern.as_str()));
+                    if let Some(bone_id) = pattern
+                        .strip_prefix("bone://")
+                        .and_then(|rest| rest.split('/').nth(1))
+                    {
+                        result.push((bone_id, pattern.as_str()));
                     }
                 }
             }
@@ -69,7 +74,10 @@ impl ProtocolContext {
         for claim in &self.claims {
             if claim.agent == self.agent {
                 for pattern in &claim.patterns {
-                    if let Some(ws_name) = pattern.strip_prefix("workspace://").and_then(|rest| rest.split('/').nth(1)) {
+                    if let Some(ws_name) = pattern
+                        .strip_prefix("workspace://")
+                        .and_then(|rest| rest.split('/').nth(1))
+                    {
                         result.push((ws_name, pattern.as_str()));
                     }
                 }
@@ -84,18 +92,18 @@ impl ProtocolContext {
         self.workspaces.iter().find(|ws| ws.name == name)
     }
 
-    /// Correlate a bead claim with its workspace claim.
+    /// Correlate a bone claim with its workspace claim.
     ///
     /// Tries memo-based correlation first (most precise), then falls back to
     /// finding any non-default workspace claim from this agent. The fallback
     /// is needed because `bus claims list --format json` currently omits the
     /// memo field, making memo-based lookup fail.
-    pub fn workspace_for_bead(&self, bead_id: &str) -> Option<&str> {
+    pub fn workspace_for_bone(&self, bone_id: &str) -> Option<&str> {
         // First pass: memo-based correlation (precise, works when bus includes memo)
         for claim in &self.claims {
             if claim.agent == self.agent {
                 if let Some(memo) = &claim.memo {
-                    if memo == bead_id {
+                    if memo == bone_id {
                         for pattern in &claim.patterns {
                             if let Some(ws_name) = pattern
                                 .strip_prefix("workspace://")
@@ -110,7 +118,7 @@ impl ProtocolContext {
         }
 
         // Fallback: find any non-default workspace claim from this agent.
-        // Workers hold one bead + one workspace, so this is unambiguous.
+        // Workers hold one bone + one workspace, so this is unambiguous.
         for claim in &self.claims {
             if claim.agent == self.agent {
                 for pattern in &claim.patterns {
@@ -128,25 +136,33 @@ impl ProtocolContext {
         None
     }
 
-    /// Fetch bead status by calling `maw exec default -- br show <id> --format json`.
-    pub fn bead_status(&self, bead_id: &str) -> Result<BeadInfo, ContextError> {
-        Self::validate_bead_id(bead_id)?;
-        let output = Self::run_subprocess(&["maw", "exec", "default", "--", "br", "show", bead_id, "--format", "json"])?;
-        let bead = adapters::parse_bead_show(&output)
-            .map_err(|e| ContextError::ParseFailed(format!("bead {bead_id}: {e}")))?;
-        Ok(bead)
+    /// Fetch bone status by calling `maw exec default -- bn show <id> --format json`.
+    pub fn bone_status(&self, bone_id: &str) -> Result<BoneInfo, ContextError> {
+        Self::validate_bone_id(bone_id)?;
+        let output = Self::run_subprocess(&[
+            "maw", "exec", "default", "--", "bn", "show", bone_id, "--format", "json",
+        ])?;
+        let bone = adapters::parse_bone_show(&output)
+            .map_err(|e| ContextError::ParseFailed(format!("bone {bone_id}: {e}")))?;
+        Ok(bone)
     }
 
     /// List reviews in a workspace by calling `maw exec <ws> -- crit reviews list --format json`.
     ///
     /// Returns empty list if no reviews exist or crit is not configured.
-    pub fn reviews_in_workspace(&self, workspace: &str) -> Result<Vec<adapters::ReviewSummary>, ContextError> {
+    pub fn reviews_in_workspace(
+        &self,
+        workspace: &str,
+    ) -> Result<Vec<adapters::ReviewSummary>, ContextError> {
         Self::validate_workspace_name(workspace)?;
-        let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "reviews", "list", "--format", "json"]);
+        let output = Self::run_subprocess(&[
+            "maw", "exec", workspace, "--", "crit", "reviews", "list", "--format", "json",
+        ]);
         match output {
             Ok(json) => {
-                let resp = adapters::parse_reviews_list(&json)
-                    .map_err(|e| ContextError::ParseFailed(format!("reviews list in {workspace}: {e}")))?;
+                let resp = adapters::parse_reviews_list(&json).map_err(|e| {
+                    ContextError::ParseFailed(format!("reviews list in {workspace}: {e}"))
+                })?;
                 Ok(resp.reviews)
             }
             Err(_) => {
@@ -157,10 +173,16 @@ impl ProtocolContext {
     }
 
     /// Fetch review status by calling `maw exec <ws> -- crit review <id> --format json`.
-    pub fn review_status(&self, review_id: &str, workspace: &str) -> Result<ReviewDetail, ContextError> {
+    pub fn review_status(
+        &self,
+        review_id: &str,
+        workspace: &str,
+    ) -> Result<ReviewDetail, ContextError> {
         Self::validate_review_id(review_id)?;
         Self::validate_workspace_name(workspace)?;
-        let output = Self::run_subprocess(&["maw", "exec", workspace, "--", "crit", "review", review_id, "--format", "json"])?;
+        let output = Self::run_subprocess(&[
+            "maw", "exec", workspace, "--", "crit", "review", review_id, "--format", "json",
+        ])?;
         let review_resp: ReviewDetailResponse = serde_json::from_str(&output)
             .map_err(|e| ContextError::ParseFailed(format!("review {review_id}: {e}")))?;
         Ok(review_resp.review)
@@ -168,8 +190,8 @@ impl ProtocolContext {
 
     /// Check for claim conflicts by querying all claims.
     ///
-    /// Returns the conflicting claim if another agent holds the bead.
-    pub fn check_bead_claim_conflict(&self, bead_id: &str) -> Result<Option<String>, ContextError> {
+    /// Returns the conflicting claim if another agent holds the bone.
+    pub fn check_bone_claim_conflict(&self, bone_id: &str) -> Result<Option<String>, ContextError> {
         let output = Self::run_subprocess(&["bus", "claims", "list", "--format", "json"])?;
         let claims_resp = adapters::parse_claims(&output)
             .map_err(|e| ContextError::ParseFailed(format!("all claims: {e}")))?;
@@ -177,8 +199,11 @@ impl ProtocolContext {
         for claim in &claims_resp.claims {
             if claim.agent != self.agent {
                 for pattern in &claim.patterns {
-                    if let Some(id) = pattern.strip_prefix("bead://").and_then(|rest| rest.split('/').nth(1)) {
-                        if id == bead_id {
+                    if let Some(id) = pattern
+                        .strip_prefix("bone://")
+                        .and_then(|rest| rest.split('/').nth(1))
+                    {
+                        if id == bone_id {
                             return Ok(Some(claim.agent.clone()));
                         }
                     }
@@ -188,12 +213,12 @@ impl ProtocolContext {
         Ok(None)
     }
 
-    /// Validate that a bead ID is safe for subprocess use.
+    /// Validate that a bone ID is safe for subprocess use.
     ///
-    /// Bead ID prefixes vary by project (e.g., `bd-`, `bn-`, `bm-`).
+    /// Bone ID prefixes vary by project (e.g., `bd-`, `bn-`, `bm-`).
     /// We validate the format (short alphanumeric with hyphens) without
     /// hardcoding a specific prefix.
-    fn validate_bead_id(id: &str) -> Result<(), ContextError> {
+    fn validate_bone_id(id: &str) -> Result<(), ContextError> {
         if !id.is_empty()
             && id.len() <= 20
             && id.contains('-')
@@ -201,25 +226,35 @@ impl ProtocolContext {
         {
             Ok(())
         } else {
-            Err(ContextError::ParseFailed(format!("invalid bead ID: {id}")))
+            Err(ContextError::ParseFailed(format!("invalid bone ID: {id}")))
         }
     }
 
     /// Validate that a workspace name is safe (alphanumeric + hyphens only).
     fn validate_workspace_name(name: &str) -> Result<(), ContextError> {
-        if !name.is_empty() && name.len() <= 64 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+        if !name.is_empty()
+            && name.len() <= 64
+            && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
             Ok(())
         } else {
-            Err(ContextError::ParseFailed(format!("invalid workspace name: {name}")))
+            Err(ContextError::ParseFailed(format!(
+                "invalid workspace name: {name}"
+            )))
         }
     }
 
     /// Validate that a review ID matches the expected pattern (cr-xxxx).
     fn validate_review_id(id: &str) -> Result<(), ContextError> {
-        if id.starts_with("cr-") && id.len() <= 20 && id[3..].chars().all(|c| c.is_ascii_alphanumeric()) {
+        if id.starts_with("cr-")
+            && id.len() <= 20
+            && id[3..].chars().all(|c| c.is_ascii_alphanumeric())
+        {
             Ok(())
         } else {
-            Err(ContextError::ParseFailed(format!("invalid review ID: {id}")))
+            Err(ContextError::ParseFailed(format!(
+                "invalid review ID: {id}"
+            )))
         }
     }
 
@@ -244,8 +279,9 @@ impl ProtocolContext {
             )));
         }
 
-        Ok(String::from_utf8(output.stdout)
-            .map_err(|e| ContextError::SubprocessFailed(format!("invalid UTF-8 from {}: {e}", args[0])))?)
+        Ok(String::from_utf8(output.stdout).map_err(|e| {
+            ContextError::SubprocessFailed(format!("invalid UTF-8 from {}: {e}", args[0]))
+        })?)
     }
 
     #[allow(dead_code)]
@@ -296,9 +332,9 @@ mod tests {
     // Mock responses for testing without subprocess calls.
     // Bus creates separate claims per stake call (no memo in JSON output).
     const CLAIMS_JSON: &str = r#"{"claims": [
-        {"agent": "crimson-storm", "patterns": ["bead://botbox/bd-3cqv"], "active": true},
+        {"agent": "crimson-storm", "patterns": ["bone://botbox/bd-3cqv"], "active": true},
         {"agent": "crimson-storm", "patterns": ["workspace://botbox/frost-forest"], "active": true},
-        {"agent": "green-vertex", "patterns": ["bead://botbox/bd-3t1d"], "active": true}
+        {"agent": "green-vertex", "patterns": ["bone://botbox/bd-3t1d"], "active": true}
     ]}"#;
 
     const WORKSPACES_JSON: &str = r#"{"workspaces": [
@@ -307,7 +343,7 @@ mod tests {
     ], "advice": []}"#;
 
     #[test]
-    fn test_held_bead_claims() {
+    fn test_held_bone_claims() {
         let claims_resp = adapters::parse_claims(CLAIMS_JSON).unwrap();
         let workspaces_resp = adapters::parse_workspaces(WORKSPACES_JSON).unwrap();
 
@@ -318,7 +354,7 @@ mod tests {
             workspaces: workspaces_resp.workspaces,
         };
 
-        let bead_claims = ctx.held_bead_claims();
+        let bead_claims = ctx.held_bone_claims();
         assert_eq!(bead_claims.len(), 1);
         assert_eq!(bead_claims[0].0, "bd-3cqv");
     }
@@ -359,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn test_workspace_for_bead() {
+    fn test_workspace_for_bone() {
         let claims_resp = adapters::parse_claims(CLAIMS_JSON).unwrap();
         let workspaces_resp = adapters::parse_workspaces(WORKSPACES_JSON).unwrap();
 
@@ -370,15 +406,15 @@ mod tests {
             workspaces: workspaces_resp.workspaces,
         };
 
-        let ws = ctx.workspace_for_bead("bd-3cqv");
+        let ws = ctx.workspace_for_bone("bd-3cqv");
         assert_eq!(ws, Some("frost-forest"));
     }
 
     #[test]
-    fn test_workspace_for_bead_fallback_no_memo() {
+    fn test_workspace_for_bone_fallback_no_memo() {
         // When bus omits memo from JSON, fallback finds workspace by agent match
         let json = r#"{"claims": [
-            {"agent": "dev-agent", "patterns": ["bead://proj/bd-abc"], "active": true},
+            {"agent": "dev-agent", "patterns": ["bone://proj/bd-abc"], "active": true},
             {"agent": "dev-agent", "patterns": ["workspace://proj/ember-tower"], "active": true}
         ]}"#;
         let claims_resp = adapters::parse_claims(json).unwrap();
@@ -391,15 +427,15 @@ mod tests {
             workspaces: workspaces_resp.workspaces,
         };
 
-        let ws = ctx.workspace_for_bead("bd-abc");
+        let ws = ctx.workspace_for_bone("bd-abc");
         assert_eq!(ws, Some("ember-tower"));
     }
 
     #[test]
-    fn test_workspace_for_bead_skips_default() {
+    fn test_workspace_for_bone_skips_default() {
         // Fallback must not return "default" workspace
         let json = r#"{"claims": [
-            {"agent": "dev-agent", "patterns": ["bead://proj/bd-abc"], "active": true},
+            {"agent": "dev-agent", "patterns": ["bone://proj/bd-abc"], "active": true},
             {"agent": "dev-agent", "patterns": ["workspace://proj/default"], "active": true}
         ]}"#;
         let claims_resp = adapters::parse_claims(json).unwrap();
@@ -412,12 +448,12 @@ mod tests {
             workspaces: workspaces_resp.workspaces,
         };
 
-        let ws = ctx.workspace_for_bead("bd-abc");
+        let ws = ctx.workspace_for_bone("bd-abc");
         assert_eq!(ws, None); // default is filtered out
     }
 
     #[test]
-    fn test_held_bead_claims_other_agent() {
+    fn test_held_bone_claims_other_agent() {
         let claims_resp = adapters::parse_claims(CLAIMS_JSON).unwrap();
         let workspaces_resp = adapters::parse_workspaces(WORKSPACES_JSON).unwrap();
 
@@ -429,7 +465,7 @@ mod tests {
             workspaces: workspaces_resp.workspaces,
         };
 
-        let bead_claims = ctx.held_bead_claims();
+        let bead_claims = ctx.held_bone_claims();
         assert_eq!(bead_claims.len(), 1);
         assert_eq!(bead_claims[0].0, "bd-3t1d");
     }
@@ -447,7 +483,7 @@ mod tests {
             workspaces: workspaces_resp.workspaces,
         };
 
-        assert!(ctx.held_bead_claims().is_empty());
+        assert!(ctx.held_bone_claims().is_empty());
         assert!(ctx.held_workspace_claims().is_empty());
     }
 }

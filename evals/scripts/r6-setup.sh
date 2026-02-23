@@ -3,7 +3,7 @@ set -euo pipefail
 
 # R6 Parallel Dispatch Eval — Setup
 # Creates a fresh eval environment with a Rust/Axum project and 3 independent,
-# pre-groomed beads. The dev agent must dispatch Haiku workers in parallel
+# pre-groomed bones. The dev agent must dispatch Haiku workers in parallel
 # rather than doing the work sequentially.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,7 +15,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 
 # --- Init repo and botbox ---
 jj git init
-botbox init --name r6-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name r6-eval --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 # --- Copy latest local workflow docs (installed package may be stale) ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/
@@ -86,11 +86,11 @@ echo "DEV_AGENT=$DEV_AGENT"
 bus send --agent setup r6-eval "R6 eval environment initialized" -L mesh -L setup
 bus mark-read --agent "$DEV_AGENT" r6-eval
 
-# --- Create 3 independent, pre-groomed beads ---
+# --- Create 3 independent, pre-groomed bones ---
 
-BEAD1=$(br create --silent \
-  --title="Add GET /version endpoint" \
-  --description="$(cat << 'DESC_EOF'
+BEAD1=$(bn create \
+  --title "Add GET /version endpoint" \
+  --description "$(cat << 'DESC_EOF'
 Add a GET /version endpoint that returns the application version as JSON.
 
 ## Requirements
@@ -110,12 +110,12 @@ Verify with: curl http://localhost:3000/version
 Expected: {"name":"r6-eval","version":"0.1.0"}
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 echo "BEAD1=$BEAD1"
 
-BEAD2=$(br create --silent \
-  --title="Add POST /echo endpoint" \
-  --description="$(cat << 'DESC_EOF'
+BEAD2=$(bn create \
+  --title "Add POST /echo endpoint" \
+  --description "$(cat << 'DESC_EOF'
 Add a POST /echo endpoint that returns the request body wrapped in JSON.
 
 ## Requirements
@@ -138,12 +138,12 @@ Verify with: curl -X POST -d "hello world" http://localhost:3000/echo
 Expected: {"echo":"hello world"}
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 echo "BEAD2=$BEAD2"
 
-BEAD3=$(br create --silent \
-  --title="Add GET /metrics endpoint with request counter" \
-  --description="$(cat << 'DESC_EOF'
+BEAD3=$(bn create \
+  --title "Add GET /metrics endpoint with request counter" \
+  --description "$(cat << 'DESC_EOF'
 Add a /metrics endpoint and request-counting middleware.
 
 ## Requirements
@@ -166,7 +166,7 @@ Add a /metrics endpoint and request-counting middleware.
 curl /health 3 times, then curl /metrics should show {"total_requests": 4}
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 echo "BEAD3=$BEAD3"
 
 # --- Commit baseline ---
@@ -190,5 +190,5 @@ echo "BEAD1=$BEAD1 (version endpoint)"
 echo "BEAD2=$BEAD2 (echo endpoint)"
 echo "BEAD3=$BEAD3 (metrics endpoint)"
 echo ""
-echo "Verify: cargo check clean, br ready shows 3 beads"
+echo "Verify: cargo check clean, bn next shows 3 bones"
 echo "Next: source .eval-env && bash $REPO_DIR/evals/scripts/r6-run.sh"

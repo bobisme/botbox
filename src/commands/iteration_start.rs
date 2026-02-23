@@ -84,26 +84,15 @@ impl Colors {
 }
 
 pub fn h1(c: &Colors, s: &str) -> String {
-    format!("{}{}# {}{}",
-        c.bold,
-        c.cyan,
-        s,
-        c.reset)
+    format!("{}{}# {}{}", c.bold, c.cyan, s, c.reset)
 }
 
 pub fn h2(c: &Colors, s: &str) -> String {
-    format!("{}{}## {}{}",
-        c.bold,
-        c.green,
-        s,
-        c.reset)
+    format!("{}{}## {}{}", c.bold, c.green, s, c.reset)
 }
 
 pub fn hint(c: &Colors, s: &str) -> String {
-    format!("{}> {}{}",
-        c.dim,
-        s,
-        c.reset)
+    format!("{}> {}{}", c.dim, s, c.reset)
 }
 
 /// Fetch config from .botbox.toml/.botbox.json or ws/default/
@@ -115,7 +104,7 @@ fn load_config() -> anyhow::Result<Config> {
 
 /// Helper to run a tool and parse JSON output, returning None on failure
 fn run_json_tool(tool: &str, args: &[&str]) -> Option<String> {
-    if tool == "br" || tool == "bv" || tool == "crit" {
+    if tool == "bn" || tool == "crit" {
         // These need to be run in the default workspace
         let mut output = Tool::new(tool);
         for arg in args {
@@ -123,12 +112,7 @@ fn run_json_tool(tool: &str, args: &[&str]) -> Option<String> {
         }
         output = output.arg("--format").arg("json");
 
-        let result = if tool == "br" || tool == "bv" {
-            output.in_workspace("default").ok()?.run().ok()?
-        } else {
-            // For crit (which may need special handling), still use default
-            output.in_workspace("default").ok()?.run().ok()?
-        };
+        let result = output.in_workspace("default").ok()?.run().ok()?;
 
         if result.success() {
             Some(result.stdout)
@@ -168,11 +152,15 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
     let mut unread_count = 0;
 
     if let Some(output) = &inbox_output
-        && let Ok(inbox) = serde_json::from_str::<InboxResponse>(output) {
-            unread_count = inbox.total_unread;
-        }
+        && let Ok(inbox) = serde_json::from_str::<InboxResponse>(output)
+    {
+        unread_count = inbox.total_unread;
+    }
 
-    println!("{}", h2(&c, &format!("Unread Bus Messages ({})", unread_count)));
+    println!(
+        "{}",
+        h2(&c, &format!("Unread Bus Messages ({})", unread_count))
+    );
 
     if let Some(output) = inbox_output {
         if let Ok(inbox) = serde_json::from_str::<InboxResponse>(&output) {
@@ -181,7 +169,8 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                     for channel in channels {
                         if let Some(messages) = channel.messages {
                             for msg in messages.iter().take(5) {
-                                let label = msg.label
+                                let label = msg
+                                    .label
                                     .as_ref()
                                     .map(|l| format!("[{}]", l))
                                     .unwrap_or_default();
@@ -190,12 +179,10 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                                 } else {
                                     msg.body.clone()
                                 };
-                                println!("   {}{}{} {}: {}",
-                                    c.dim,
-                                    msg.agent,
-                                    c.reset,
-                                    label,
-                                    body);
+                                println!(
+                                    "   {}{}{} {}: {}",
+                                    c.dim, msg.agent, c.reset, label, body
+                                );
                             }
                         }
                     }
@@ -211,7 +198,7 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
     }
     println!();
 
-    // 2. Beads (via triage)
+    // 2. Bones (via bn triage)
     if let Err(e) = super::triage::run_triage() {
         println!("   {}Could not fetch triage data: {}{}", c.dim, e, c.reset);
     }
@@ -233,7 +220,8 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                     println!("   {} review(s) awaiting vote", awaiting.len());
                     for r in awaiting.iter().take(3) {
                         let no_title = "(no title)".to_string();
-                        let title = r.title
+                        let title = r
+                            .title
                             .as_ref()
                             .or(r.description.as_ref())
                             .unwrap_or(&no_title);
@@ -262,9 +250,11 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
         if let Ok(claims_data) = serde_json::from_str::<ClaimsResponse>(&output) {
             if let Some(claims) = claims_data.claims {
                 // Filter out agent identity claims (those that start with "agent://")
-                let resource_claims: Vec<_> = claims.iter()
+                let resource_claims: Vec<_> = claims
+                    .iter()
                     .filter(|cl| {
-                        cl.patterns.as_ref()
+                        cl.patterns
+                            .as_ref()
                             .map(|p| !p.iter().all(|pat| pat.starts_with("agent://")))
                             .unwrap_or(true)
                     })
@@ -274,11 +264,13 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
                     println!("   {} active claim(s)", resource_claims.len());
                     for claim in resource_claims.iter().take(5) {
                         if let Some(patterns) = &claim.patterns {
-                            let resource_patterns: Vec<_> = patterns.iter()
+                            let resource_patterns: Vec<_> = patterns
+                                .iter()
                                 .filter(|p| !p.starts_with("agent://"))
                                 .collect();
                             for pattern in resource_patterns {
-                                let expires = claim.expires_in_secs
+                                let expires = claim
+                                    .expires_in_secs
                                     .map(|s| format!("({}m left)", s / 60))
                                     .unwrap_or_default();
                                 println!("   {} {}", pattern, expires);
@@ -301,13 +293,30 @@ pub fn run_iteration_start(agent_override: Option<&str>) -> anyhow::Result<()> {
 
     // Summary hint
     if unread_count > 0 {
-        println!("{}", hint(&c, &format!("Get unread messages and mark them as read: bus inbox --agent {} --channels {} --mark-read", agent, project)));
+        println!(
+            "{}",
+            hint(
+                &c,
+                &format!(
+                    "Get unread messages and mark them as read: bus inbox --agent {} --channels {} --mark-read",
+                    agent, project
+                )
+            )
+        );
     } else if has_reviews {
-        println!("{}", hint(&c, &format!("Start review: maw exec default -- crit inbox --agent {}", agent)));
+        println!(
+            "{}",
+            hint(
+                &c,
+                &format!(
+                    "Start review: maw exec default -- crit inbox --agent {}",
+                    agent
+                )
+            )
+        );
     } else {
         println!("{}", hint(&c, "No work pending"));
     }
 
     Ok(())
 }
-

@@ -1,6 +1,6 @@
 //! JSON adapters for companion tool output.
 //!
-//! Tolerant parsing for bus claims, maw workspaces, br show, and crit review.
+//! Tolerant parsing for bus claims, maw workspaces, bn show, and crit review.
 //! Each adapter handles optional/new fields gracefully and produces clear
 //! parse errors. ProtocolContext consumes these instead of ad-hoc parsing.
 
@@ -30,12 +30,12 @@ pub struct Claim {
 }
 
 impl Claim {
-    /// Extract bead IDs from `bead://project/bd-xxx` patterns.
-    pub fn bead_ids(&self) -> Vec<&str> {
+    /// Extract bone IDs from `bone://project/bd-xxx` patterns.
+    pub fn bone_ids(&self) -> Vec<&str> {
         self.patterns
             .iter()
             .filter_map(|p| {
-                p.strip_prefix("bead://")
+                p.strip_prefix("bone://")
                     .and_then(|rest| rest.split('/').nth(1))
             })
             .collect()
@@ -89,39 +89,34 @@ pub struct WorkspaceAdvice {
     pub details: Option<serde_json::Value>,
 }
 
-// --- Beads (br show) ---
+// --- Bones (bn show) ---
 
-/// Parsed output from `br show <id> --format json`.
+/// Parsed output from `bn show <id> --format json`.
 ///
-/// br show returns an array of matching beads (usually 1).
+/// bn show returns a single JSON object.
 #[derive(Debug, Clone, Deserialize)]
-pub struct BeadInfo {
+pub struct BoneInfo {
     pub id: String,
     #[serde(default)]
     pub title: String,
     #[serde(default)]
-    pub status: String,
+    pub state: String,
     #[serde(default)]
-    pub owner: Option<String>,
+    pub assignees: Vec<String>,
     #[serde(default)]
     pub labels: Vec<String>,
-    #[serde(rename = "type", default)]
-    pub bead_type: Option<String>,
+    #[serde(rename = "kind", default)]
+    pub kind: Option<String>,
     #[serde(default)]
-    pub priority: Option<u8>,
+    pub urgency: Option<String>,
 }
 
-/// Parse `br show --format json` output. Returns the first matching bead.
-pub fn parse_bead_show(json: &str) -> Result<BeadInfo, AdapterError> {
-    // br show returns an array
-    let beads: Vec<BeadInfo> =
-        serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
-            tool: "br show",
-            detail: e.to_string(),
-        })?;
-    beads.into_iter().next().ok_or(AdapterError::NotFound {
-        tool: "br show",
-        detail: "no beads in response".to_string(),
+/// Parse `bn show --format json` output. Returns the bone info.
+pub fn parse_bone_show(json: &str) -> Result<BoneInfo, AdapterError> {
+    // bn show returns a single object
+    serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+        tool: "bn show",
+        detail: e.to_string(),
     })
 }
 
@@ -215,14 +210,8 @@ pub struct ReviewComment {
 
 #[derive(Debug, Clone)]
 pub enum AdapterError {
-    ParseFailed {
-        tool: &'static str,
-        detail: String,
-    },
-    NotFound {
-        tool: &'static str,
-        detail: String,
-    },
+    ParseFailed { tool: &'static str, detail: String },
+    NotFound { tool: &'static str, detail: String },
 }
 
 impl std::fmt::Display for AdapterError {
@@ -283,13 +272,13 @@ mod tests {
     #[test]
     fn parse_claims_basic() {
         let json = r#"{"claims": [
-            {"agent": "myapp-dev", "patterns": ["bead://myapp/bd-abc"], "active": true, "memo": "bd-abc"},
+            {"agent": "myapp-dev", "patterns": ["bone://myapp/bd-abc"], "active": true, "memo": "bd-abc"},
             {"agent": "myapp-dev", "patterns": ["workspace://myapp/frost-castle"], "active": true}
         ]}"#;
         let resp = parse_claims(json).unwrap();
         assert_eq!(resp.claims.len(), 2);
         assert_eq!(resp.claims[0].agent, "myapp-dev");
-        assert_eq!(resp.claims[0].bead_ids(), vec!["bd-abc"]);
+        assert_eq!(resp.claims[0].bone_ids(), vec!["bd-abc"]);
         assert_eq!(resp.claims[1].workspace_names(), vec!["frost-castle"]);
     }
 
@@ -302,7 +291,7 @@ mod tests {
 
     #[test]
     fn parse_claims_missing_optional_fields() {
-        let json = r#"{"claims": [{"agent": "dev", "patterns": ["bead://p/bd-x"]}]}"#;
+        let json = r#"{"claims": [{"agent": "dev", "patterns": ["bone://p/bd-x"]}]}"#;
         let resp = parse_claims(json).unwrap();
         assert!(!resp.claims[0].active); // defaults to false
         assert!(resp.claims[0].memo.is_none());
@@ -355,42 +344,42 @@ mod tests {
         assert!(resp.advice.is_empty());
     }
 
-    // --- Bead parsing ---
+    // --- Bone parsing ---
 
     #[test]
-    fn parse_bead_show_basic() {
-        let json = r#"[{"id": "bd-abc", "title": "Fix login", "status": "in_progress", "owner": "myapp-dev", "labels": ["bug"]}]"#;
-        let bead = parse_bead_show(json).unwrap();
-        assert_eq!(bead.id, "bd-abc");
-        assert_eq!(bead.title, "Fix login");
-        assert_eq!(bead.status, "in_progress");
-        assert_eq!(bead.owner.as_deref(), Some("myapp-dev"));
-        assert_eq!(bead.labels, vec!["bug"]);
+    fn parse_bone_show_basic() {
+        let json = r#"{"id": "bd-abc", "title": "Fix login", "state": "doing", "assignees": ["myapp-dev"], "labels": ["bug"]}"#;
+        let bone = parse_bone_show(json).unwrap();
+        assert_eq!(bone.id, "bd-abc");
+        assert_eq!(bone.title, "Fix login");
+        assert_eq!(bone.state, "doing");
+        assert_eq!(bone.assignees, vec!["myapp-dev"]);
+        assert_eq!(bone.labels, vec!["bug"]);
     }
 
     #[test]
-    fn parse_bead_show_minimal() {
-        let json = r#"[{"id": "bd-abc"}]"#;
-        let bead = parse_bead_show(json).unwrap();
-        assert_eq!(bead.id, "bd-abc");
-        assert_eq!(bead.title, "");
-        assert_eq!(bead.status, "");
-        assert!(bead.owner.is_none());
-        assert!(bead.labels.is_empty());
+    fn parse_bone_show_minimal() {
+        let json = r#"{"id": "bd-abc"}"#;
+        let bone = parse_bone_show(json).unwrap();
+        assert_eq!(bone.id, "bd-abc");
+        assert_eq!(bone.title, "");
+        assert_eq!(bone.state, "");
+        assert!(bone.assignees.is_empty());
+        assert!(bone.labels.is_empty());
     }
 
     #[test]
-    fn parse_bead_show_empty_array() {
-        let result = parse_bead_show("[]");
+    fn parse_bone_show_invalid_json() {
+        let result = parse_bone_show("not json");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("no beads"));
+        assert!(result.unwrap_err().to_string().contains("bn show"));
     }
 
     #[test]
-    fn parse_bead_show_extra_fields() {
-        let json = r#"[{"id": "bd-x", "title": "t", "status": "open", "some_future_field": true}]"#;
-        let bead = parse_bead_show(json).unwrap();
-        assert_eq!(bead.id, "bd-x");
+    fn parse_bone_show_extra_fields() {
+        let json = r#"{"id": "bd-x", "title": "t", "state": "open", "some_future_field": true}"#;
+        let bone = parse_bone_show(json).unwrap();
+        assert_eq!(bone.id, "bd-x");
     }
 
     // --- Review parsing ---
@@ -459,11 +448,11 @@ mod tests {
     // --- Claim helper tests ---
 
     #[test]
-    fn claim_bead_id_extraction() {
+    fn claim_bone_id_extraction() {
         let claim = Claim {
             agent: "dev".into(),
             patterns: vec![
-                "bead://myapp/bd-abc".into(),
+                "bone://myapp/bd-abc".into(),
                 "workspace://myapp/ws".into(),
                 "agent://myapp-dev".into(),
             ],
@@ -471,7 +460,7 @@ mod tests {
             memo: None,
             expires_at: None,
         };
-        assert_eq!(claim.bead_ids(), vec!["bd-abc"]);
+        assert_eq!(claim.bone_ids(), vec!["bd-abc"]);
         assert_eq!(claim.workspace_names(), vec!["ws"]);
     }
 
@@ -484,7 +473,7 @@ mod tests {
             memo: None,
             expires_at: None,
         };
-        assert!(claim.bead_ids().is_empty());
+        assert!(claim.bone_ids().is_empty());
         assert!(claim.workspace_names().is_empty());
     }
 }

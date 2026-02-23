@@ -10,7 +10,7 @@ source "${1:?Usage: e12-proto-lead-verify.sh <path-to-.eval-env>}"
 echo "=== E12-Proto-Lead Verification ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo "WORKER_WS=$WORKER_WS"
 echo ""
 
@@ -45,7 +45,7 @@ warn() {
 AGENT_LOG=$(cat "$ARTIFACTS/agent-lead.log" 2>/dev/null || echo "")
 CHANNEL_HISTORY=$(cat "$ARTIFACTS/channel-history.log" 2>/dev/null || echo "")
 FINAL_STATUS_FILE=$(cat "$ARTIFACTS/final-status.txt" 2>/dev/null || echo "")
-BEAD_FINAL_JSON=$(cat "$ARTIFACTS/bead-final.json" 2>/dev/null || echo "[]")
+BONE_FINAL_JSON=$(cat "$ARTIFACTS/bone-final.json" 2>/dev/null || echo "[]")
 CLAIMS_FINAL=$(cat "$ARTIFACTS/claims-final.txt" 2>/dev/null || echo "")
 WS_STATE=$(cat "$ARTIFACTS/workspace-state.json" 2>/dev/null || echo "{}")
 TEST_OUTPUT=$(cat "$ARTIFACTS/test-output.txt" 2>/dev/null || echo "")
@@ -86,7 +86,7 @@ check "protocol merge targeted correct workspace" "$($MERGE_CORRECT_WS && echo 0
 echo ""
 echo "--- Check 3: inbox read ---"
 READ_INBOX=false
-if echo "$AGENT_LOG" | grep -qi "bus inbox\|task-done\|Completed.*$BEAD_ID"; then
+if echo "$AGENT_LOG" | grep -qi "bus inbox\|task-done\|Completed.*$BONE_ID"; then
   READ_INBOX=true
 fi
 check "Lead read inbox (task-done message)" "$($READ_INBOX && echo 0 || echo 1)" 10
@@ -136,14 +136,14 @@ if [[ -f "$DEFAULT_GREET" ]] && ! grep -q 'todo!' "$DEFAULT_GREET" 2>/dev/null; 
 fi
 check "todo!() removed from default/src/greet.rs" "$($CODE_MERGED && echo 0 || echo 1)" 5
 
-# Check 8: br sync --flush-only was run (10 pts)
+# Check 8: bones sync not needed (event-sourced) — check maw push instead (10 pts)
 echo ""
-echo "--- Check 8: beads sync ---"
+echo "--- Check 8: maw push ---"
 BR_SYNCED=false
-if echo "$AGENT_LOG" | grep -qi "br sync.*flush\|sync.*flush"; then
+if echo "$AGENT_LOG" | grep -qi "maw push\|push.*main"; then
   BR_SYNCED=true
 fi
-check "br sync --flush-only was run" "$($BR_SYNCED && echo 0 || echo 1)" 10
+check "maw push was run" "$($BR_SYNCED && echo 0 || echo 1)" 10
 
 # ============================================================
 # Announcements & Cleanup (30 pts)
@@ -178,7 +178,7 @@ if [[ "$WORKER_CLAIMS_REMAIN" -eq 0 ]]; then
   CLAIMS_HANDLED=true
 fi
 # Lead tried to release them (even if it failed due to agent identity)
-if echo "$AGENT_LOG" | grep -qi "claims release.*bead\|claims release.*workspace\|claims release.*$BEAD_ID\|claims release.*$WORKER_WS"; then
+if echo "$AGENT_LOG" | grep -qi "claims release.*bone\|claims release.*workspace\|claims release.*$BONE_ID\|claims release.*$WORKER_WS"; then
   CLAIMS_HANDLED=true
 fi
 check "Worker claims handled (released or attempted)" "$($CLAIMS_HANDLED && echo 0 || echo 1)" 10
@@ -208,10 +208,10 @@ if [[ "$PROTO_ERRORS" -gt 0 ]]; then
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi
 
-# Friction: created new beads (nothing to create here)
-DUP_BEADS=$(echo "$AGENT_LOG" | grep -c "br create.*--title" || true)
-if [[ "$DUP_BEADS" -gt 0 ]]; then
-  echo "FRICTION (-5): Lead created new beads ($DUP_BEADS creates — nothing needed)"
+# Friction: created new bones (nothing to create here)
+DUP_BONES=$(echo "$AGENT_LOG" | grep -c "bn create.*--title" || true)
+if [[ "$DUP_BONES" -gt 0 ]]; then
+  echo "FRICTION (-5): Lead created new bones ($DUP_BONES creates — nothing needed)"
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi
 
@@ -280,7 +280,7 @@ echo "  workspace merged:        $($WS_MERGED && echo "YES" || echo "NO")"
 echo "  merge --destroy called:  $($MERGE_CMD_USED && echo "YES" || echo "NO")"
 echo "  tests pass:              $($TESTS_PASS && echo "YES" || echo "NO")"
 echo "  code in default:         $($CODE_MERGED && echo "YES" || echo "NO")"
-echo "  beads synced:            $($BR_SYNCED && echo "YES" || echo "NO")"
+echo "  maw push:                $($BR_SYNCED && echo "YES" || echo "NO")"
 echo "  merge announced:         $($MERGE_ANNOUNCED && echo "YES" || echo "NO")"
 echo "  claims handled:          $($CLAIMS_HANDLED && echo "YES" || echo "NO")"
 echo "  workspace discovery:     $($CHECKED_WS_LIST && echo "YES" || echo "NO")"
@@ -290,7 +290,7 @@ echo "=== Forensics ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo "WORKER_WS=$WORKER_WS"
 echo ""
 echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history greeter -n 50' for channel messages"

@@ -3,8 +3,8 @@ set -euo pipefail
 
 # E10 Phase 8: Merge + Finish + Release (alpha-dev, Opus)
 # Alpha-dev completes the full finish protocol: merge workspace,
-# mark review merged (from default, after merge), close bead,
-# release claims, sync, version bump, announce.
+# mark review merged (from default, after merge), close bone,
+# release claims, version bump, announce.
 
 source "${1:?Usage: e10-phase8.sh <path-to-.eval-env>}"
 
@@ -38,8 +38,7 @@ echo "BEAD=$BEAD"
 PROMPT="You are dev agent \"${ALPHA_DEV}\" for project \"alpha\".
 Your project directory is: ${ALPHA_DIR}
 This project uses maw v2 (bare repo layout). Source files are in ws/default/.
-Use --agent ${ALPHA_DEV} on ALL bus, crit, and br mutation commands.
-Use --actor ${ALPHA_DEV} on br mutations.
+Use --agent ${ALPHA_DEV} on ALL bus and crit mutation commands.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
 
 Your code review ${REVIEW_ID} has been approved (LGTM). Complete the full finish protocol.
@@ -53,13 +52,12 @@ Your code review ${REVIEW_ID} has been approved (LGTM). Complete the full finish
 
    a. Merge workspace FIRST: maw ws merge ${WS} --destroy
       - The --destroy flag is required — it cleans up after merging
-      - If merge fails due to conflicts, try: maw exec ${WS} -- jj restore --from main .beads/
+      - If merge fails due to conflicts, try: maw exec ${WS} -- jj restore --from main .bones/
         then retry maw ws merge ${WS} --destroy
    b. Mark review merged (from default workspace, AFTER merge):
       maw exec default -- crit reviews mark-merged ${REVIEW_ID}
-   c. Close bead: maw exec default -- br close --actor ${ALPHA_DEV} ${BEAD}
+   c. Close bone: maw exec default -- bn done ${BEAD}
    d. Release all claims: bus claims release --agent ${ALPHA_DEV} --all
-   e. Sync beads: maw exec default -- br sync --flush-only
 
 3. RELEASE:
    - This was a feat: commit, so bump the minor version
@@ -75,7 +73,7 @@ Key rules:
 - After workspace merge, all commands run from default workspace: maw exec default -- ...
 - IMPORTANT: Merge workspace BEFORE mark-merged (otherwise the event is lost with the workspace)
 - Use jj (not git) via maw exec
-- The finish protocol steps must all complete — they prevent workspace leaks and keep the bead ledger synchronized"
+- The finish protocol steps must all complete — they prevent workspace leaks and keep the bone ledger synchronized"
 
 echo "$PROMPT" > "$ARTIFACTS/$PHASE.prompt.md"
 

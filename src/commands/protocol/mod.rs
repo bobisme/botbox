@@ -74,10 +74,10 @@ impl ProtocolArgs {
 
 #[derive(Debug, Subcommand)]
 pub enum ProtocolCommand {
-    /// Check state and output commands to start working on a bead
+    /// Check state and output commands to start working on a bone
     Start {
-        /// Bead ID to start working on
-        bead_id: String,
+        /// Bone ID to start working on
+        bone_id: String,
         /// Omit bus send announcement (for dispatched workers)
         #[arg(long)]
         dispatched: bool,
@@ -87,10 +87,10 @@ pub enum ProtocolCommand {
         #[command(flatten)]
         args: ProtocolArgs,
     },
-    /// Check state and output commands to finish a bead
+    /// Check state and output commands to finish a bone
     Finish {
-        /// Bead ID to finish
-        bead_id: String,
+        /// Bone ID to finish
+        bone_id: String,
         /// Omit maw ws merge step (for dispatched workers whose lead handles merge)
         #[arg(long)]
         no_merge: bool,
@@ -105,8 +105,8 @@ pub enum ProtocolCommand {
     },
     /// Check state and output commands to request review
     Review {
-        /// Bead ID to review
-        bead_id: String,
+        /// Bone ID to review
+        bone_id: String,
         /// Override reviewer list (comma-separated)
         #[arg(long)]
         reviewers: Option<String>,
@@ -136,7 +136,7 @@ pub enum ProtocolCommand {
     Merge {
         /// Workspace name to merge
         workspace: String,
-        /// Merge even if bead is not closed or review is not approved
+        /// Merge even if bone is not closed or review is not approved
         #[arg(long)]
         force: bool,
         /// Execute merge commands directly instead of outputting them
@@ -150,14 +150,24 @@ pub enum ProtocolCommand {
 impl ProtocolCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
-            ProtocolCommand::Start { bead_id, dispatched, execute, args } => {
-                Self::execute_start(bead_id, *dispatched, *execute, args)
-            }
-            ProtocolCommand::Finish { bead_id, no_merge, force, execute, args } => {
+            ProtocolCommand::Start {
+                bone_id,
+                dispatched,
+                execute,
+                args,
+            } => Self::execute_start(bone_id, *dispatched, *execute, args),
+            ProtocolCommand::Finish {
+                bone_id,
+                no_merge,
+                force,
+                execute,
+                args,
+            } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
-                    None => std::env::current_dir()
-                        .context("could not determine current directory")?,
+                    None => {
+                        std::env::current_dir().context("could not determine current directory")?
+                    }
                 };
 
                 let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
@@ -167,13 +177,22 @@ impl ProtocolCommand {
                 let agent = args.resolve_agent(&config);
                 let format = args.resolve_format();
 
-                finish::execute(bead_id, *no_merge, *force, *execute, &agent, &project, &config, format)
+                finish::execute(
+                    bone_id, *no_merge, *force, *execute, &agent, &project, &config, format,
+                )
             }
-            ProtocolCommand::Review { bead_id, reviewers, review_id, execute, args } => {
+            ProtocolCommand::Review {
+                bone_id,
+                reviewers,
+                review_id,
+                execute,
+                args,
+            } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
-                    None => std::env::current_dir()
-                        .context("could not determine current directory")?,
+                    None => {
+                        std::env::current_dir().context("could not determine current directory")?
+                    }
                 };
 
                 let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
@@ -184,7 +203,7 @@ impl ProtocolCommand {
                 let format = args.resolve_format();
 
                 review::execute(
-                    bead_id,
+                    bone_id,
                     reviewers.as_deref(),
                     review_id.as_deref(),
                     *execute,
@@ -197,8 +216,9 @@ impl ProtocolCommand {
             ProtocolCommand::Cleanup { execute, args } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
-                    None => std::env::current_dir()
-                        .context("could not determine current directory")?,
+                    None => {
+                        std::env::current_dir().context("could not determine current directory")?
+                    }
                 };
 
                 let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
@@ -209,11 +229,17 @@ impl ProtocolCommand {
                 let format = args.resolve_format();
                 cleanup::execute(*execute, &agent, &project, format)
             }
-            ProtocolCommand::Merge { workspace, force, execute, args } => {
+            ProtocolCommand::Merge {
+                workspace,
+                force,
+                execute,
+                args,
+            } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
-                    None => std::env::current_dir()
-                        .context("could not determine current directory")?,
+                    None => {
+                        std::env::current_dir().context("could not determine current directory")?
+                    }
                 };
 
                 let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
@@ -223,13 +249,16 @@ impl ProtocolCommand {
                 let agent = args.resolve_agent(&config);
                 let format = args.resolve_format();
 
-                merge::execute(workspace, *force, *execute, &agent, &project, &config, format)
+                merge::execute(
+                    workspace, *force, *execute, &agent, &project, &config, format,
+                )
             }
             ProtocolCommand::Resume { args } => {
                 let project_root = match args.project_root.clone() {
                     Some(p) => p,
-                    None => std::env::current_dir()
-                        .context("could not determine current directory")?,
+                    None => {
+                        std::env::current_dir().context("could not determine current directory")?
+                    }
                 };
 
                 let (config_path, _) = crate::config::find_config_in_project(&project_root)?;
@@ -243,14 +272,19 @@ impl ProtocolCommand {
         }
     }
 
-    /// Execute the `botbox protocol start <bead-id>` command.
+    /// Execute the `botbox protocol start <bone-id>` command.
     ///
-    /// Analyzes bead status and outputs shell commands to start work.
+    /// Analyzes bone status and outputs shell commands to start work.
     /// All status outcomes (ready, blocked, resumable) exit 0 with status in stdout.
     /// Operational failures (config missing, tool unavailable) exit 1 via ProtocolExitError.
     ///
     /// If `execute` is true and status is Ready, runs the steps directly via the executor.
-    fn execute_start(bead_id: &str, dispatched: bool, execute: bool, args: &ProtocolArgs) -> anyhow::Result<()> {
+    fn execute_start(
+        bone_id: &str,
+        dispatched: bool,
+        execute: bool,
+        args: &ProtocolArgs,
+    ) -> anyhow::Result<()> {
         // Determine project root and load config
         let project_root = match args.project_root.clone() {
             Some(p) => p,
@@ -267,7 +301,9 @@ impl ProtocolCommand {
                         project_root.display(),
                         project_root.display()
                     ),
-                ).into_exit_error().into());
+                )
+                .into_exit_error()
+                .into());
             }
         };
 
@@ -278,38 +314,35 @@ impl ProtocolCommand {
         // Collect state from bus and maw
         let ctx = context::ProtocolContext::collect(&project, &agent)?;
 
-        // Check if bead exists and get its status
-        let bead_info = match ctx.bead_status(bead_id) {
-            Ok(bead) => bead,
+        // Check if bone exists and get its status
+        let bone_info = match ctx.bone_status(bone_id) {
+            Ok(bone) => bone,
             Err(_) => {
                 let mut guidance = render::ProtocolGuidance::new("start");
                 guidance.blocked(format!(
-                    "bead {} not found. Check the ID with: maw exec default -- br show {}",
-                    bead_id, bead_id
+                    "bone {} not found. Check the ID with: maw exec default -- bn show {}",
+                    bone_id, bone_id
                 ));
                 return exit_policy::render_guidance(&guidance, format);
             }
         };
 
         let mut guidance = render::ProtocolGuidance::new("start");
-        guidance.bead = Some(render::BeadRef {
-            id: bead_id.to_string(),
-            title: bead_info.title.clone(),
+        guidance.bone = Some(render::BoneRef {
+            id: bone_id.to_string(),
+            title: bone_info.title.clone(),
         });
 
-        // Status check: is bead closed?
-        if bead_info.status == "closed" {
-            guidance.blocked("bead is already closed".to_string());
+        // Status check: is bone done?
+        if bone_info.state == "done" {
+            guidance.blocked("bone is already done".to_string());
             return exit_policy::render_guidance(&guidance, format);
         }
 
         // Check for claim conflicts
-        match ctx.check_bead_claim_conflict(bead_id) {
+        match ctx.check_bone_claim_conflict(bone_id) {
             Ok(Some(other_agent)) => {
-                guidance.blocked(format!(
-                    "bead already claimed by agent '{}'",
-                    other_agent
-                ));
+                guidance.blocked(format!("bone already claimed by agent '{}'", other_agent));
                 guidance.diagnostic(
                     "Check current claims with: bus claims list --format json".to_string(),
                 );
@@ -324,11 +357,11 @@ impl ProtocolCommand {
             }
         }
 
-        // Check if agent already holds a bead claim for this ID
-        let held_workspace = ctx.workspace_for_bead(bead_id);
+        // Check if agent already holds a bone claim for this ID
+        let held_workspace = ctx.workspace_for_bone(bone_id);
 
         if let Some(ws_name) = held_workspace {
-            // RESUMABLE: agent already has this bead and workspace
+            // RESUMABLE: agent already has this bone and workspace
             guidance.status = render::ProtocolStatus::Resumable;
             guidance.workspace = Some(ws_name.to_string());
             guidance.advise(format!(
@@ -344,45 +377,47 @@ impl ProtocolCommand {
         // Build command steps: claim, create workspace, announce
         let mut steps = Vec::new();
 
-        // 1. Stake bead claim
+        // 1. Stake bone claim
         steps.push(shell::claims_stake_cmd(
             &agent,
-            &format!("bead://{}/{}", project, bead_id),
-            bead_id,
+            &format!("bone://{}/{}", project, bone_id),
+            bone_id,
         ));
 
         // 2. Create workspace
         steps.push(shell::ws_create_cmd());
 
         // 3. Capture workspace name (comment for human)
-        steps.push("# Capture workspace name from output above, then stake workspace claim:".to_string());
+        steps.push(
+            "# Capture workspace name from output above, then stake workspace claim:".to_string(),
+        );
 
         // 4. Stake workspace claim (template with $WS placeholder - $WS is runtime-resolved)
         steps.push(shell::claims_stake_cmd(
             &agent,
             &format!("workspace://{}/$WS", project),
-            bead_id,
+            bone_id,
         ));
 
-        // 5. Update bead status
-        steps.push(shell::br_update_cmd(&agent, bead_id, "in_progress", true));
+        // 5. Update bone status
+        steps.push(shell::bn_do_cmd(bone_id));
 
-        // 6. Comment bead with workspace info
-        steps.push(shell::br_comment_cmd(&agent, bead_id, "Started in workspace $WS"));
+        // 6. Comment bone with workspace info
+        steps.push(shell::bn_comment_cmd(bone_id, "Started in workspace $WS"));
 
         // 7. Announce on bus (unless --dispatched)
         if !dispatched {
             steps.push(shell::bus_send_cmd(
                 &agent,
                 &project,
-                &format!("Working on {}: {}", bead_id, &bead_info.title),
+                &format!("Working on {}: {}", bone_id, &bone_info.title),
                 "task-claim",
             ));
         }
 
         guidance.steps(steps);
         guidance.advise(
-            "Stake bead claim first, then create workspace, stake workspace claim, update bead status, and announce on bus.".to_string()
+            "Stake bone claim first, then create workspace, stake workspace claim, update bone status, and announce on bus.".to_string()
         );
 
         // If --execute is set and status is Ready, execute the steps

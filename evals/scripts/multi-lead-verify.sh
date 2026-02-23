@@ -6,7 +6,7 @@ set -euo pipefail
 # - Lead spawning (separate slot instances)
 # - Both missions decomposed and completed
 # - Merge serialization (no divergent commits)
-# - Bead claim deduplication
+# - Bone claim deduplication
 # - Code correctness
 # - Friction efficiency
 
@@ -52,8 +52,8 @@ JJ_LOG=$(cat "$ARTIFACTS/jj-log.txt" 2>/dev/null || echo "")
 CLAIMS_JSON=$(cat "$ARTIFACTS/claims-state.json" 2>/dev/null || echo '{"claims":[]}')
 
 # Extract from final status
-MISSION_A_BEAD=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_A_BEAD=\K[^ ]+' || echo "none")
-MISSION_B_BEAD=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_B_BEAD=\K[^ ]+' || echo "none")
+MISSION_A_BONE=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_A_BONE=\K[^ ]+' || echo "none")
+MISSION_B_BONE=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_B_BONE=\K[^ ]+' || echo "none")
 MISSION_A_STATUS=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_A_STATUS=\K[^ ]+' || echo "unknown")
 MISSION_B_STATUS=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_B_STATUS=\K[^ ]+' || echo "unknown")
 LEAD_SLOT_COUNT=$(echo "$FINAL_STATUS" | grep -oP 'LEAD_SLOT_COUNT=\K\d+' || echo "0")
@@ -67,15 +67,15 @@ cd "$PROJECT_DIR"
 # ============================================================
 echo "=== Critical Fail Check ==="
 echo ""
-if [[ "$MISSION_A_BEAD" == "none" && "$MISSION_B_BEAD" == "none" ]]; then
-  echo "CRITICAL FAIL: No mission beads were created"
+if [[ "$MISSION_A_BONE" == "none" && "$MISSION_B_BONE" == "none" ]]; then
+  echo "CRITICAL FAIL: No mission bones were created"
   echo ""
   echo "SCORE: 0 / 0 (critical fail)"
   echo "RESULT: CRITICAL FAIL — no missions created"
   exit 0
 fi
-echo "Mission A: $MISSION_A_BEAD ($MISSION_A_STATUS)"
-echo "Mission B: $MISSION_B_BEAD ($MISSION_B_STATUS)"
+echo "Mission A: $MISSION_A_BONE ($MISSION_A_STATUS)"
+echo "Mission B: $MISSION_B_BONE ($MISSION_B_STATUS)"
 echo ""
 
 # ============================================================
@@ -134,16 +134,16 @@ echo ""
 # Check 4: Both missions created (5 pts)
 echo "--- Check 4: Both missions created ---"
 BOTH_CREATED=false
-[[ "$MISSION_A_BEAD" != "none" && "$MISSION_B_BEAD" != "none" ]] && BOTH_CREATED=true
-check "Both mission beads created" "$($BOTH_CREATED && echo 0 || echo 1)" 5
+[[ "$MISSION_A_BONE" != "none" && "$MISSION_B_BONE" != "none" ]] && BOTH_CREATED=true
+check "Both mission bones created" "$($BOTH_CREATED && echo 0 || echo 1)" 5
 
 # Check 5: Mission A has children (5 pts)
 echo ""
 echo "--- Check 5: Mission A children ---"
 MA_CHILD_COUNT=0
-if [[ "$MISSION_A_BEAD" != "none" ]]; then
-  MA_CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_A_BEAD" --format json 2>/dev/null || echo '[]')
-  MA_CHILD_COUNT=$(echo "$MA_CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
+if [[ "$MISSION_A_BONE" != "none" ]]; then
+  MA_CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$MISSION_A_BONE" --format json 2>/dev/null || echo '[]')
+  MA_CHILD_COUNT=$(echo "$MA_CHILDREN_JSON" | jq 'if type == "array" then length elif .bones then (.bones | length) else 0 end' 2>/dev/null || echo "0")
 fi
 check "Mission A has children ($MA_CHILD_COUNT)" "$([ "$MA_CHILD_COUNT" -ge 1 ] && echo 0 || echo 1)" 5
 
@@ -151,9 +151,9 @@ check "Mission A has children ($MA_CHILD_COUNT)" "$([ "$MA_CHILD_COUNT" -ge 1 ] 
 echo ""
 echo "--- Check 6: Mission B children ---"
 MB_CHILD_COUNT=0
-if [[ "$MISSION_B_BEAD" != "none" ]]; then
-  MB_CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_B_BEAD" --format json 2>/dev/null || echo '[]')
-  MB_CHILD_COUNT=$(echo "$MB_CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
+if [[ "$MISSION_B_BONE" != "none" ]]; then
+  MB_CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$MISSION_B_BONE" --format json 2>/dev/null || echo '[]')
+  MB_CHILD_COUNT=$(echo "$MB_CHILDREN_JSON" | jq 'if type == "array" then length elif .bones then (.bones | length) else 0 end' 2>/dev/null || echo "0")
 fi
 check "Mission B has children ($MB_CHILD_COUNT)" "$([ "$MB_CHILD_COUNT" -ge 1 ] && echo 0 || echo 1)" 5
 
@@ -162,11 +162,11 @@ echo ""
 echo "--- Check 7: Mission labels on children ---"
 TOTAL_CHILDREN=$((MA_CHILD_COUNT + MB_CHILD_COUNT))
 LABELED=0
-for mbead in "$MISSION_A_BEAD" "$MISSION_B_BEAD"; do
-  [[ "$mbead" == "none" || -z "$mbead" ]] && continue
-  CHILD_IDS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$mbead" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null || echo "")
+for mbone in "$MISSION_A_BONE" "$MISSION_B_BONE"; do
+  [[ "$mbone" == "none" || -z "$mbone" ]] && continue
+  CHILD_IDS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$mbone" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .bones then .bones[].id else empty end' 2>/dev/null || echo "")
   for cid in $CHILD_IDS; do
-    CL=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$cid" --format json 2>/dev/null | jq -r '.[0].labels // [] | .[]' 2>/dev/null || echo "")
+    CL=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$cid" --format json 2>/dev/null | jq -r '.[0].labels // [] | .[]' 2>/dev/null || echo "")
     echo "$CL" | grep -q "mission:" && LABELED=$((LABELED + 1))
   done
 done
@@ -219,44 +219,44 @@ COMMIT_COUNT=${COMMIT_COUNT:-0}
 check "Multiple merges to main ($COMMIT_COUNT commits since origin)" "$([ "$COMMIT_COUNT" -ge 2 ] && echo 0 || echo 1)" 5
 
 # ============================================================
-# Bead Claim Deduplication (10 pts)
+# Bone Claim Deduplication (10 pts)
 # ============================================================
 echo ""
-echo "=== Bead Claim Dedup (10 pts) ==="
+echo "=== Bone Claim Dedup (10 pts) ==="
 echo ""
 
-# Check 11: No bead claimed by two different agents (5 pts)
-echo "--- Check 11: No duplicate bead claims ---"
+# Check 11: No bone claimed by two different agents (5 pts)
+echo "--- Check 11: No duplicate bone claims ---"
 DUPLICATE_CLAIMS=false
-ALL_BEADS_JSON=$(cat "$ARTIFACTS/all-beads-state.json" 2>/dev/null || echo '[]')
-ALL_BEAD_IDS=$(echo "$ALL_BEADS_JSON" | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null || echo "")
+ALL_BEADS_JSON=$(cat "$ARTIFACTS/all-bones-state.json" 2>/dev/null || echo '[]')
+ALL_BEAD_IDS=$(echo "$ALL_BEADS_JSON" | jq -r 'if type == "array" then .[].id elif .bones then .bones[].id else empty end' 2>/dev/null || echo "")
 # Check channel history and lead logs for "already claimed" or "skip" patterns
 CLAIM_CONFLICT_COUNT=0
 for llog in "$ARTIFACTS"/agent-futil-dev_*.log; do
   [[ -f "$llog" ]] || continue
-  CC=$(grep -ci "already claimed\|skip.*claimed\|bead.*claimed.*another\|claim.*fail" "$llog" 2>/dev/null) || CC=0
+  CC=$(grep -ci "already claimed\|skip.*claimed\|bone.*claimed.*another\|claim.*fail" "$llog" 2>/dev/null) || CC=0
   CLAIM_CONFLICT_COUNT=$((CLAIM_CONFLICT_COUNT + CC))
 done
 # No duplicate claims = good. Some claim conflicts resolved = also good (means the claim checking worked).
-check "No duplicate bead ownership (conflicts detected and resolved: $CLAIM_CONFLICT_COUNT)" 0 5
+check "No duplicate bone ownership (conflicts detected and resolved: $CLAIM_CONFLICT_COUNT)" 0 5
 
-# Check 12: Workers from different leads don't share beads (5 pts)
+# Check 12: Workers from different leads don't share bones (5 pts)
 echo ""
 echo "--- Check 12: Work division ---"
-# Check that missions A and B work on different beads
+# Check that missions A and B work on different bones
 OVERLAP=false
-if [[ "$MISSION_A_BEAD" != "none" && "$MISSION_B_BEAD" != "none" ]]; then
+if [[ "$MISSION_A_BONE" != "none" && "$MISSION_B_BONE" != "none" ]]; then
   # Get child IDs for each mission
-  A_CHILDREN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_A_BEAD" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null | sort)
-  B_CHILDREN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_B_BEAD" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null | sort)
+  A_CHILDREN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$MISSION_A_BONE" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .bones then .bones[].id else empty end' 2>/dev/null | sort)
+  B_CHILDREN=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$MISSION_B_BONE" --format json 2>/dev/null | jq -r 'if type == "array" then .[].id elif .bones then .bones[].id else empty end' 2>/dev/null | sort)
   COMMON=$(comm -12 <(echo "$A_CHILDREN") <(echo "$B_CHILDREN") | grep -c "." || true)
   COMMON=${COMMON:-0}
   if [[ "$COMMON" -gt 0 ]]; then
     OVERLAP=true
-    warn "Missions share $COMMON child beads"
+    warn "Missions share $COMMON child bones"
   fi
 fi
-check "Missions work on separate beads (no overlap)" "$($OVERLAP && echo 1 || echo 0)" 5
+check "Missions work on separate bones (no overlap)" "$($OVERLAP && echo 1 || echo 0)" 5
 
 # ============================================================
 # Both Missions Complete (20 pts)
@@ -267,19 +267,19 @@ echo ""
 
 # Check 13: Mission A completed (5 pts)
 echo "--- Check 13: Mission A completed ---"
-check "Mission A closed ($MISSION_A_STATUS)" "$([ "$MISSION_A_STATUS" == "closed" ] && echo 0 || echo 1)" 5
+check "Mission A closed ($MISSION_A_STATUS)" "$([ "$MISSION_A_STATUS" == "done" ] && echo 0 || echo 1)" 5
 
 # Check 14: Mission B completed (5 pts)
 echo ""
 echo "--- Check 14: Mission B completed ---"
-check "Mission B closed ($MISSION_B_STATUS)" "$([ "$MISSION_B_STATUS" == "closed" ] && echo 0 || echo 1)" 5
+check "Mission B closed ($MISSION_B_STATUS)" "$([ "$MISSION_B_STATUS" == "done" ] && echo 0 || echo 1)" 5
 
 # Check 15: Mission A children all closed (5 pts)
 echo ""
 echo "--- Check 15: Mission A children closed ---"
 MA_CLOSED=0
-if [[ "$MISSION_A_BEAD" != "none" && "$MA_CHILD_COUNT" -gt 0 ]]; then
-  MA_CLOSED=$(echo "$MA_CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
+if [[ "$MISSION_A_BONE" != "none" && "$MA_CHILD_COUNT" -gt 0 ]]; then
+  MA_CLOSED=$(echo "$MA_CHILDREN_JSON" | jq '[if type == "array" then .[] elif .bones then .bones[] else empty end | select(.state == "done")] | length' 2>/dev/null || echo "0")
 fi
 check "Mission A children all closed ($MA_CLOSED/$MA_CHILD_COUNT)" "$([ "$MA_CLOSED" -ge "$MA_CHILD_COUNT" ] && [ "$MA_CHILD_COUNT" -gt 0 ] && echo 0 || echo 1)" 5
 
@@ -287,8 +287,8 @@ check "Mission A children all closed ($MA_CLOSED/$MA_CHILD_COUNT)" "$([ "$MA_CLO
 echo ""
 echo "--- Check 16: Mission B children closed ---"
 MB_CLOSED=0
-if [[ "$MISSION_B_BEAD" != "none" && "$MB_CHILD_COUNT" -gt 0 ]]; then
-  MB_CLOSED=$(echo "$MB_CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
+if [[ "$MISSION_B_BONE" != "none" && "$MB_CHILD_COUNT" -gt 0 ]]; then
+  MB_CLOSED=$(echo "$MB_CHILDREN_JSON" | jq '[if type == "array" then .[] elif .bones then .bones[] else empty end | select(.state == "done")] | length' 2>/dev/null || echo "0")
 fi
 check "Mission B children all closed ($MB_CLOSED/$MB_CHILD_COUNT)" "$([ "$MB_CLOSED" -ge "$MB_CHILD_COUNT" ] && [ "$MB_CHILD_COUNT" -gt 0 ] && echo 0 || echo 1)" 5
 
@@ -447,8 +447,8 @@ echo "=== Forensics ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "MISSION_A=$MISSION_A_BEAD ($MISSION_A_STATUS)"
-echo "MISSION_B=$MISSION_B_BEAD ($MISSION_B_STATUS)"
+echo "MISSION_A=$MISSION_A_BONE ($MISSION_A_STATUS)"
+echo "MISSION_B=$MISSION_B_BONE ($MISSION_B_STATUS)"
 echo ""
 echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history futil -n 50' for channel messages"
 echo "Run 'ls $ARTIFACTS/agent-*.log' for agent logs"

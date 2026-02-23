@@ -20,7 +20,7 @@ set -euo pipefail
 # Does NOT launch real agents or send bus messages for agent spawning.
 
 # --- Preflight ---
-REQUIRED_CMDS=(bus br bv maw crit botty jj jq)
+REQUIRED_CMDS=(bus bn maw crit botty jj jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -61,7 +61,7 @@ bus init
 {
   echo "timestamp=$(date -Iseconds)"
   echo "botbox_rust=$("$RUST_BINARY" --version 2>/dev/null || echo unknown)"
-  for cmd in bus br bv maw crit botty jj; do
+  for cmd in bus bn maw crit botty jj; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e12-rust-e2e"

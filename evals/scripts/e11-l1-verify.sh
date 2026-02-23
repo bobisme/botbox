@@ -71,27 +71,27 @@ fi
 check "Hook fired and agent spawned" "$($HOOK_FIRED && echo 0 || echo 1)" 5
 
 # ============================================================
-# Check 2: Bead claimed / in_progress at some point (5 pts)
+# Check 2: Bone claimed / doing at some point (5 pts)
 # ============================================================
 echo ""
-echo "--- Check 2: Bead claimed (in_progress) ---"
+echo "--- Check 2: Bone claimed (doing) ---"
 
 BEAD_CLAIMED=false
-# Check current bead state
+# Check current bone state
 cd "$PROJECT_DIR"
-BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json 2>/dev/null || echo "[]")
-BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+BEAD_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json 2>/dev/null || echo "[]")
+BEAD_STATUS=$(echo "$BEAD_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
 
-# If bead is in_progress or closed, it was claimed at some point
-if [[ "$BEAD_STATUS" == "in_progress" || "$BEAD_STATUS" == "closed" ]]; then
+# If bone is doing or done, it was claimed at some point
+if [[ "$BEAD_STATUS" == "doing" || "$BEAD_STATUS" == "done" ]]; then
   BEAD_CLAIMED=true
 fi
 # Also check channel history for claim messages
-if echo "$CHANNEL_HISTORY" | grep -qi "task-claim\|claim.*bead\|in.progress\|started.*work\|working.*on"; then
+if echo "$CHANNEL_HISTORY" | grep -qi "task-claim\|claim.*bone\|doing\|started.*work\|working.*on"; then
   BEAD_CLAIMED=true
 fi
 
-check "Bead claimed (in_progress at some point)" "$($BEAD_CLAIMED && echo 0 || echo 1)" 5
+check "Bone claimed (doing at some point)" "$($BEAD_CLAIMED && echo 0 || echo 1)" 5
 
 # ============================================================
 # Check 3: Workspace created (5 pts)
@@ -117,8 +117,8 @@ if echo "$AGENT_LOG" | grep -qi "maw ws create\|workspace.*creat"; then
   WS_CREATED=true
 fi
 # If workspace was created and merged, it wouldn't show in current list,
-# but we'd see evidence in the bead being closed + code on main
-if [[ "$BEAD_STATUS" == "closed" ]]; then
+# but we'd see evidence in the bone being done + code on main
+if [[ "$BEAD_STATUS" == "done" ]]; then
   WS_CREATED=true
 fi
 
@@ -160,15 +160,15 @@ CURRENT_WS_COUNT=$(maw ws list --format json 2>/dev/null | jq '[.workspaces[] | 
 check "Workspace merged (no non-default workspaces remain)" "$([ "$CURRENT_WS_COUNT" -eq 0 ] && echo 0 || echo 1)" 5
 
 # ============================================================
-# Check 6: Bead closed (5 pts)
+# Check 6: Bone done (5 pts)
 # ============================================================
 echo ""
-echo "--- Check 6: Bead closed ---"
+echo "--- Check 6: Bone done ---"
 
-# Re-read current bead state
+# Re-read current bone state
 cd "$PROJECT_DIR"
-CURRENT_BEAD_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD" --format json 2>/dev/null | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-check "Bead closed" "$([ "$CURRENT_BEAD_STATUS" = "closed" ] && echo 0 || echo 1)" 5
+CURRENT_BEAD_STATUS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BEAD" --format json 2>/dev/null | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+check "Bone done" "$([ "$CURRENT_BEAD_STATUS" = "done" ] && echo 0 || echo 1)" 5
 
 # ============================================================
 # Check 7: Claims released (5 pts)
@@ -177,9 +177,9 @@ echo ""
 echo "--- Check 7: Claims released ---"
 
 CLAIMS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus claims list --agent "$ECHO_DEV" 2>/dev/null || true)
-# Only count bead:// and workspace:// claims — agent:// claims are managed by hooks
-WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bead://|workspace://" || true)
-check "Claims released (no bead:// or workspace:// claims)" "$([ "$WORK_CLAIM_COUNT" -eq 0 ] && echo 0 || echo 1)" 5
+# Only count bone:// and workspace:// claims — agent:// claims are managed by hooks
+WORK_CLAIM_COUNT=$(echo "$CLAIMS" | grep -cE "bone://|workspace://" || true)
+check "Claims released (no bone:// or workspace:// claims)" "$([ "$WORK_CLAIM_COUNT" -eq 0 ] && echo 0 || echo 1)" 5
 
 # ============================================================
 # Check 8: Agent exited cleanly (5 pts)

@@ -140,10 +140,7 @@ pub fn render_and_exit(
 /// Convenience wrapper around `render_and_exit` for commands that return
 /// `anyhow::Result<()>`. All ProtocolStatus variants produce exit 0.
 /// Operational errors should use `ProtocolExitError` instead.
-pub fn render_guidance(
-    guidance: &ProtocolGuidance,
-    format: OutputFormat,
-) -> anyhow::Result<()> {
+pub fn render_guidance(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::Result<()> {
     let output = super::render::render(guidance, format)
         .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
     println!("{}", output);
@@ -215,22 +212,31 @@ mod tests {
     #[test]
     fn blocked_status_still_exits_zero() {
         let mut guidance = ProtocolGuidance::new("start");
-        guidance.blocked("bead claimed by another agent".to_string());
-        assert_eq!(exit_code_for_status(guidance.status), ProtocolExitCode::Success);
+        guidance.blocked("bone claimed by another agent".to_string());
+        assert_eq!(
+            exit_code_for_status(guidance.status),
+            ProtocolExitCode::Success
+        );
     }
 
     #[test]
     fn needs_review_status_still_exits_zero() {
         let mut guidance = ProtocolGuidance::new("review");
         guidance.status = ProtocolStatus::NeedsReview;
-        assert_eq!(exit_code_for_status(guidance.status), ProtocolExitCode::Success);
+        assert_eq!(
+            exit_code_for_status(guidance.status),
+            ProtocolExitCode::Success
+        );
     }
 
     #[test]
     fn has_resources_status_still_exits_zero() {
         let mut guidance = ProtocolGuidance::new("cleanup");
         guidance.status = ProtocolStatus::HasResources;
-        assert_eq!(exit_code_for_status(guidance.status), ProtocolExitCode::Success);
+        assert_eq!(
+            exit_code_for_status(guidance.status),
+            ProtocolExitCode::Success
+        );
     }
 
     #[test]

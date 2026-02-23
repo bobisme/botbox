@@ -67,8 +67,8 @@ for wlog in "$ARTIFACTS"/agent-${FLOWLOG_DEV}_*.log; do
   ALL_WORKER_LOGS+=$'\n'
 done
 
-# Extract mission bead from final status
-MISSION_BEAD=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_BEAD=\K[^ ]+' || echo "none")
+# Extract mission bone from final status
+MISSION_BONE=$(echo "$FINAL_STATUS" | grep -oP 'MISSION_BONE=\K[^ ]+' || echo "none")
 CHILD_COUNT_FINAL=$(echo "$FINAL_STATUS" | grep -oP 'CHILD_COUNT=\K\d+' || echo "0")
 CHILDREN_CLOSED_FINAL=$(echo "$FINAL_STATUS" | grep -oP 'CHILDREN_CLOSED=\K\d+' || echo "0")
 
@@ -79,14 +79,14 @@ cd "$PROJECT_DIR"
 # ============================================================
 echo "=== Critical Fail Check ==="
 echo ""
-if [[ "$MISSION_BEAD" == "none" || -z "$MISSION_BEAD" ]]; then
-  echo "CRITICAL FAIL: Mission bead was never created"
+if [[ "$MISSION_BONE" == "none" || -z "$MISSION_BONE" ]]; then
+  echo "CRITICAL FAIL: Mission bone was never created"
   echo ""
   echo "SCORE: 0 / 0 (critical fail)"
   echo "RESULT: CRITICAL FAIL — mission never created"
   exit 0
 fi
-echo "Mission bead: $MISSION_BEAD"
+echo "Mission bone: $MISSION_BONE"
 echo ""
 
 # ============================================================
@@ -96,13 +96,13 @@ echo "=== Mission Recognition (15 pts) ==="
 echo ""
 
 # Check 1: Bead with mission label (5 pts)
-echo "--- Check 1: Mission bead with label ---"
-MISSION_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$MISSION_BEAD" --format json 2>/dev/null || echo "[]")
+echo "--- Check 1: Mission bone with label ---"
+MISSION_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$MISSION_BONE" --format json 2>/dev/null || echo "[]")
 HAS_MISSION_LABEL=false
 if echo "$MISSION_JSON" | jq -r '.[0].labels // [] | .[]' 2>/dev/null | grep -q "mission"; then
   HAS_MISSION_LABEL=true
 fi
-check "Mission bead has 'mission' label" "$($HAS_MISSION_LABEL && echo 0 || echo 1)" 5
+check "Mission bone has 'mission' label" "$($HAS_MISSION_LABEL && echo 0 || echo 1)" 5
 
 # Check 2: Structured description (5 pts)
 echo ""
@@ -112,16 +112,16 @@ HAS_OUTCOME=false
 if echo "$MISSION_DESC" | grep -qi "outcome\|success.*metric\|constraints\|stop.*crit"; then
   HAS_OUTCOME=true
 fi
-check "Mission bead has structured description (Outcome/Success/Constraints)" "$($HAS_OUTCOME && echo 0 || echo 1)" 5
+check "Mission bone has structured description (Outcome/Success/Constraints)" "$($HAS_OUTCOME && echo 0 || echo 1)" 5
 
 # Check 3: Dev-loop identified mission context (5 pts)
 echo ""
 echo "--- Check 3: Dev-loop identified mission ---"
 DEV_MISSION_CTX=false
-if echo "$DEV_LOG" | grep -qi "BOTBOX_MISSION\|mission.*${MISSION_BEAD}\|Level 4\|mission.*decompos"; then
+if echo "$DEV_LOG" | grep -qi "BOTBOX_MISSION\|mission.*${MISSION_BONE}\|Level 4\|mission.*decompos"; then
   DEV_MISSION_CTX=true
 fi
-if echo "$CHANNEL_HISTORY" | grep -qi "mission.*${MISSION_BEAD}\|mission.*creat"; then
+if echo "$CHANNEL_HISTORY" | grep -qi "mission.*${MISSION_BONE}\|mission.*creat"; then
   DEV_MISSION_CTX=true
 fi
 check "Dev-loop identified mission context" "$($DEV_MISSION_CTX && echo 0 || echo 1)" 5
@@ -134,21 +134,21 @@ echo "=== Decomposition (25 pts) ==="
 echo ""
 
 # Get children
-CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br list --all -l "mission:$MISSION_BEAD" --format json 2>/dev/null || echo '[]')
+CHILDREN_JSON=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn list --all -l "mission:$MISSION_BONE" --format json 2>/dev/null || echo '[]')
 # Normalize JSON shape
-ACTUAL_CHILD_COUNT=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .beads then (.beads | length) else 0 end' 2>/dev/null || echo "0")
+ACTUAL_CHILD_COUNT=$(echo "$CHILDREN_JSON" | jq 'if type == "array" then length elif .bones then (.bones | length) else 0 end' 2>/dev/null || echo "0")
 
 # Check 4: 3+ children (5 pts)
-echo "--- Check 4: Child bead count ---"
-check "3+ child beads created (actual=$ACTUAL_CHILD_COUNT)" "$([ "$ACTUAL_CHILD_COUNT" -ge 3 ] && echo 0 || echo 1)" 5
+echo "--- Check 4: Child bone count ---"
+check "3+ child bones created (actual=$ACTUAL_CHILD_COUNT)" "$([ "$ACTUAL_CHILD_COUNT" -ge 3 ] && echo 0 || echo 1)" 5
 
 # Check 5: mission:<id> labels (5 pts)
 echo ""
 echo "--- Check 5: Mission labels on children ---"
 LABELED_COUNT=0
-CHILD_IDS=$(echo "$CHILDREN_JSON" | jq -r 'if type == "array" then .[].id elif .beads then .beads[].id else empty end' 2>/dev/null || echo "")
+CHILD_IDS=$(echo "$CHILDREN_JSON" | jq -r 'if type == "array" then .[].id elif .bones then .bones[].id else empty end' 2>/dev/null || echo "")
 for cid in $CHILD_IDS; do
-  CHILD_LABELS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$cid" --format json 2>/dev/null | jq -r '.[0].labels // [] | .[]' 2>/dev/null || echo "")
+  CHILD_LABELS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$cid" --format json 2>/dev/null | jq -r '.[0].labels // [] | .[]' 2>/dev/null || echo "")
   if echo "$CHILD_LABELS" | grep -q "mission:"; then
     LABELED_COUNT=$((LABELED_COUNT + 1))
   fi
@@ -159,11 +159,11 @@ check "Children have mission:<id> labels ($LABELED_COUNT/$ACTUAL_CHILD_COUNT)" "
 echo ""
 echo "--- Check 6: Parent dependencies ---"
 HAS_PARENT_DEP=false
-if echo "$DEV_LOG" | grep -qi "br dep add\|dep.*add"; then
+if echo "$DEV_LOG" | grep -qi "bn triage dep add\|dep.*add"; then
   HAS_PARENT_DEP=true
 fi
 for cid in $CHILD_IDS; do
-  CHILD_DEPS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$cid" --format json 2>/dev/null | jq -r '.[0].dependencies // [] | length' 2>/dev/null || echo "0")
+  CHILD_DEPS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$cid" --format json 2>/dev/null | jq -r '.[0].dependencies // [] | length' 2>/dev/null || echo "0")
   if [[ "$CHILD_DEPS" -gt 0 ]]; then
     HAS_PARENT_DEP=true
     break
@@ -175,7 +175,7 @@ check "Dependencies wired between children or to parent" "$($HAS_PARENT_DEP && e
 echo ""
 echo "--- Check 7: Inter-child dependency ---"
 HAS_INTER_DEP=false
-DEP_ADD_COUNT=$(echo "$DEV_LOG" | grep -ci "br dep add" 2>/dev/null) || DEP_ADD_COUNT=0
+DEP_ADD_COUNT=$(echo "$DEV_LOG" | grep -ci "bn triage dep add" 2>/dev/null) || DEP_ADD_COUNT=0
 if [[ "$DEP_ADD_COUNT" -ge 1 ]]; then
   HAS_INTER_DEP=true
 fi
@@ -188,14 +188,14 @@ CLEAR_TITLES=false
 if [[ "$ACTUAL_CHILD_COUNT" -gt 0 ]]; then
   CLEAR_TITLES=true
   for cid in $CHILD_IDS; do
-    CHILD_TITLE=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$cid" --format json 2>/dev/null | jq -r '.[0].title // ""' 2>/dev/null || echo "")
+    CHILD_TITLE=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$cid" --format json 2>/dev/null | jq -r '.[0].title // ""' 2>/dev/null || echo "")
     if [[ ${#CHILD_TITLE} -lt 5 ]]; then
       CLEAR_TITLES=false
       warn "Child $cid has unclear title: '$CHILD_TITLE'"
     fi
   done
 fi
-check "Child beads have clear titles" "$($CLEAR_TITLES && echo 0 || echo 1)" 5
+check "Child bones have clear titles" "$($CLEAR_TITLES && echo 0 || echo 1)" 5
 
 # ============================================================
 # Worker Dispatch (25 pts)
@@ -248,11 +248,11 @@ HAS_MISSION_ENV=false
 if echo "$DEV_LOG" | grep -qi "BOTBOX_MISSION\|BOTBOX_SIBLINGS\|BOTBOX_MISSION_OUTCOME"; then
   HAS_MISSION_ENV=true
 fi
-if echo "$CHANNEL_HISTORY" | grep -qi "mission.*context\|mission.*bd-"; then
+if echo "$CHANNEL_HISTORY" | grep -qi "mission.*context\|mission.*bn-"; then
   HAS_MISSION_ENV=true
 fi
 for cid in $CHILD_IDS; do
-  CHILD_COMMENTS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br comments "$cid" 2>/dev/null || echo "")
+  CHILD_COMMENTS=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn bone comment list "$cid" 2>/dev/null || echo "")
   if echo "$CHILD_COMMENTS" | grep -qi "mission.*context\|BOTBOX_MISSION"; then
     HAS_MISSION_ENV=true
     break
@@ -327,7 +327,7 @@ echo "--- Check 17: All children closed ---"
 ALL_CHILDREN_CLOSED=false
 CLOSED_COUNT=0
 if [[ "$ACTUAL_CHILD_COUNT" -gt 0 ]]; then
-  CLOSED_COUNT=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .beads then .beads[] else empty end | select(.status == "closed")] | length' 2>/dev/null || echo "0")
+  CLOSED_COUNT=$(echo "$CHILDREN_JSON" | jq '[if type == "array" then .[] elif .bones then .bones[] else empty end | select(.state == "done")] | length' 2>/dev/null || echo "0")
   if [[ "$CLOSED_COUNT" -ge "$ACTUAL_CHILD_COUNT" ]]; then
     ALL_CHILDREN_CLOSED=true
   fi
@@ -335,13 +335,13 @@ if [[ "$ACTUAL_CHILD_COUNT" -gt 0 ]]; then
 fi
 check "All children closed ($CLOSED_COUNT/$ACTUAL_CHILD_COUNT)" "$($ALL_CHILDREN_CLOSED && echo 0 || echo 1)" 5
 
-# Check 18: Mission bead closed (5 pts)
+# Check 18: Mission bone closed (5 pts)
 echo ""
-echo "--- Check 18: Mission bead closed ---"
-MISSION_STATUS=$(echo "$MISSION_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
+echo "--- Check 18: Mission bone closed ---"
+MISSION_STATUS=$(echo "$MISSION_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
 MISSION_CLOSED=false
-[[ "$MISSION_STATUS" == "closed" ]] && MISSION_CLOSED=true
-check "Mission bead closed (status=$MISSION_STATUS)" "$($MISSION_CLOSED && echo 0 || echo 1)" 5
+[[ "$MISSION_STATUS" == "done" ]] && MISSION_CLOSED=true
+check "Mission bone closed (status=$MISSION_STATUS)" "$($MISSION_CLOSED && echo 0 || echo 1)" 5
 
 # Check 19: Synthesis comment (5 pts)
 echo ""
@@ -354,7 +354,7 @@ fi
 if echo "$CHANNEL_HISTORY" | grep -qi "mission.*complete\|all.*children.*done"; then
   HAS_SYNTHESIS=true
 fi
-check "Synthesis comment on mission bead" "$($HAS_SYNTHESIS && echo 0 || echo 1)" 5
+check "Synthesis comment on mission bone" "$($HAS_SYNTHESIS && echo 0 || echo 1)" 5
 
 # ============================================================
 # Code Correctness (20 pts)
@@ -809,7 +809,7 @@ echo "=== Forensics ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "MISSION_BEAD=$MISSION_BEAD"
+echo "MISSION_BONE=$MISSION_BONE"
 echo ""
 echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history flowlog -n 50' for channel messages"
 echo "Run 'cat $ARTIFACTS/agent-${FLOWLOG_DEV}.log' for dev output"

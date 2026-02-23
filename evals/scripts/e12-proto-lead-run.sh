@@ -39,7 +39,7 @@ echo ""
 # --- Verify pre-conditions ---
 echo "--- Verifying pre-conditions ---"
 cd "$PROJECT_DIR"
-echo "  Bead $BEAD_ID: closed"
+echo "  Bone $BONE_ID: done"
 echo "  Workspace $WORKER_WS: exists"
 NON_DEFAULT_BEFORE=$(maw ws list --format json 2>/dev/null | jq '[.workspaces[] | select(.is_default == false)] | length' 2>/dev/null || echo "?")
 echo "  Non-default workspaces: $NON_DEFAULT_BEFORE"
@@ -157,12 +157,12 @@ BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus history greeter -n 200 > "$ARTIFACTS/chan
   echo "(no history)" > "$ARTIFACTS/channel-history.log"
 echo "  channel: $ARTIFACTS/channel-history.log"
 
-# Bead state
+# Bone state
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" --format json > "$ARTIFACTS/bead-final.json" 2>/dev/null || \
-  echo "[]" > "$ARTIFACTS/bead-final.json"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- br show "$BEAD_ID" > "$ARTIFACTS/bead-final.txt" 2>/dev/null || true
-echo "  bead: $ARTIFACTS/bead-final.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" --format json > "$ARTIFACTS/bone-final.json" 2>/dev/null || \
+  echo "[]" > "$ARTIFACTS/bone-final.json"
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" maw exec default -- bn show "$BONE_ID" > "$ARTIFACTS/bone-final.txt" 2>/dev/null || true
+echo "  bone: $ARTIFACTS/bone-final.json"
 
 # Workspace state
 maw ws list --format json > "$ARTIFACTS/workspace-state.json" 2>/dev/null || \
@@ -181,7 +181,7 @@ echo "  tests: $ARTIFACTS/test-output.txt"
 # Final status
 cat > "$ARTIFACTS/final-status.txt" << EOF
 FINAL_STATUS=$FINAL_STATUS
-BEAD_ID=$BEAD_ID
+BONE_ID=$BONE_ID
 WORKER_WS=$WORKER_WS
 LEAD_NAME=$LEAD_NAME
 LEAD_AGENT=$LEAD_AGENT
@@ -211,7 +211,7 @@ echo "=== E12-Proto-Lead Complete ($(date +%H:%M:%S)) ==="
 echo "============================================"
 echo ""
 echo "Final status: $FINAL_STATUS"
-echo "Bead: $BEAD_ID"
+echo "Bone: $BONE_ID"
 echo "Workspace: $WORKER_WS (merged: $([ -z "$WS_EXISTS" ] && echo "YES" || echo "NO"))"
 echo "Elapsed: $(( $(date +%s) - START_TIME ))s"
 echo ""

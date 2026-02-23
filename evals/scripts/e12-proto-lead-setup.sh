@@ -3,11 +3,11 @@ set -euo pipefail
 
 # E12-Proto-Lead Eval — Setup
 # Creates a greeter project with a PRE-COMPLETED worker workspace.
-# The bead is closed, code is implemented, tests pass, workspace is left for the lead.
+# The bone is done, code is implemented, tests pass, workspace is left for the lead.
 # Tests whether the dev-loop lead uses `botbox protocol merge` to merge it.
 
 # --- Preflight ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -29,7 +29,7 @@ bus init
 # --- Tool versions ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e12-proto-lead"
@@ -119,12 +119,12 @@ jj new
 # Initialize with botbox
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name greeter --type cli --tools beads,maw,crit,botbus,botty \
+  botbox init --name greeter --type cli --tools bones,maw,crit,botbus,botty \
     --language rust --no-seed-work --no-interactive
 
-# Safety net: ensure beads is initialized
+# Safety net: ensure bones is initialized
 cd "$PROJECT_DIR"
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br init 2>/dev/null || true
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- bn init 2>/dev/null || true
 
 # ============================================================
 # Patch .botbox.json: disable review, configure dev-loop
@@ -189,26 +189,24 @@ _fix_hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1
 
 # ============================================================
-# Create bead (as if a human filed it)
+# Create bone (as if a human filed it)
 # ============================================================
 cd "$PROJECT_DIR"
-BEAD_OUTPUT=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create \
-  --actor "$LEAD_AGENT" --owner "$WORKER_AGENT" \
-  --title="Implement greet::hello function" \
-  --description="Replace the todo!() in src/greet.rs with a working implementation. The function should return \"hello, {name}\" for any given name. Two tests are already provided — make them pass." \
-  --type=task --priority=2 2>&1)
+BONE_OUTPUT=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT="$LEAD_AGENT" maw exec default -- bn create \
+  --title "Implement greet::hello function" \
+  --description "Replace the todo!() in src/greet.rs with a working implementation. The function should return \"hello, {name}\" for any given name. Two tests are already provided — make them pass." \
+  --kind task 2>&1)
 
-BEAD_ID=$(echo "$BEAD_OUTPUT" | grep -oP 'bd-[a-z0-9]+' | head -1)
-if [[ -z "$BEAD_ID" ]]; then
-  echo "FATAL: Could not create bead"
-  echo "$BEAD_OUTPUT"
+BONE_ID=$(echo "$BONE_OUTPUT" | grep -oP 'bn-[a-z0-9]+' | head -1)
+if [[ -z "$BONE_ID" ]]; then
+  echo "FATAL: Could not create bone"
+  echo "$BONE_OUTPUT"
   exit 1
 fi
-echo "Created bead: $BEAD_ID"
+echo "Created bone: $BONE_ID"
 
-# Mark in_progress (worker started it)
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br update \
-  --actor "$WORKER_AGENT" "$BEAD_ID" --status=in_progress
+# Mark doing (worker started it)
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT="$WORKER_AGENT" maw exec default -- bn do "$BONE_ID"
 
 # ============================================================
 # Create worker workspace and implement the code
@@ -248,30 +246,28 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec "$WORKER_WS" -- cargo test 2>&1 | t
 maw exec "$WORKER_WS" -- jj describe -m "feat: implement greet::hello function"
 
 # ============================================================
-# Close the bead (worker finished)
+# Complete the bone (worker finished)
 # ============================================================
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br comments add \
-  --actor "$WORKER_AGENT" --author "$WORKER_AGENT" "$BEAD_ID" \
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT="$WORKER_AGENT" maw exec default -- bn bone comment add "$BONE_ID" \
   "Implemented greet::hello in workspace $WORKER_WS. Tests passing (2/2). Ready for merge."
 
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br close \
-  --actor "$WORKER_AGENT" "$BEAD_ID" \
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT="$WORKER_AGENT" maw exec default -- bn done "$BONE_ID" \
   --reason "Completed in workspace $WORKER_WS"
 
 # ============================================================
 # Stake claims (as the worker — lead will see these)
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus claims stake \
-  --agent "$WORKER_AGENT" "bead://greeter/$BEAD_ID" -m "$BEAD_ID"
+  --agent "$WORKER_AGENT" "bone://greeter/$BONE_ID" -m "$BONE_ID"
 
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus claims stake \
-  --agent "$WORKER_AGENT" "workspace://greeter/$WORKER_WS" -m "$BEAD_ID"
+  --agent "$WORKER_AGENT" "workspace://greeter/$WORKER_WS" -m "$BONE_ID"
 
 # ============================================================
 # Send task-done message (worker announcing completion)
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus send --agent "$WORKER_AGENT" greeter \
-  "Completed $BEAD_ID: Implement greet::hello function in workspace $WORKER_WS. Tests pass. Ready for merge." \
+  "Completed $BONE_ID: Implement greet::hello function in workspace $WORKER_WS. Tests pass. Ready for merge." \
   -L task-done
 
 # Mark read for the worker so it doesn't re-appear
@@ -290,8 +286,8 @@ BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus inbox --agent "$LEAD_AGENT" --channels p
 # ============================================================
 echo ""
 echo "--- Pre-condition verification ---"
-echo "Bead status:"
-BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br show "$BEAD_ID" 2>&1 | head -3
+echo "Bone state:"
+BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- bn show "$BONE_ID" 2>&1 | head -3
 echo ""
 echo "Workspaces:"
 maw ws list 2>&1
@@ -311,7 +307,7 @@ export BOTBUS_DATA_DIR="$EVAL_DIR/.botbus"
 export PROJECT_DIR="$PROJECT_DIR"
 export LEAD_AGENT="$LEAD_AGENT"
 export WORKER_AGENT="$WORKER_AGENT"
-export BEAD_ID="$BEAD_ID"
+export BONE_ID="$BONE_ID"
 export WORKER_WS="$WORKER_WS"
 EOF
 
@@ -321,12 +317,12 @@ echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
 echo "LEAD_AGENT=$LEAD_AGENT"
 echo "WORKER_AGENT=$WORKER_AGENT"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo "WORKER_WS=$WORKER_WS"
 echo ""
-echo "Scenario: Worker completed $BEAD_ID in workspace $WORKER_WS."
+echo "Scenario: Worker completed $BONE_ID in workspace $WORKER_WS."
 echo "  - Code implemented, tests passing"
-echo "  - Bead closed, claims staked, task-done announced"
+echo "  - Bone done, claims staked, task-done announced"
 echo "  - Workspace left for lead to merge"
 echo ""
 echo "Source .eval-env before running:"

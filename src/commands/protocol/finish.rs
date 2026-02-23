@@ -1,12 +1,12 @@
-//! Protocol finish command: check state and output commands to finish a bead.
+//! Protocol finish command: check state and output commands to finish a bone.
 //!
-//! Validates bead claim ownership, resolves workspace from claims, checks review
+//! Validates bone claim ownership, resolves workspace from claims, checks review
 //! gate status, and outputs the appropriate shell commands depending on whether
 //! the review is approved, blocked, or needs review.
 
 use super::context::ProtocolContext;
 use super::executor;
-use super::render::{self, BeadRef, ProtocolGuidance, ProtocolStatus, ReviewRef};
+use super::render::{self, BoneRef, ProtocolGuidance, ProtocolStatus, ReviewRef};
 use super::review_gate::{self, ReviewGateStatus};
 use super::shell;
 use crate::commands::doctor::OutputFormat;
@@ -14,7 +14,7 @@ use crate::config::Config;
 
 /// Execute the finish protocol command.
 pub fn execute(
-    bead_id: &str,
+    bone_id: &str,
     no_merge: bool,
     force: bool,
     execute: bool,
@@ -34,14 +34,14 @@ pub fn execute(
         }
     };
 
-    // Fetch bead info
-    let bead_info = match ctx.bead_status(bead_id) {
-        Ok(bead) => bead,
+    // Fetch bone info
+    let bone_info = match ctx.bone_status(bone_id) {
+        Ok(bone) => bone,
         Err(_) => {
             let mut guidance = ProtocolGuidance::new("finish");
             guidance.blocked(format!(
-                "bead {} not found. Check the ID with: maw exec default -- br show {}",
-                bead_id, bead_id
+                "bone {} not found. Check the ID with: maw exec default -- bn show {}",
+                bone_id, bone_id
             ));
             print_guidance(&guidance, format)?;
             return Ok(());
@@ -49,44 +49,41 @@ pub fn execute(
     };
 
     let mut guidance = ProtocolGuidance::new("finish");
-    guidance.bead = Some(BeadRef {
-        id: bead_id.to_string(),
-        title: bead_info.title.clone(),
+    guidance.bone = Some(BoneRef {
+        id: bone_id.to_string(),
+        title: bone_info.title.clone(),
     });
-    guidance.set_freshness(
-        120,
-        Some(format!("botbox protocol finish {}", bead_id)),
-    );
+    guidance.set_freshness(120, Some(format!("botbox protocol finish {}", bone_id)));
 
-    // Check bead is already closed
-    if bead_info.status == "closed" {
-        guidance.blocked("bead is already closed".to_string());
+    // Check bone is already closed
+    if bone_info.state == "done" {
+        guidance.blocked("bone is already done".to_string());
         print_guidance(&guidance, format)?;
         return Ok(());
     }
 
-    // Check agent holds bead claim
-    let held_bead_claims = ctx.held_bead_claims();
-    let holds_claim = held_bead_claims.iter().any(|(id, _)| *id == bead_id);
+    // Check agent holds bone claim
+    let held_bone_claims = ctx.held_bone_claims();
+    let holds_claim = held_bone_claims.iter().any(|(id, _)| *id == bone_id);
 
     if !holds_claim {
         guidance.blocked(format!(
-            "agent '{}' does not hold a claim for bead {}. \
+            "agent '{}' does not hold a claim for bone {}. \
              Check with: bus claims list --agent {} --format json",
-            agent, bead_id, agent
+            agent, bone_id, agent
         ));
         print_guidance(&guidance, format)?;
         return Ok(());
     }
 
     // Resolve workspace from claims
-    let workspace = match ctx.workspace_for_bead(bead_id) {
+    let workspace = match ctx.workspace_for_bone(bone_id) {
         Some(ws) => ws.to_string(),
         None => {
             guidance.blocked(format!(
-                "no workspace claim found for bead {}. \
+                "no workspace claim found for bone {}. \
                  Cannot determine which workspace to merge.",
-                bead_id
+                bone_id
             ));
             print_guidance(&guidance, format)?;
             return Ok(());
@@ -109,7 +106,8 @@ pub fn execute(
         // Try to find a review for this workspace
         match find_review_for_workspace(&ctx, &workspace) {
             Some((review_id, review_detail)) => {
-                let decision = review_gate::evaluate_review_gate(&review_detail, &required_reviewers);
+                let decision =
+                    review_gate::evaluate_review_gate(&review_detail, &required_reviewers);
                 guidance.review = Some(ReviewRef {
                     review_id: review_id.clone(),
                     status: decision.status_str().to_string(),
@@ -121,8 +119,8 @@ pub fn execute(
                         guidance.status = ProtocolStatus::Ready;
                         build_finish_steps(
                             &mut guidance,
-                            bead_id,
-                            &bead_info.title,
+                            bone_id,
+                            &bone_info.title,
                             project,
                             &workspace,
                             Some(&review_id),
@@ -135,8 +133,8 @@ pub fn execute(
                         }
 
                         guidance.advise(format!(
-                            "Review {} approved. Run these commands to finish bead {}.",
-                            review_id, bead_id
+                            "Review {} approved. Run these commands to finish bone {}.",
+                            review_id, bone_id
                         ));
                     }
                     ReviewGateStatus::Blocked => {
@@ -166,7 +164,11 @@ pub fn execute(
                         steps.push(shell::bus_send_cmd(
                             "agent",
                             project,
-                            &format!("Review re-requested: {} @{}", review_id, required_reviewers.join(" @")),
+                            &format!(
+                                "Review re-requested: {} @{}",
+                                review_id,
+                                required_reviewers.join(" @")
+                            ),
                             "review-request",
                         ));
                         guidance.steps(steps);
@@ -225,7 +227,7 @@ pub fn execute(
                 steps.push(shell::crit_create_cmd(
                     &workspace,
                     "agent",
-                    &bead_info.title,
+                    &bone_info.title,
                     &required_reviewers.join(","),
                 ));
                 let mentions: Vec<String> = required_reviewers
@@ -250,15 +252,13 @@ pub fn execute(
         guidance.status = ProtocolStatus::Ready;
 
         if force && review_enabled {
-            guidance.diagnostic(
-                "WARNING: --force flag used, bypassing review gate.".to_string(),
-            );
+            guidance.diagnostic("WARNING: --force flag used, bypassing review gate.".to_string());
         }
 
         build_finish_steps(
             &mut guidance,
-            bead_id,
-            &bead_info.title,
+            bone_id,
+            &bone_info.title,
             project,
             &workspace,
             None,
@@ -272,13 +272,13 @@ pub fn execute(
 
         if force && review_enabled {
             guidance.advise(format!(
-                "Force-finishing bead {} without review approval. Run these commands to finish.",
-                bead_id
+                "Force-finishing bone {} without review approval. Run these commands to finish.",
+                bone_id
             ));
         } else {
             guidance.advise(format!(
-                "Review not required. Run these commands to finish bead {}.",
-                bead_id
+                "Review not required. Run these commands to finish bone {}.",
+                bone_id
             ));
         }
     }
@@ -287,10 +287,11 @@ pub fn execute(
     Ok(())
 }
 
-/// Build the standard finish steps: merge, close, announce, release claims, sync.
+/// Build the standard finish steps: commit workspace, merge, close, announce,
+/// release claims.
 fn build_finish_steps(
     guidance: &mut ProtocolGuidance,
-    bead_id: &str,
+    bone_id: &str,
     bead_title: &str,
     project: &str,
     workspace: &str,
@@ -299,22 +300,25 @@ fn build_finish_steps(
 ) {
     let mut steps = Vec::new();
 
-    // 1. Describe the commit in the workspace
+    // 1. Stage workspace changes
+    steps.push(format!("maw exec {} -- git add -A", workspace,));
+
+    // 2. Commit workspace changes
     steps.push(format!(
-        "maw exec {} -- jj describe -m {}",
+        "maw exec {} -- git commit -m {}",
         workspace,
         shell::shell_escape(&format!(
-            "feat: {}\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
-            bead_title
+            "{}: {}\n\nCo-Authored-By: Claude <noreply@anthropic.com>",
+            bone_id, bead_title
         ))
     ));
 
-    // 2. Merge workspace (unless --no-merge)
+    // 3. Merge workspace (unless --no-merge)
     if !no_merge {
         steps.push(shell::ws_merge_cmd(workspace));
     }
 
-    // 3. Mark review as merged (if review exists)
+    // 4. Mark review as merged (if review exists)
     if let Some(rid) = review_id {
         steps.push(format!(
             "maw exec default -- crit reviews mark-merged {}",
@@ -322,26 +326,22 @@ fn build_finish_steps(
         ));
     }
 
-    // 4. Close the bead
-    steps.push(shell::br_close_cmd(
-        "agent",
-        bead_id,
+    // 5. Close the bone
+    steps.push(shell::bn_done_cmd(
+        bone_id,
         &format!("Completed in workspace {}", workspace),
     ));
 
-    // 5. Announce completion on bus
+    // 6. Announce completion on bus
     steps.push(shell::bus_send_cmd(
         "agent",
         project,
-        &format!("Finished {}: {}", bead_id, bead_title),
+        &format!("Finished {}: {}", bone_id, bead_title),
         "task-done",
     ));
 
-    // 6. Release all claims
+    // 7. Release all claims
     steps.push(shell::claims_release_all_cmd("agent"));
-
-    // 7. Sync beads
-    steps.push(shell::br_sync_cmd());
 
     guidance.steps(steps);
 }
@@ -353,7 +353,9 @@ fn find_review_for_workspace(
 ) -> Option<(String, super::adapters::ReviewDetail)> {
     // List reviews in the workspace via crit reviews list
     let output = std::process::Command::new("maw")
-        .args(["exec", workspace, "--", "crit", "reviews", "list", "--format", "json"])
+        .args([
+            "exec", workspace, "--", "crit", "reviews", "list", "--format", "json",
+        ])
         .output()
         .ok()?;
 
@@ -417,12 +419,12 @@ impl ReviewGateDecisionExt for review_gate::ReviewGateDecision {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::commands::protocol::render::{BeadRef, ProtocolGuidance};
+    use crate::commands::protocol::render::{BoneRef, ProtocolGuidance};
 
     #[test]
     fn test_build_finish_steps_with_merge() {
         let mut guidance = ProtocolGuidance::new("finish");
-        guidance.bead = Some(BeadRef {
+        guidance.bone = Some(BoneRef {
             id: "bd-abc".to_string(),
             title: "test feature".to_string(),
         });
@@ -439,20 +441,29 @@ mod tests {
         );
 
         assert!(guidance.steps.len() >= 6);
-        // Should have jj describe
-        assert!(guidance.steps.iter().any(|s| s.contains("jj describe")));
+        // Should have git add + commit
+        assert!(guidance.steps.iter().any(|s| s.contains("git add -A")));
+        assert!(guidance.steps.iter().any(|s| s.contains("git commit -m")));
         // Should have ws merge
-        assert!(guidance.steps.iter().any(|s| s.contains("maw ws merge frost-castle --destroy")));
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("maw ws merge frost-castle --destroy"))
+        );
         // Should have mark-merged
-        assert!(guidance.steps.iter().any(|s| s.contains("crit reviews mark-merged cr-123")));
-        // Should have br close
-        assert!(guidance.steps.iter().any(|s| s.contains("br close")));
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("crit reviews mark-merged cr-123"))
+        );
+        // Should have bn done
+        assert!(guidance.steps.iter().any(|s| s.contains("bn done")));
         // Should have bus send task-done
         assert!(guidance.steps.iter().any(|s| s.contains("task-done")));
         // Should have claims release
         assert!(guidance.steps.iter().any(|s| s.contains("claims release")));
-        // Should have br sync
-        assert!(guidance.steps.iter().any(|s| s.contains("br sync")));
     }
 
     #[test]
@@ -473,11 +484,10 @@ mod tests {
         assert!(!guidance.steps.iter().any(|s| s.contains("maw ws merge")));
         // Should NOT have mark-merged (no review_id)
         assert!(!guidance.steps.iter().any(|s| s.contains("mark-merged")));
-        // Should still have close, announce, release, sync
-        assert!(guidance.steps.iter().any(|s| s.contains("br close")));
+        // Should still have close, announce, release
+        assert!(guidance.steps.iter().any(|s| s.contains("bn done")));
         assert!(guidance.steps.iter().any(|s| s.contains("task-done")));
         assert!(guidance.steps.iter().any(|s| s.contains("claims release")));
-        assert!(guidance.steps.iter().any(|s| s.contains("br sync")));
     }
 
     #[test]
@@ -496,9 +506,23 @@ mod tests {
         );
 
         // The title should be shell-escaped in commands that embed it
-        let announce_step = guidance.steps.iter().find(|s| s.contains("bus send")).unwrap();
-        assert!(announce_step.contains("'\\''"), "single quotes in title should be escaped in bus send");
-        let describe_step = guidance.steps.iter().find(|s| s.contains("jj describe")).unwrap();
-        assert!(describe_step.contains("'\\''"), "single quotes in title should be escaped in jj describe");
+        let announce_step = guidance
+            .steps
+            .iter()
+            .find(|s| s.contains("bus send"))
+            .unwrap();
+        assert!(
+            announce_step.contains("'\\''"),
+            "single quotes in title should be escaped in bus send"
+        );
+        let commit_step = guidance
+            .steps
+            .iter()
+            .find(|s| s.contains("git commit -m"))
+            .unwrap();
+        assert!(
+            commit_step.contains("'\\''"),
+            "single quotes in title should be escaped in git commit"
+        );
     }
 }

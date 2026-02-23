@@ -31,19 +31,21 @@ pub fn create_workspace() -> anyhow::Result<String> {
 
 /// Generate a random worker name suffix.
 pub fn generate_worker_name() -> anyhow::Result<String> {
-    let output = Tool::new("bus")
-        .arg("generate-name")
-        .run_ok()?;
+    let output = Tool::new("bus").arg("generate-name").run_ok()?;
     Ok(output.stdout.trim().to_string())
 }
 
-/// Stake a bead claim.
-pub fn claim_bead(agent: &str, project: &str, bead_id: &str, memo: &str) -> anyhow::Result<()> {
+/// Stake a bone claim.
+pub fn claim_bone(agent: &str, project: &str, bone_id: &str, memo: &str) -> anyhow::Result<()> {
     Tool::new("bus")
         .args(&[
-            "claims", "stake", "--agent", agent,
-            &format!("bead://{project}/{bead_id}"),
-            "-m", memo,
+            "claims",
+            "stake",
+            "--agent",
+            agent,
+            &format!("bone://{project}/{bone_id}"),
+            "-m",
+            memo,
         ])
         .run_ok()?;
     Ok(())
@@ -53,9 +55,13 @@ pub fn claim_bead(agent: &str, project: &str, bead_id: &str, memo: &str) -> anyh
 pub fn claim_workspace(agent: &str, project: &str, ws: &str, memo: &str) -> anyhow::Result<()> {
     Tool::new("bus")
         .args(&[
-            "claims", "stake", "--agent", agent,
+            "claims",
+            "stake",
+            "--agent",
+            agent,
             &format!("workspace://{project}/{ws}"),
-            "-m", memo,
+            "-m",
+            memo,
         ])
         .run_ok()?;
     Ok(())

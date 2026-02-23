@@ -10,7 +10,7 @@ source "${1:?Usage: e12-proto-review-verify.sh <path-to-.eval-env>}"
 echo "=== E12-Proto-Review Verification ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo "REVIEW_ID=${REVIEW_ID:-not set}"
 echo "REVIEW_WS=${REVIEW_WS:-not set}"
 echo ""
@@ -46,8 +46,8 @@ warn() {
 AGENT_LOG=$(cat "$ARTIFACTS/agent-worker.log" 2>/dev/null || echo "")
 CHANNEL_HISTORY=$(cat "$ARTIFACTS/channel-history.log" 2>/dev/null || echo "")
 FINAL_STATUS_FILE=$(cat "$ARTIFACTS/final-status.txt" 2>/dev/null || echo "")
-BEAD_FINAL_JSON=$(cat "$ARTIFACTS/bead-final.json" 2>/dev/null || echo "[]")
-BEAD_COMMENTS=$(cat "$ARTIFACTS/bead-comments.txt" 2>/dev/null || echo "")
+BONE_FINAL_JSON=$(cat "$ARTIFACTS/bone-final.json" 2>/dev/null || echo "[]")
+BONE_COMMENTS=$(cat "$ARTIFACTS/bone-comments.txt" 2>/dev/null || echo "")
 CLAIMS_FINAL=$(cat "$ARTIFACTS/claims-final.txt" 2>/dev/null || echo "")
 WS_STATE=$(cat "$ARTIFACTS/workspace-state.json" 2>/dev/null || echo "{}")
 TEST_OUTPUT=$(cat "$ARTIFACTS/test-output.txt" 2>/dev/null || echo "")
@@ -73,7 +73,7 @@ check "Agent invoked 'botbox protocol resume'" "$($USED_RESUME && echo 0 || echo
 echo ""
 echo "--- Check 2: protocol start ---"
 USED_START=false
-if echo "$AGENT_LOG" | grep -qi "botbox protocol start.*$BEAD_ID\|botbox.*protocol.*start"; then
+if echo "$AGENT_LOG" | grep -qi "botbox protocol start.*$BONE_ID\|botbox.*protocol.*start"; then
   USED_START=true
 fi
 check "Agent invoked 'botbox protocol start'" "$($USED_START && echo 0 || echo 1)" 10
@@ -92,7 +92,7 @@ check "Agent invoked 'botbox protocol review'" "$($USED_REVIEW && echo 0 || echo
 echo ""
 echo "--- Check 4: protocol finish ---"
 USED_FINISH=false
-if echo "$AGENT_LOG" | grep -qi "botbox protocol finish.*$BEAD_ID\|botbox.*protocol.*finish"; then
+if echo "$AGENT_LOG" | grep -qi "botbox protocol finish.*$BONE_ID\|botbox.*protocol.*finish"; then
   USED_FINISH=true
 fi
 check "Agent invoked 'botbox protocol finish'" "$($USED_FINISH && echo 0 || echo 1)" 10
@@ -155,9 +155,9 @@ FINISH_SAW_LGTM=false
 if echo "$AGENT_LOG" | grep -qi "protocol finish" && echo "$AGENT_LOG" | grep -qi "status.*Ready\|finish.*Ready"; then
   FINISH_SAW_LGTM=true
 fi
-# Strong signal: bead was closed after LGTM (finish worked)
-BEAD_FINAL_STATUS=$(echo "$BEAD_FINAL_JSON" | jq -r '.[0].status // "unknown"' 2>/dev/null || echo "unknown")
-if [[ "$BEAD_FINAL_STATUS" == "closed" ]] && [[ "$LGTM_DONE_VAL" == "true" ]]; then
+# Strong signal: bone was done after LGTM (finish worked)
+BONE_FINAL_STATE=$(echo "$BONE_FINAL_JSON" | jq -r '.[0].state // "unknown"' 2>/dev/null || echo "unknown")
+if [[ "$BONE_FINAL_STATE" == "done" ]] && [[ "$LGTM_DONE_VAL" == "true" ]]; then
   FINISH_SAW_LGTM=true
 fi
 check "protocol finish passed review gate (LGTM found)" "$($FINISH_SAW_LGTM && echo 0 || echo 1)" 10
@@ -172,12 +172,12 @@ WORKER_PAUSED=false
 if echo "$AGENT_LOG" | grep -qi "stop.*wait\|waiting.*review\|review.*pending\|NeedsReview\|iteration.*2\|Iteration 2\|resume.*in.progress"; then
   WORKER_PAUSED=true
 fi
-# If the worker used protocol resume to find the in-progress bead (2nd iteration), it paused
+# If the worker used protocol resume to find the doing bone (2nd iteration), it paused
 if echo "$AGENT_LOG" | grep -qi "protocol resume.*Resumable\|Resuming\|Found in-progress"; then
   WORKER_PAUSED=true
 fi
 # If both review request AND finish happened, AND LGTM was applied between them, there was a pause
-if [[ "$REVIEW_LGTM" == "true" ]] && [[ "$BEAD_FINAL_STATUS" == "closed" ]]; then
+if [[ "$REVIEW_LGTM" == "true" ]] && [[ "$BONE_FINAL_STATE" == "done" ]]; then
   WORKER_PAUSED=true
 fi
 check "Worker paused/waited for review approval" "$($WORKER_PAUSED && echo 0 || echo 1)" 10
@@ -202,25 +202,25 @@ echo ""
 echo "=== State Transitions (30 pts) ==="
 echo ""
 
-# Check 12: Bead transitioned to in_progress (10 pts)
-echo "--- Check 12: bead in_progress transition ---"
+# Check 12: Bone transitioned to doing (10 pts)
+echo "--- Check 12: bone doing transition ---"
 WAS_IN_PROGRESS=false
-if echo "$AGENT_LOG" | grep -qi "in.progress\|status.*in_progress\|br update.*in_progress"; then
+if echo "$AGENT_LOG" | grep -qi "doing\|state.*doing\|bn do"; then
   WAS_IN_PROGRESS=true
 fi
-if echo "$BEAD_COMMENTS" | grep -qi "in.progress\|Starting\|claimed"; then
+if echo "$BONE_COMMENTS" | grep -qi "doing\|Starting\|claimed"; then
   WAS_IN_PROGRESS=true
 fi
-check "Bead transitioned to in_progress" "$($WAS_IN_PROGRESS && echo 0 || echo 1)" 10
+check "Bone transitioned to doing" "$($WAS_IN_PROGRESS && echo 0 || echo 1)" 10
 
-# Check 13: Bead is CLOSED at end (10 pts)
+# Check 13: Bone is DONE at end (10 pts)
 echo ""
-echo "--- Check 13: bead closed ---"
+echo "--- Check 13: bone done ---"
 IS_CLOSED=false
-if [[ "$BEAD_FINAL_STATUS" == "closed" ]]; then
+if [[ "$BONE_FINAL_STATE" == "done" ]]; then
   IS_CLOSED=true
 fi
-check "Bead is CLOSED at end (status=$BEAD_FINAL_STATUS)" "$($IS_CLOSED && echo 0 || echo 1)" 10
+check "Bone is DONE at end (state=$BONE_FINAL_STATE)" "$($IS_CLOSED && echo 0 || echo 1)" 10
 
 # Check 14: Workspace was created (10 pts)
 echo ""
@@ -275,7 +275,7 @@ check "cargo test passes" "$($TESTS_PASS && echo 0 || echo 1)" 10
 echo ""
 echo "--- Check 17: progress comments ---"
 HAS_COMMENT=false
-COMMENT_COUNT=$(echo "$BEAD_COMMENTS" | grep -c "at 20" || true)
+COMMENT_COUNT=$(echo "$BONE_COMMENTS" | grep -c "at 20" || true)
 if [[ "$COMMENT_COUNT" -ge 1 ]]; then
   HAS_COMMENT=true
 fi
@@ -324,10 +324,10 @@ if [[ "$PROTO_ERRORS" -gt 0 ]]; then
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi
 
-# Friction: duplicate beads
-DUP_BEADS=$(echo "$AGENT_LOG" | grep -c "br create.*--title" || true)
-if [[ "$DUP_BEADS" -gt 0 ]]; then
-  echo "FRICTION (-5): Agent created new beads ($DUP_BEADS creates — bead was pre-made)"
+# Friction: duplicate bones
+DUP_BONES=$(echo "$AGENT_LOG" | grep -c "bn create.*--title" || true)
+if [[ "$DUP_BONES" -gt 0 ]]; then
+  echo "FRICTION (-5): Agent created new bones ($DUP_BONES creates — bone was pre-made)"
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi
 
@@ -420,13 +420,13 @@ echo "=== Forensics ==="
 echo "EVAL_DIR=$EVAL_DIR"
 echo "BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR"
 echo "PROJECT_DIR=$PROJECT_DIR"
-echo "BEAD_ID=$BEAD_ID"
+echo "BONE_ID=$BONE_ID"
 echo "REVIEW_ID=${REVIEW_ID:-not found}"
 echo "REVIEW_WS=${REVIEW_WS:-not found}"
 echo ""
 echo "Run 'BOTBUS_DATA_DIR=$BOTBUS_DATA_DIR bus history greeter -n 50' for channel messages"
 echo "Run 'cat $ARTIFACTS/agent-worker.log' for agent output"
-echo "Run 'cat $ARTIFACTS/bead-comments.txt' for bead comments"
+echo "Run 'cat $ARTIFACTS/bone-comments.txt' for bone comments"
 echo "Run 'cat $ARTIFACTS/review-final.json' for review details"
 echo ""
 echo "=== Verification Complete ==="

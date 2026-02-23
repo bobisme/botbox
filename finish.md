@@ -44,10 +44,10 @@ When you've completed multiple beads in a session (or a significant single bead)
 
 **Features or fixes** (user-visible changes):
 - Follow the project's release process:
-  1. Run `jj new` to create a release commit, **then** bump version (Cargo.toml, package.json, etc.) using **semantic versioning**. Order matters: jj snapshots the working copy before `jj new`, so edits made before `jj new` go into the previous commit.
-  2. Update changelog/release notes if the project has one
-  3. Push to main
-  4. Tag and push: `maw release vX.Y.Z`
+  1. Bump version (Cargo.toml, package.json, etc.) using **semantic versioning**.
+  2. Update changelog/release notes if the project has one.
+  3. Commit the release prep in default workspace: `maw exec default -- git add -A && maw exec default -- git commit -m "chore: release vX.Y.Z"`
+  4. Run release: `maw release vX.Y.Z`
   5. Announce on botbus: `bus send --no-hooks --agent $AGENT $BOTBOX_PROJECT "<project> vX.Y.Z released - <summary>" -L release`
 
 Use **conventional commits** (`feat:`, `fix:`, `docs:`, `chore:`, etc.) for clear history.
@@ -56,37 +56,40 @@ A "release" = user-visible changes shipped with a version tag. When in doubt, re
 
 ## Merge Conflict Recovery
 
-If `maw ws merge` detects conflicts during the rebase:
+If `maw ws merge` detects conflicts:
 
-### Quick fix for .beads conflicts only
+### Quick fix for ledger/docs conflicts only
 
-`.beads/issues.jsonl` often conflicts because multiple agents update it concurrently. If your feature changes are clean and only `.beads/` conflicts:
+`.beads/issues.jsonl` often conflicts because multiple agents update it concurrently. If your feature changes are clean and only ledger/docs paths conflict (`.beads/`, `.agents/`, `.claude/`):
 
 ```bash
-maw exec $WS -- jj restore --from main .beads/
-maw exec $WS -- jj squash
+maw exec $WS -- git restore --source refs/heads/main -- .beads/ .agents/ .claude/
 ```
 
 Then retry `maw ws merge $WS --destroy`.
 
-**Note**: `.crit/` rarely conflicts with crit v2 (per-review event logs). If it does conflict, investigate rather than auto-restoring — it likely means two agents worked on the same review.
+Then retry `maw ws merge $WS --destroy`.
 
-### Full recovery if merge is messy
+### Full recovery when conflicts are messy
 
-If jj squash times out or multiple commits are tangled:
+If merge retries keep failing:
 
 ```bash
-# 1. Find your feature commit (has your actual changes)
-maw exec $WS -- jj log -r 'all()' --limit 15
+# 1. Inspect detailed conflicts
+maw ws conflicts $WS --format json
 
-# 2. Abandon the merge mess (empty commits, merge commits)
-maw exec $WS -- jj abandon <merge-commit-id> <empty-commit-ids>
+# 2. Undo local merge attempt and return workspace to a clean base
+maw ws undo $WS
 
-# 3. Move to your feature commit
-maw exec $WS -- jj edit <feature-commit-id>
+# 3. Ensure workspace is synced to latest default
+maw ws sync $WS
 
-# 4. Set main and push
-maw push --advance
+# 4. Resolve and stage files in the workspace
+maw exec $WS -- git status
+maw exec $WS -- git add <resolved-file>
+
+# 5. Retry merge
+maw ws merge $WS --destroy
 ```
 
 ### When to escalate
@@ -97,6 +100,8 @@ If recovery takes more than 2-3 attempts, preserve the workspace and escalate:
 maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Merge conflict unresolved. Workspace $WS preserved for manual resolution."
 bus send --agent $AGENT $BOTBOX_PROJECT "Merge conflict in $WS for <bead-id>. Manual help needed." -L tool-issue
 ```
+
+If the workspace was accidentally removed, recreate it with `maw ws restore $WS`.
 
 ## Assumptions
 

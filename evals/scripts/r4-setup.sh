@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # R4 Integration Eval — Setup
-# Creates a fresh eval environment with a seeded bead for the dev agent to find.
+# Creates a fresh eval environment with a seeded bone for the dev agent to find.
 
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR"
@@ -10,7 +10,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 
 # --- Init repo and botbox ---
 jj git init
-botbox init --name r4-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name r4-eval --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 # --- Init Rust project ---
 cargo init --name r4-eval
@@ -30,10 +30,10 @@ botbus send --agent setup r4-eval "R4 eval environment initialized" -L mesh -L s
 botbus mark-read --agent "$DEV_AGENT" r4-eval
 botbus mark-read --agent "$REVIEWER" r4-eval
 
-# --- Create the task bead ---
-br create --title="Add file serving endpoint at GET /files/:name" \
-  --description="Create a GET /files/:name endpoint that reads files from ./data and returns contents. Return 404 if not found, 500 on read errors." \
-  --type=task --priority=2
+# --- Create the task bone ---
+bn create --title "Add file serving endpoint at GET /files/:name" \
+  --description "Create a GET /files/:name endpoint that reads files from ./data and returns contents. Return 404 if not found, 500 on read errors." \
+  --kind task
 
 # --- Seed test data ---
 mkdir -p data

@@ -28,7 +28,7 @@ set -euo pipefail
 # Does NOT send the task-request — that goes in the run script.
 
 # --- Preflight ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -49,7 +49,7 @@ bus init
 # --- Tool versions ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e11-l5v2"
@@ -504,7 +504,7 @@ jj new
 # Initialize with botbox (maw v2 bare repo layout)
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name flowlog --type cli --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+  botbox init --name flowlog --type cli --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 # ============================================================
 # Patch .botbox.json: enable missions, disable review, set models
@@ -608,7 +608,7 @@ echo "  for their stage's concerns (provenance, transformation history, lineage)
 echo "  The full Record shape is not knowable until ALL stages are implemented."
 echo "  Workers MUST announce additions via coord:interface and read siblings'."
 echo ""
-echo "No bead seeded — !mission handler in respond.mjs creates it."
+echo "No bone seeded — !mission handler in respond.mjs creates it."
 echo ""
 echo "Source .eval-env before running:"
 echo "  source $EVAL_DIR/.eval-env"

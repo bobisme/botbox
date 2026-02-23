@@ -4,7 +4,7 @@ set -euo pipefail
 # R5 Cross-Project Coordination Eval — Setup
 # Creates two projects:
 #   r5-utils: Rust lib crate with a buggy validate_name() function
-#   r5-app:   Rust/Axum API with a bead that references r5-utils
+#   r5-app:   Rust/Axum API with a bone that references r5-utils
 # Populates the #projects registry on botbus so the agent can discover r5-utils.
 # Uses BOTBUS_DATA_DIR isolation to avoid polluting the real registry.
 
@@ -27,7 +27,7 @@ mkdir -p "$UTILS_DIR" "$APP_DIR"
 # ==============================
 cd "$UTILS_DIR"
 jj git init
-botbox init --name r5-utils --type library --tools beads,maw,crit,botbus --init-beads --no-interactive
+botbox init --name r5-utils --type library --tools bones,maw,crit,botbus --init-bones --no-interactive
 
 # --- Copy latest workflow docs ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/
@@ -129,16 +129,16 @@ echo "r5-utils: cargo check + cargo test OK"
 crit init
 maw init
 
-# --- Create a couple existing beads so it looks like a real project ---
-br create --silent \
-  --title="Add validate_phone() function" \
-  --description="Add phone number validation: must be 10-15 digits, optional + prefix." \
-  --type=feature --priority=3
+# --- Create a couple existing bones so it looks like a real project ---
+bn create \
+  --title "Add validate_phone() function" \
+  --description "Add phone number validation: must be 10-15 digits, optional + prefix." \
+  --kind feature
 
-br create --silent \
-  --title="Add unit tests for validate_email edge cases" \
-  --description="Cover: multiple @, unicode, very long local part, missing domain." \
-  --type=task --priority=4
+bn create \
+  --title "Add unit tests for validate_email edge cases" \
+  --description "Cover: multiple @, unicode, very long local part, missing domain." \
+  --kind task
 
 # --- Commit baseline ---
 jj describe -m "r5-utils: validation library with validate_name and validate_email"
@@ -151,7 +151,7 @@ echo "r5-utils initialized at $UTILS_DIR"
 # ==============================
 cd "$APP_DIR"
 jj git init
-botbox init --name r5-app --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name r5-app --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 # --- Copy latest workflow docs ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/
@@ -231,10 +231,10 @@ echo "AGENT=$AGENT"
 bus send --agent setup r5-app "R5 eval environment initialized" -L mesh -L setup
 bus mark-read --agent "$AGENT" r5-app
 
-# --- Create the main bead ---
-BEAD=$(br create --silent \
-  --title="Add POST /users endpoint with name validation" \
-  --description="$(cat << DESC_EOF
+# --- Create the main bone ---
+BEAD=$(bn create \
+  --title "Add POST /users endpoint with name validation" \
+  --description "$(cat << DESC_EOF
 Add a POST /users endpoint that creates a new user with name validation.
 
 ## Requirements
@@ -271,7 +271,7 @@ Verify with curl:
   curl -X POST -H 'Content-Type: application/json' -d '{"name":"Alice"}' http://localhost:3000/users
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 echo "BEAD=$BEAD"
 
 # --- Commit baseline ---
@@ -305,7 +305,7 @@ echo "BEAD=$BEAD"
 echo ""
 echo "Projects:"
 echo "  r5-utils: $UTILS_DIR (lib with buggy validate_name — checks < 1 instead of < 2)"
-echo "  r5-app:   $APP_DIR (API with POST /users bead referencing r5-utils)"
+echo "  r5-app:   $APP_DIR (API with POST /users bone referencing r5-utils)"
 echo ""
 echo "Registry:"
 echo "  bus history projects  (should show both project entries)"
@@ -313,7 +313,7 @@ echo ""
 echo "Verify:"
 echo "  cd $UTILS_DIR && cargo check && cargo test"
 echo "  cd $APP_DIR && cargo check"
-echo "  cd $APP_DIR && br ready  (should show 1 bead)"
+echo "  cd $APP_DIR && bn next  (should show 1 bone)"
 echo "  bus history projects     (should show 2 registry entries)"
 echo ""
 echo "Next: source $APP_DIR/.eval-env && bash $REPO_DIR/evals/scripts/r5-run.sh"

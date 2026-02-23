@@ -4,7 +4,7 @@ set -euo pipefail
 # R9 Crash Recovery Eval — Setup
 # Creates a fresh eval environment with a Rust/Axum CRUD project,
 # simulates 2 completed subtasks, and leaves subtask 3 in a crashed state
-# (in_progress, workspace exists with partial code, bead comments trail).
+# (doing, workspace exists with partial code, bone comments trail).
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -15,7 +15,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 
 # --- Init repo and botbox ---
 jj git init
-botbox init --name r9-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name r9-eval --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 # --- Copy latest local workflow docs ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/
@@ -141,10 +141,10 @@ echo "AGENT=$AGENT"
 bus send --agent setup r9-eval "R9 eval environment initialized" -L mesh -L setup
 bus mark-read --agent "$AGENT" r9-eval
 
-# --- Create parent bead ---
-PARENT=$(br create --silent \
-  --title="Build items CRUD API" \
-  --description="$(cat << 'DESC_EOF'
+# --- Create parent bone ---
+PARENT=$(bn create \
+  --title "Build items CRUD API" \
+  --description "$(cat << 'DESC_EOF'
 Build a complete CRUD API for items with the following endpoints:
 - GET /items — list all items
 - POST /items — create a new item
@@ -165,23 +165,23 @@ The Item struct and AppState with in-memory storage already exist in main.rs.
 Manual curl tests for each endpoint.
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 echo "PARENT=$PARENT"
 
-# --- Create 5 subtask beads ---
-S1=$(br create --silent \
-  --title="Add GET /items endpoint" \
-  --description="Add a GET /items handler in src/list.rs that returns all items as JSON. Wire into the router in main.rs." \
-  --type=task --priority=2)
+# --- Create 5 subtask bones ---
+S1=$(bn create \
+  --title "Add GET /items endpoint" \
+  --description "Add a GET /items handler in src/list.rs that returns all items as JSON. Wire into the router in main.rs." \
+  --kind task)
 
-S2=$(br create --silent \
-  --title="Add POST /items endpoint" \
-  --description="Add a POST /items handler in src/create.rs that accepts {name} JSON and creates a new item with auto-incremented ID. Return 201 with the created item. Wire into the router in main.rs." \
-  --type=task --priority=2)
+S2=$(bn create \
+  --title "Add POST /items endpoint" \
+  --description "Add a POST /items handler in src/create.rs that accepts {name} JSON and creates a new item with auto-incremented ID. Return 201 with the created item. Wire into the router in main.rs." \
+  --kind task)
 
-S3=$(br create --silent \
-  --title="Add GET /items/:id endpoint" \
-  --description="$(cat << 'DESC_EOF'
+S3=$(bn create \
+  --title "Add GET /items/:id endpoint" \
+  --description "$(cat << 'DESC_EOF'
 Add a GET /items/:id handler in src/get_item.rs that returns a single item by ID.
 
 ## Requirements
@@ -199,11 +199,11 @@ Add a GET /items/:id handler in src/get_item.rs that returns a single item by ID
 - cargo check passes
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 
-S4=$(br create --silent \
-  --title="Add DELETE /items/:id endpoint" \
-  --description="$(cat << 'DESC_EOF'
+S4=$(bn create \
+  --title "Add DELETE /items/:id endpoint" \
+  --description "$(cat << 'DESC_EOF'
 Add a DELETE /items/:id handler in src/delete_item.rs that removes an item by ID.
 
 ## Requirements
@@ -221,11 +221,11 @@ Add a DELETE /items/:id handler in src/delete_item.rs that removes an item by ID
 - cargo check passes
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 
-S5=$(br create --silent \
-  --title="Add PUT /items/:id endpoint" \
-  --description="$(cat << 'DESC_EOF'
+S5=$(bn create \
+  --title "Add PUT /items/:id endpoint" \
+  --description "$(cat << 'DESC_EOF'
 Add a PUT /items/:id handler in src/update_item.rs that updates an item by ID.
 
 ## Requirements
@@ -244,48 +244,48 @@ Add a PUT /items/:id handler in src/update_item.rs that updates an item by ID.
 - cargo check passes
 DESC_EOF
 )" \
-  --type=task --priority=2)
+  --kind task)
 
 echo "S1=$S1  S2=$S2  S3=$S3  S4=$S4  S5=$S5"
 
 # --- Wire dependencies ---
 # Parent is blocked by all children (can't close until all subtasks done)
-br dep add "$PARENT" "$S1"
-br dep add "$PARENT" "$S2"
-br dep add "$PARENT" "$S3"
-br dep add "$PARENT" "$S4"
-br dep add "$PARENT" "$S5"
+bn triage dep add "$S1" --blocks "$PARENT"
+bn triage dep add "$S2" --blocks "$PARENT"
+bn triage dep add "$S3" --blocks "$PARENT"
+bn triage dep add "$S4" --blocks "$PARENT"
+bn triage dep add "$S5" --blocks "$PARENT"
 
-# Linear chain: S2 blocked by S1, S3 blocked by S2, etc.
-br dep add "$S2" "$S1"
-br dep add "$S3" "$S2"
-br dep add "$S4" "$S3"
-br dep add "$S5" "$S4"
+# Linear chain: S1 blocks S2, S2 blocks S3, etc.
+bn triage dep add "$S1" --blocks "$S2"
+bn triage dep add "$S2" --blocks "$S3"
+bn triage dep add "$S3" --blocks "$S4"
+bn triage dep add "$S4" --blocks "$S5"
 
 # --- Simulate subtask 1 completed ---
-br update "$S1" --status=in_progress
-br comments add "$S1" "Starting: implementing GET /items in src/list.rs"
-br comments add "$S1" "Progress: wrote list_items handler, wired into router"
-br comments add "$S1" "Completed by $AGENT"
-br close "$S1" --reason="Completed"
+bn do "$S1"
+bn bone comment add "$S1" "Starting: implementing GET /items in src/list.rs"
+bn bone comment add "$S1" "Progress: wrote list_items handler, wired into router"
+bn bone comment add "$S1" "Completed by $AGENT"
+bn done "$S1" --reason "Completed"
 
 # --- Simulate subtask 2 completed ---
-br update "$S2" --status=in_progress
-br comments add "$S2" "Starting: implementing POST /items in src/create.rs"
-br comments add "$S2" "Progress: wrote create_item handler with CreateItem struct, wired into router"
-br comments add "$S2" "Completed by $AGENT"
-br close "$S2" --reason="Completed"
+bn do "$S2"
+bn bone comment add "$S2" "Starting: implementing POST /items in src/create.rs"
+bn bone comment add "$S2" "Progress: wrote create_item handler with CreateItem struct, wired into router"
+bn bone comment add "$S2" "Completed by $AGENT"
+bn done "$S2" --reason "Completed"
 
-# --- Mark parent in_progress ---
-br update "$PARENT" --status=in_progress
+# --- Mark parent doing ---
+bn do "$PARENT"
 
 # --- Commit baseline + subtasks 1-2 ---
 jj describe -m "baseline + subtasks 1-2: GET /items, POST /items"
 jj new
 
 # --- Simulate crash state for subtask 3 ---
-br update "$S3" --status=in_progress
-bus claims stake --agent "$AGENT" "bead://r9-eval/$S3" -m "$S3"
+bn do "$S3"
+bus claims stake --agent "$AGENT" "bone://r9-eval/$S3" -m "$S3"
 
 # Create workspace for subtask 3
 maw ws create --random
@@ -334,14 +334,11 @@ RUST_EOF
 # Describe the workspace change
 maw ws jj "$WS" describe -m "$S3: Add GET /items/:id endpoint (WIP)"
 
-# Add bead comments showing the agent was working when it crashed
-br comments add "$S3" "Starting: implementing GET /items/:id in src/get_item.rs"
-br comments add "$S3" "Progress: created workspace $WS ($WS_PATH), wrote handler stub in src/get_item.rs. Still need to: add 404 error handling (currently unwraps), wire mod get_item into main.rs, add route to router"
+# Add bone comments showing the agent was working when it crashed
+bn bone comment add "$S3" "Starting: implementing GET /items/:id in src/get_item.rs"
+bn bone comment add "$S3" "Progress: created workspace $WS ($WS_PATH), wrote handler stub in src/get_item.rs. Still need to: add 404 error handling (currently unwraps), wire mod get_item into main.rs, add route to router"
 
 # Do NOT close subtask 3. Do NOT merge workspace. Simulate crash.
-
-# --- Sync ---
-br sync --flush-only
 
 # --- Save env for run script ---
 cat > .eval-env << EOF
@@ -364,16 +361,16 @@ echo "AGENT=$AGENT"
 echo "PARENT_BEAD=$PARENT"
 echo "S1=$S1 (GET /items — closed)"
 echo "S2=$S2 (POST /items — closed)"
-echo "S3=$S3 (GET /items/:id — in_progress, crash state)"
+echo "S3=$S3 (GET /items/:id — doing, crash state)"
 echo "S4=$S4 (DELETE /items/:id — ready, blocked by S3)"
 echo "S5=$S5 (PUT /items/:id — ready, blocked by S4)"
 echo "WS=$WS  WS_PATH=$WS_PATH"
 echo ""
 echo "State:"
-echo "  Subtasks 1-2: closed, code merged into main"
-echo "  Subtask 3: in_progress, workspace has partial get_item.rs (missing 404 + router wiring)"
+echo "  Subtasks 1-2: done, code merged into main"
+echo "  Subtask 3: doing, workspace has partial get_item.rs (missing 404 + router wiring)"
 echo "  Subtasks 4-5: ready (blocked by dependency chain)"
-echo "  Agent $AGENT holds claim on bead://r9-eval/$S3 and workspace://r9-eval/$WS"
+echo "  Agent $AGENT holds claim on bone://r9-eval/$S3 and workspace://r9-eval/$WS"
 echo ""
-echo "Verify: cargo check (main branch), br ready, br show $S3, bus claims --agent $AGENT --mine"
+echo "Verify: cargo check (main branch), bn next, bn show $S3, bus claims --agent $AGENT --mine"
 echo "Next: source .eval-env && bash $REPO_DIR/evals/scripts/r9-run.sh"

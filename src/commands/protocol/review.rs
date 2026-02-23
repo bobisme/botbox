@@ -1,11 +1,11 @@
 //! Protocol review command: check state and output commands to request review.
 //!
-//! Resolves bead claim, workspace, existing review status, and reviewer list
+//! Resolves bone claim, workspace, existing review status, and reviewer list
 //! to produce guidance for creating or following up on a code review.
 
 use super::context::ProtocolContext;
 use super::executor;
-use super::render::{BeadRef, ProtocolGuidance, ProtocolStatus, ReviewRef};
+use super::render::{BoneRef, ProtocolGuidance, ProtocolStatus, ReviewRef};
 use super::review_gate::{self, ReviewGateStatus};
 use super::shell;
 use crate::commands::doctor::OutputFormat;
@@ -13,7 +13,7 @@ use crate::config::Config;
 
 /// Execute review protocol: check state and output review guidance.
 pub fn execute(
-    bead_id: &str,
+    bone_id: &str,
     reviewers_override: Option<&str>,
     review_id_flag: Option<&str>,
     execute: bool,
@@ -23,56 +23,49 @@ pub fn execute(
     format: OutputFormat,
 ) -> anyhow::Result<()> {
     // Early input validation before any subprocess calls
-    if let Err(e) = shell::validate_bead_id(bead_id) {
-        anyhow::bail!("invalid bead ID: {e}");
+    if let Err(e) = shell::validate_bone_id(bone_id) {
+        anyhow::bail!("invalid bone ID: {e}");
     }
 
     let ctx = ProtocolContext::collect(project, agent)?;
 
     let mut guidance = ProtocolGuidance::new("review");
-    guidance.set_freshness(
-        300,
-        Some(format!("botbox protocol review {bead_id}")),
-    );
+    guidance.set_freshness(300, Some(format!("botbox protocol review {bone_id}")));
 
-    // Fetch bead info
-    let bead_info = match ctx.bead_status(bead_id) {
-        Ok(bead) => bead,
+    // Fetch bone info
+    let bone_info = match ctx.bone_status(bone_id) {
+        Ok(bone) => bone,
         Err(e) => {
-            guidance.blocked(format!("bead {bead_id} not found: {e}"));
+            guidance.blocked(format!("bone {bone_id} not found: {e}"));
             print_guidance(&guidance, format)?;
             return Ok(());
         }
     };
 
-    guidance.bead = Some(BeadRef {
-        id: bead_id.to_string(),
-        title: bead_info.title.clone(),
+    guidance.bone = Some(BoneRef {
+        id: bone_id.to_string(),
+        title: bone_info.title.clone(),
     });
 
-    // Check agent holds bead claim
-    let bead_claims = ctx.held_bead_claims();
-    let holds_claim = bead_claims.iter().any(|(id, _)| *id == bead_id);
+    // Check agent holds bone claim
+    let bone_claims = ctx.held_bone_claims();
+    let holds_claim = bone_claims.iter().any(|(id, _)| *id == bone_id);
     if !holds_claim {
         guidance.blocked(format!(
-            "agent {agent} does not hold claim for bead {bead_id}. \
+            "agent {agent} does not hold claim for bone {bone_id}. \
              Stake a claim first with: {}",
-            shell::claims_stake_cmd(
-                "agent",
-                &format!("bead://{project}/{bead_id}"),
-                bead_id,
-            )
+            shell::claims_stake_cmd("agent", &format!("bone://{project}/{bone_id}"), bone_id,)
         ));
         print_guidance(&guidance, format)?;
         return Ok(());
     }
 
     // Resolve workspace from claims
-    let workspace = match ctx.workspace_for_bead(bead_id) {
+    let workspace = match ctx.workspace_for_bone(bone_id) {
         Some(ws) => ws.to_string(),
         None => {
             guidance.blocked(format!(
-                "no workspace claim found for bead {bead_id}. \
+                "no workspace claim found for bone {bone_id}. \
                  Create workspace and stake claim first."
             ));
             print_guidance(&guidance, format)?;
@@ -82,9 +75,7 @@ pub fn execute(
 
     // Validate workspace name before it flows into subprocess calls
     if let Err(e) = shell::validate_workspace_name(&workspace) {
-        guidance.blocked(format!(
-            "invalid workspace name from claims: {e}"
-        ));
+        guidance.blocked(format!("invalid workspace name from claims: {e}"));
         print_guidance(&guidance, format)?;
         return Ok(());
     }
@@ -96,7 +87,16 @@ pub fn execute(
     // If --review-id was provided, check that existing review
     if let Some(rid) = review_id_flag {
         return handle_existing_review(
-            &ctx, &mut guidance, rid, &workspace, &reviewer_names, bead_id, project, agent, execute, format,
+            &ctx,
+            &mut guidance,
+            rid,
+            &workspace,
+            &reviewer_names,
+            bone_id,
+            project,
+            agent,
+            execute,
+            format,
         );
     }
 
@@ -111,7 +111,7 @@ pub fn execute(
                 &existing.review_id,
                 &workspace,
                 &reviewer_names,
-                bead_id,
+                bone_id,
                 project,
                 agent,
                 execute,
@@ -123,9 +123,9 @@ pub fn execute(
         }
         Err(e) => {
             // Listing failed — proceed to create a new review
-            guidance.diagnostic(
-                format!("Could not list existing reviews ({e}); proceeding with creation."),
-            );
+            guidance.diagnostic(format!(
+                "Could not list existing reviews ({e}); proceeding with creation."
+            ));
         }
     }
 
@@ -133,7 +133,7 @@ pub fn execute(
     guidance.status = ProtocolStatus::NeedsReview;
 
     let reviewers_str = reviewer_names.join(",");
-    let title = format!("{bead_id}: {}", bead_info.title);
+    let title = format!("{bone_id}: {}", bone_info.title);
 
     let mut steps = Vec::new();
     steps.push(shell::crit_create_cmd(
@@ -145,10 +145,7 @@ pub fn execute(
 
     // Announce on bus with @mentions for each reviewer
     let mentions: Vec<String> = reviewer_names.iter().map(|r| format!("@{r}")).collect();
-    let announce_msg = format!(
-        "Review requested: {bead_id} {}",
-        mentions.join(" ")
-    );
+    let announce_msg = format!("Review requested: {bone_id} {}", mentions.join(" "));
     steps.push(shell::bus_send_cmd(
         agent,
         project,
@@ -185,7 +182,7 @@ fn handle_existing_review(
     review_id: &str,
     workspace: &str,
     reviewer_names: &[String],
-    bead_id: &str,
+    bone_id: &str,
     project: &str,
     agent: &str,
     execute: bool,
@@ -216,7 +213,7 @@ fn handle_existing_review(
                 "Review {} approved by {}. Proceed to finish: botbox protocol finish {}",
                 review_id,
                 decision.approved_by.join(", "),
-                bead_id,
+                bone_id,
             ));
         }
         ReviewGateStatus::Blocked => {
@@ -238,7 +235,11 @@ fn handle_existing_review(
             ));
 
             // Step 3: Announce re-request on bus
-            let mentions: Vec<String> = decision.blocked_by.iter().map(|r| format!("@{r}")).collect();
+            let mentions: Vec<String> = decision
+                .blocked_by
+                .iter()
+                .map(|r| format!("@{r}"))
+                .collect();
             let announce_msg = format!(
                 "Review updated: {review_id} — addressed feedback, re-requesting {}",
                 mentions.join(" ")
@@ -287,12 +288,12 @@ fn handle_existing_review(
                     agent,
                 ));
 
-                let mentions: Vec<String> =
-                    decision.missing_approvals.iter().map(|r| format!("@{r}")).collect();
-                let announce_msg = format!(
-                    "Review requested: {review_id} {}",
-                    mentions.join(" ")
-                );
+                let mentions: Vec<String> = decision
+                    .missing_approvals
+                    .iter()
+                    .map(|r| format!("@{r}"))
+                    .collect();
+                let announce_msg = format!("Review requested: {review_id} {}", mentions.join(" "));
                 steps.push(shell::bus_send_cmd(
                     agent,
                     project,
@@ -363,8 +364,8 @@ fn resolve_reviewers(
 
 /// Render guidance to stdout.
 fn print_guidance(guidance: &ProtocolGuidance, format: OutputFormat) -> anyhow::Result<()> {
-    let output =
-        super::render::render(guidance, format).map_err(|e| anyhow::anyhow!("render error: {e}"))?;
+    let output = super::render::render(guidance, format)
+        .map_err(|e| anyhow::anyhow!("render error: {e}"))?;
     println!("{}", output);
     Ok(())
 }

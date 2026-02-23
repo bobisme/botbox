@@ -164,7 +164,7 @@ pub fn render_report(report: &ExecutionReport, format: OutputFormat) -> String {
 ///
 /// Format:
 /// ```text
-/// step 1/5  bus claims stake --agent $AGENT 'bead://botbox/bd-abc'  ok
+/// step 1/5  bus claims stake --agent $AGENT 'bone://botbox/bd-abc'  ok
 /// step 2/5  maw ws create --random  ok  ws=frost-castle
 /// step 3/5  bus claims stake --agent $AGENT 'workspace://botbox/$WS'  FAILED
 /// step 4/5  (not executed)
@@ -178,7 +178,10 @@ fn render_text(report: &ExecutionReport) -> String {
         let step_num = idx + 1;
         let status = if result.success { "ok" } else { "FAILED" };
 
-        out.push_str(&format!("step {}/{}  {}  {}", step_num, total, result.command, status));
+        out.push_str(&format!(
+            "step {}/{}  {}  {}",
+            step_num, total, result.command, status
+        ));
 
         // If this was a workspace creation, show the workspace name
         if result.command.contains("maw ws create") && result.success {
@@ -205,11 +208,7 @@ fn render_json(report: &ExecutionReport) -> String {
     use serde_json::json;
 
     let total_steps = report.results.len() + report.remaining.len();
-    let success = report.remaining.is_empty()
-        && report
-            .results
-            .iter()
-            .all(|r| r.success);
+    let success = report.remaining.is_empty() && report.results.iter().all(|r| r.success);
 
     let results_json: Vec<_> = report
         .results
@@ -544,7 +543,10 @@ mod tests {
         let step3_with_sub = steps[2].replace("$WS", &ws_name);
 
         assert_eq!(step2_with_sub, "echo workspace is frost-castle");
-        assert_eq!(step3_with_sub, "bus claims stake 'workspace://frost-castle'");
+        assert_eq!(
+            step3_with_sub,
+            "bus claims stake 'workspace://frost-castle'"
+        );
     }
 
     #[test]
@@ -567,10 +569,7 @@ mod tests {
     #[test]
     #[ignore] // Run with `cargo test -- --ignored` to include subprocess tests
     fn execute_steps_real_subprocess() {
-        let steps = vec![
-            "echo hello".to_string(),
-            "echo world".to_string(),
-        ];
+        let steps = vec!["echo hello".to_string(), "echo world".to_string()];
         let report = execute_steps(&steps).unwrap();
         assert_eq!(report.results.len(), 2);
         assert!(report.results[0].success);

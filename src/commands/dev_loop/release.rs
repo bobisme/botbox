@@ -22,9 +22,10 @@ pub fn has_unreleased_changes() -> bool {
         .and_then(|t| t.run().ok());
 
     match output {
-        Some(o) if o.success() => o.stdout.lines().any(|line| {
-            line.starts_with("feat:") || line.starts_with("fix:")
-        }),
+        Some(o) if o.success() => o
+            .stdout
+            .lines()
+            .any(|line| line.starts_with("feat:") || line.starts_with("fix:")),
         _ => false,
     }
 }
@@ -33,10 +34,15 @@ pub fn has_unreleased_changes() -> bool {
 pub fn acquire_release_mutex(agent: &str, project: &str) -> anyhow::Result<()> {
     Tool::new("bus")
         .args(&[
-            "claims", "stake", "--agent", agent,
+            "claims",
+            "stake",
+            "--agent",
+            agent,
             &format!("release://{project}"),
-            "--ttl", "120",
-            "-m", "checking release",
+            "--ttl",
+            "120",
+            "-m",
+            "checking release",
         ])
         .run_ok()?;
     Ok(())
@@ -46,7 +52,10 @@ pub fn acquire_release_mutex(agent: &str, project: &str) -> anyhow::Result<()> {
 pub fn release_release_mutex(agent: &str, project: &str) {
     let _ = Tool::new("bus")
         .args(&[
-            "claims", "release", "--agent", agent,
+            "claims",
+            "release",
+            "--agent",
+            agent,
             &format!("release://{project}"),
         ])
         .run();

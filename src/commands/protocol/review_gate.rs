@@ -83,7 +83,9 @@ pub fn evaluate_review_gate(
             .and_modify(|existing| {
                 // Keep the vote with the later timestamp
                 // Lexicographic string comparison works correctly for ISO 8601/RFC3339 timestamps
-                if let (Some(existing_voted_at), Some(new_voted_at)) = (&existing.voted_at, &vote.voted_at) {
+                if let (Some(existing_voted_at), Some(new_voted_at)) =
+                    (&existing.voted_at, &vote.voted_at)
+                {
                     if new_voted_at > existing_voted_at {
                         *existing = vote;
                     }
@@ -114,7 +116,9 @@ pub fn evaluate_review_gate(
         }
     }
 
-    let status = if !missing_approvals.is_empty() || (required_reviewers.is_empty() && review.votes.is_empty()) {
+    let status = if !missing_approvals.is_empty()
+        || (required_reviewers.is_empty() && review.votes.is_empty())
+    {
         ReviewGateStatus::NeedsReview
     } else if !newer_block_after_lgtm.is_empty() {
         ReviewGateStatus::Blocked
@@ -135,7 +139,6 @@ pub fn evaluate_review_gate(
         blocked_by,
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -196,7 +199,11 @@ mod tests {
 
     #[test]
     fn test_needs_review_missing_approvals() {
-        let review = make_review(vec![make_vote("botbox-security", "lgtm", "2026-02-16T10:00:00Z")]);
+        let review = make_review(vec![make_vote(
+            "botbox-security",
+            "lgtm",
+            "2026-02-16T10:00:00Z",
+        )]);
         let required = vec!["botbox-security".to_string(), "botbox-perf".to_string()];
 
         let decision = evaluate_review_gate(&review, &required);

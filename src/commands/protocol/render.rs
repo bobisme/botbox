@@ -3,7 +3,7 @@
 //! Renders protocol guidance with shell-safe commands, validation, and format support.
 
 use crate::commands::doctor::OutputFormat;
-use crate::commands::protocol::executor::{ExecutionReport, StepResult};
+use crate::commands::protocol::executor::ExecutionReport;
 use serde::{Deserialize, Serialize};
 use std::fmt::Write;
 
@@ -11,7 +11,7 @@ use std::fmt::Write;
 
 /// A rendered protocol guidance output.
 ///
-/// Provides a snapshot of agent state (beads, workspaces, reviews) with
+/// Provides a snapshot of agent state (bones, workspaces, reviews) with
 /// next steps as shell commands agents can execute.
 ///
 /// Freshness Semantics:
@@ -35,8 +35,8 @@ pub struct ProtocolGuidance {
     pub valid_for_sec: u32,
     /// Command to re-fetch fresh guidance if stale (e.g., "botbox protocol start")
     pub revalidate_cmd: Option<String>,
-    /// Bead context (if applicable)
-    pub bead: Option<BeadRef>,
+    /// Bone context (if applicable)
+    pub bone: Option<BoneRef>,
     /// Workspace name (if applicable)
     pub workspace: Option<String>,
     /// Review context (if applicable)
@@ -66,7 +66,7 @@ impl ProtocolGuidance {
             snapshot_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
             valid_for_sec: 300, // 5 minutes default
             revalidate_cmd: None,
-            bead: None,
+            bone: None,
             workspace: None,
             review: None,
             steps: Vec::new(),
@@ -121,13 +121,13 @@ pub enum ProtocolStatus {
     NeedsReview,  // Awaiting review approval
     HasResources, // Workspace/claims held
     Clean,        // No held resources
-    HasWork,      // Ready beads available
+    HasWork,      // Ready bones available
     Fresh,        // Starting fresh (no prior state)
 }
 
-/// Bead reference in protocol output.
+/// Bone reference in protocol output.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct BeadRef {
+pub struct BoneRef {
     pub id: String,
     pub title: String,
 }
@@ -142,13 +142,13 @@ pub struct ReviewRef {
 // --- Validation (from shell module) ---
 
 use super::shell::{
-    validate_bead_id, validate_review_id, validate_workspace_name, ValidationError,
+    ValidationError, validate_bone_id, validate_review_id, validate_workspace_name,
 };
 
 /// Validate all dynamic values in a guidance before rendering.
 pub fn validate_guidance(guidance: &ProtocolGuidance) -> Result<(), ValidationError> {
-    if let Some(ref bead) = guidance.bead {
-        validate_bead_id(&bead.id)?;
+    if let Some(ref bone) = guidance.bone {
+        validate_bone_id(&bone.id)?;
     }
     if let Some(ref ws) = guidance.workspace {
         validate_workspace_name(ws)?;
@@ -167,7 +167,7 @@ pub fn validate_guidance(guidance: &ProtocolGuidance) -> Result<(), ValidationEr
 /// ```text
 /// Command: start
 /// Status: Ready
-/// Bead: bd-3t1d (protocol: shell-safe command renderer)
+/// Bone: bd-3t1d (protocol: shell-safe command renderer)
 /// Workspace: brave-tiger
 ///
 /// Steps:
@@ -182,10 +182,15 @@ pub fn render_text(guidance: &ProtocolGuidance) -> String {
     // Header
     writeln!(&mut out, "Command: {}", guidance.command).unwrap();
     writeln!(&mut out, "Status: {}", format_status(guidance.status)).unwrap();
-    writeln!(&mut out, "Snapshot: {} (valid for {}s)", guidance.snapshot_at, guidance.valid_for_sec).unwrap();
+    writeln!(
+        &mut out,
+        "Snapshot: {} (valid for {}s)",
+        guidance.snapshot_at, guidance.valid_for_sec
+    )
+    .unwrap();
 
-    if let Some(ref bead) = guidance.bead {
-        writeln!(&mut out, "Bead: {} ({})", bead.id, bead.title).unwrap();
+    if let Some(ref bone) = guidance.bone {
+        writeln!(&mut out, "Bone: {} ({})", bone.id, bone.title).unwrap();
     }
     if let Some(ref ws) = guidance.workspace {
         writeln!(&mut out, "Workspace: {}", ws).unwrap();
@@ -279,11 +284,11 @@ pub fn render_pretty(guidance: &ProtocolGuidance) -> String {
     )
     .unwrap();
 
-    if let Some(ref bead) = guidance.bead {
+    if let Some(ref bone) = guidance.bone {
         writeln!(
             &mut out,
-            "{}Bead:{} {} ({})",
-            bold, reset, bead.id, bead.title
+            "{}Bone:{} {} ({})",
+            bold, reset, bone.id, bone.title
         )
         .unwrap();
     }
@@ -354,9 +359,7 @@ pub fn render(guidance: &ProtocolGuidance, format: OutputFormat) -> Result<Strin
     validate_guidance(guidance).map_err(|e| e.to_string())?;
 
     Ok(match format {
-        OutputFormat::Json => {
-            render_json(guidance).map_err(|e| e.to_string())?
-        }
+        OutputFormat::Json => render_json(guidance).map_err(|e| e.to_string())?,
         OutputFormat::Pretty => render_pretty(guidance),
         OutputFormat::Text => render_text(guidance),
     })
@@ -365,6 +368,7 @@ pub fn render(guidance: &ProtocolGuidance, format: OutputFormat) -> Result<Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::protocol::executor::StepResult;
 
     // --- ProtocolGuidance builder tests ---
 
@@ -405,14 +409,14 @@ mod tests {
     }
 
     #[test]
-    fn guidance_with_bead_and_workspace() {
+    fn guidance_with_bone_and_workspace() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "protocol: shell-safe command renderer".to_string(),
         });
         g.workspace = Some("brave-tiger".to_string());
-        assert!(g.bead.is_some());
+        assert!(g.bone.is_some());
         assert!(g.workspace.is_some());
     }
 
@@ -439,7 +443,7 @@ mod tests {
     #[test]
     fn validate_guidance_valid() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "test".to_string(),
         });
@@ -450,7 +454,7 @@ mod tests {
     #[test]
     fn validate_guidance_invalid_bead_id() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "has spaces; rm -rf".to_string(),
             title: "test".to_string(),
         });
@@ -477,7 +481,7 @@ mod tests {
     #[test]
     fn render_text_with_bead_and_steps() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-abc".to_string(),
             title: "Test feature".to_string(),
         });
@@ -485,7 +489,7 @@ mod tests {
         g.step("echo step 2".to_string());
 
         let text = render_text(&g);
-        assert!(text.contains("Bead: bd-abc (Test feature)"));
+        assert!(text.contains("Bone: bd-abc (Test feature)"));
         assert!(text.contains("Steps:"));
         assert!(text.contains("echo step 1"));
         assert!(text.contains("echo step 2"));
@@ -517,7 +521,7 @@ mod tests {
     #[test]
     fn render_json_valid() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-xyz".to_string(),
             title: "Feature".to_string(),
         });
@@ -563,16 +567,18 @@ mod tests {
     fn golden_start_workflow() {
         // Typical start workflow
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "protocol: shell-safe command renderer".to_string(),
         });
         g.workspace = Some("brave-tiger".to_string());
         g.steps(vec![
-            "maw exec default -- br update --actor crimson-storm bd-3t1d --status=in_progress --owner=crimson-storm".to_string(),
-            "bus claims stake --agent crimson-storm 'bead://botbox/bd-3t1d' -m 'bd-3t1d'".to_string(),
+            "maw exec default -- bn do bd-3t1d".to_string(),
+            "bus claims stake --agent crimson-storm 'bone://botbox/bd-3t1d' -m 'bd-3t1d'"
+                .to_string(),
             "maw ws create --random".to_string(),
-            "bus claims stake --agent crimson-storm 'workspace://botbox/brave-tiger' -m 'bd-3t1d'".to_string(),
+            "bus claims stake --agent crimson-storm 'workspace://botbox/brave-tiger' -m 'bd-3t1d'"
+                .to_string(),
         ]);
         g.advise("Workspace created. Implement render.rs with ProtocolGuidance, ProtocolStatus, and rendering functions.".to_string());
 
@@ -587,11 +593,11 @@ mod tests {
     fn golden_blocked_workflow() {
         // Blocked due to claim conflict
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "protocol: shell-safe command renderer".to_string(),
         });
-        g.blocked("bead already claimed by another agent".to_string());
+        g.blocked("bone already claimed by another agent".to_string());
         g.diagnostic("Check: bus claims list --format json".to_string());
 
         let text = render_text(&g);
@@ -604,7 +610,7 @@ mod tests {
     fn golden_review_workflow() {
         // Review requested and pending approval
         let mut g = ProtocolGuidance::new("review");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "protocol: shell-safe command renderer".to_string(),
         });
@@ -659,7 +665,7 @@ mod tests {
     #[test]
     fn guidance_json_roundtrip() {
         let mut original = ProtocolGuidance::new("start");
-        original.bead = Some(BeadRef {
+        original.bone = Some(BoneRef {
             id: "bd-abc".to_string(),
             title: "test".to_string(),
         });
@@ -767,7 +773,7 @@ mod tests {
     #[test]
     fn golden_guidance_json_structure() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "test".to_string(),
         });
@@ -781,10 +787,19 @@ mod tests {
         assert!(parsed.get("schema").is_some(), "schema field missing");
         assert!(parsed.get("command").is_some(), "command field missing");
         assert!(parsed.get("status").is_some(), "status field missing");
-        assert!(parsed.get("snapshot_at").is_some(), "snapshot_at field missing");
-        assert!(parsed.get("valid_for_sec").is_some(), "valid_for_sec field missing");
+        assert!(
+            parsed.get("snapshot_at").is_some(),
+            "snapshot_at field missing"
+        );
+        assert!(
+            parsed.get("valid_for_sec").is_some(),
+            "valid_for_sec field missing"
+        );
         assert!(parsed.get("steps").is_some(), "steps field missing");
-        assert!(parsed.get("diagnostics").is_some(), "diagnostics field missing");
+        assert!(
+            parsed.get("diagnostics").is_some(),
+            "diagnostics field missing"
+        );
     }
 
     #[test]
@@ -805,7 +820,7 @@ mod tests {
     #[test]
     fn golden_full_guidance_json() {
         let mut g = ProtocolGuidance::new("review");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-abc".to_string(),
             title: "Feature X".to_string(),
         });
@@ -822,7 +837,7 @@ mod tests {
         let json = render_json(&g).unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
 
-        assert!(parsed["bead"]["id"].as_str().is_some());
+        assert!(parsed["bone"]["id"].as_str().is_some());
         assert!(parsed["workspace"].as_str().is_some());
         assert!(parsed["review"]["review_id"].as_str().is_some());
         assert_eq!(parsed["valid_for_sec"].as_u64(), Some(600));
@@ -835,7 +850,7 @@ mod tests {
     #[test]
     fn golden_text_render_includes_all_fields() {
         let mut g = ProtocolGuidance::new("start");
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-3t1d".to_string(),
             title: "protocol: renderer".to_string(),
         });
@@ -849,7 +864,7 @@ mod tests {
         assert!(text.contains("Command:"), "Command field missing");
         assert!(text.contains("Status:"), "Status field missing");
         assert!(text.contains("Snapshot:"), "Snapshot field missing");
-        assert!(text.contains("Bead:"), "Bead field missing");
+        assert!(text.contains("Bone:"), "Bone field missing");
         assert!(text.contains("Workspace:"), "Workspace field missing");
         assert!(text.contains("Revalidate:"), "Revalidate field missing");
         assert!(text.contains("Steps:"), "Steps field missing");
@@ -868,7 +883,7 @@ mod tests {
         let _steps = g.steps;
         let _diagnostics = g.diagnostics;
 
-        assert!(g.bead.is_none());
+        assert!(g.bone.is_none());
         assert!(g.workspace.is_none());
         assert!(g.review.is_none());
         assert!(g.revalidate_cmd.is_none());
@@ -881,7 +896,7 @@ mod tests {
     fn render_text_status_resumable() {
         let mut g = ProtocolGuidance::new("resume");
         g.status = ProtocolStatus::Resumable;
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-abc".to_string(),
             title: "In progress task".to_string(),
         });
@@ -897,7 +912,7 @@ mod tests {
     fn render_json_status_resumable() {
         let mut g = ProtocolGuidance::new("resume");
         g.status = ProtocolStatus::Resumable;
-        g.bead = Some(BeadRef {
+        g.bone = Some(BoneRef {
             id: "bd-abc".to_string(),
             title: "In progress".to_string(),
         });
@@ -933,7 +948,7 @@ mod tests {
     fn render_text_status_has_work() {
         let mut g = ProtocolGuidance::new("start");
         g.status = ProtocolStatus::HasWork;
-        g.steps(vec!["maw exec default -- br ready".to_string()]);
+        g.steps(vec!["maw exec default -- bn next".to_string()]);
 
         let text = render_text(&g);
         assert!(text.contains("Status: Has Work"));
@@ -977,14 +992,12 @@ mod tests {
         let mut g = ProtocolGuidance::new("start");
         g.executed = true;
         g.execution_report = Some(ExecutionReport {
-            results: vec![
-                StepResult {
-                    command: "echo test".to_string(),
-                    success: true,
-                    stdout: "test".to_string(),
-                    stderr: String::new(),
-                },
-            ],
+            results: vec![StepResult {
+                command: "echo test".to_string(),
+                success: true,
+                stdout: "test".to_string(),
+                stderr: String::new(),
+            }],
             remaining: vec![],
         });
 
@@ -998,14 +1011,12 @@ mod tests {
         let mut g = ProtocolGuidance::new("start");
         g.executed = true;
         g.execution_report = Some(ExecutionReport {
-            results: vec![
-                StepResult {
-                    command: "echo hello".to_string(),
-                    success: true,
-                    stdout: "hello".to_string(),
-                    stderr: String::new(),
-                },
-            ],
+            results: vec![StepResult {
+                command: "echo hello".to_string(),
+                success: true,
+                stdout: "hello".to_string(),
+                stderr: String::new(),
+            }],
             remaining: vec![],
         });
 
@@ -1021,14 +1032,12 @@ mod tests {
         let mut g = ProtocolGuidance::new("start");
         g.executed = true;
         g.execution_report = Some(ExecutionReport {
-            results: vec![
-                StepResult {
-                    command: "echo test".to_string(),
-                    success: true,
-                    stdout: "test".to_string(),
-                    stderr: String::new(),
-                },
-            ],
+            results: vec![StepResult {
+                command: "echo test".to_string(),
+                success: true,
+                stdout: "test".to_string(),
+                stderr: String::new(),
+            }],
             remaining: vec![],
         });
 
@@ -1041,14 +1050,12 @@ mod tests {
         let mut g = ProtocolGuidance::new("finish");
         g.executed = true;
         g.execution_report = Some(ExecutionReport {
-            results: vec![
-                StepResult {
-                    command: "maw ws merge --destroy".to_string(),
-                    success: false,
-                    stdout: String::new(),
-                    stderr: "error: workspace not found".to_string(),
-                },
-            ],
+            results: vec![StepResult {
+                command: "maw ws merge --destroy".to_string(),
+                success: false,
+                stdout: String::new(),
+                stderr: "error: workspace not found".to_string(),
+            }],
             remaining: vec!["next step".to_string()],
         });
 
@@ -1062,14 +1069,12 @@ mod tests {
         let mut g = ProtocolGuidance::new("finish");
         g.executed = true;
         g.execution_report = Some(ExecutionReport {
-            results: vec![
-                StepResult {
-                    command: "step1".to_string(),
-                    success: true,
-                    stdout: String::new(),
-                    stderr: String::new(),
-                },
-            ],
+            results: vec![StepResult {
+                command: "step1".to_string(),
+                success: true,
+                stdout: String::new(),
+                stderr: String::new(),
+            }],
             remaining: vec!["step2".to_string(), "step3".to_string()],
         });
 
@@ -1102,14 +1107,12 @@ mod tests {
         g.executed = true;
         g.step("echo hello".to_string());
         g.execution_report = Some(ExecutionReport {
-            results: vec![
-                StepResult {
-                    command: "echo hello".to_string(),
-                    success: true,
-                    stdout: "hello".to_string(),
-                    stderr: String::new(),
-                },
-            ],
+            results: vec![StepResult {
+                command: "echo hello".to_string(),
+                success: true,
+                stdout: "hello".to_string(),
+                stderr: String::new(),
+            }],
             remaining: vec![],
         });
 

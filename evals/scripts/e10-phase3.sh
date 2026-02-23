@@ -3,7 +3,7 @@ set -euo pipefail
 
 # E10 Phase 3: Beta Fixes + Releases (beta-dev, Sonnet)
 # Beta-dev creates a workspace, fixes validate_email to allow +,
-# adds tests, merges, closes bead, announces fix to alpha.
+# adds tests, merges, closes bone, announces fix to alpha.
 
 source "${1:?Usage: e10-phase3.sh <path-to-.eval-env>}"
 
@@ -13,11 +13,11 @@ mkdir -p "$ARTIFACTS"
 
 cd "$BETA_DIR"
 
-# Re-discover bug bead if not in env
+# Re-discover bug bone if not in env
 if [[ -z "${BUG_BEAD:-}" ]]; then
-  BUG_BEAD=$(maw exec default -- br ready 2>&1 | grep -i 'validate\|email\|plus' | grep -oP 'bd-\w+' | head -1)
+  BUG_BEAD=$(maw exec default -- bn next 2>&1 | grep -i 'validate\|email\|plus' | grep -oP 'bn-\w+' | head -1)
   if [[ -z "$BUG_BEAD" ]]; then
-    BUG_BEAD=$(maw exec default -- br ready 2>&1 | grep -oP 'bd-\w+' | tail -1)
+    BUG_BEAD=$(maw exec default -- bn next 2>&1 | grep -oP 'bn-\w+' | tail -1)
   fi
 fi
 
@@ -30,13 +30,12 @@ PROMPT="You are dev agent \"${BETA_DEV}\" for the \"beta\" validation library.
 Your project directory is: ${BETA_DIR}
 This project uses maw v2 (bare repo layout). Source files are in ws/default/.
 Use --agent ${BETA_DEV} on ALL bus mutation commands.
-Use --actor ${BETA_DEV} on br mutations and --author ${BETA_DEV} on br comments.
 Set BOTBUS_DATA_DIR=${BOTBUS_DATA_DIR} in your environment for all bus commands.
 
-You have a bug bead ${BUG_BEAD} to fix validate_email to allow + in the local part.
+You have a bug bone ${BUG_BEAD} to fix validate_email to allow + in the local part.
 
 1. START:
-   - maw exec default -- br update --actor ${BETA_DEV} ${BUG_BEAD} --status=in_progress
+   - maw exec default -- bn do ${BUG_BEAD}
    - maw ws create --random — note workspace name (\$WS)
      Your workspace files will be at: ${BETA_DIR}/ws/\$WS/
    - All file operations MUST use the absolute workspace path.
@@ -49,13 +48,13 @@ You have a bug bead ${BUG_BEAD} to fix validate_email to allow + in the local pa
 
 3. FINISH:
    - Merge workspace: maw ws merge \$WS --destroy
-   - Close bead: maw exec default -- br close --actor ${BETA_DEV} ${BUG_BEAD}
+   - Close bone: maw exec default -- bn done ${BUG_BEAD}
    - Announce fix to alpha: bus send --agent ${BETA_DEV} alpha \"@alpha-dev Fixed: validate_email now allows + in the local part. Should unblock your registration endpoint.\" -L task-done
    - Announce on beta channel: bus send --agent ${BETA_DEV} beta \"Closed ${BUG_BEAD}: validate_email + support\" -L task-done
 
 Key rules:
 - All file operations use the absolute workspace path: ${BETA_DIR}/ws/\$WS/
-- Run br/bv commands via: maw exec default -- br ...
+- Run bn commands via: maw exec default -- bn ...
 - Run jj/cargo via: maw exec \$WS -- <command>
 - Use jj (not git) via maw exec"
 

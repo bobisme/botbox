@@ -13,10 +13,7 @@ pub struct WorkerInfo {
 
 /// List active workers that belong to this agent (hierarchical naming: agent/suffix).
 pub fn list_child_workers(agent: &str) -> Vec<WorkerInfo> {
-    let output = match Tool::new("botty")
-        .args(&["list", "--format", "json"])
-        .run()
-    {
+    let output = match Tool::new("botty").args(&["list", "--format", "json"]).run() {
         Ok(o) if o.success() => o,
         _ => return Vec::new(),
     };
@@ -49,8 +46,6 @@ pub fn is_worker_alive(agent: &str, worker_name: &str) -> bool {
 
 /// Kill a specific worker by name.
 pub fn kill_worker(name: &str) -> anyhow::Result<()> {
-    Tool::new("botty")
-        .args(&["kill", name])
-        .run_ok()?;
+    Tool::new("botty").args(&["kill", name]).run_ok()?;
     Ok(())
 }

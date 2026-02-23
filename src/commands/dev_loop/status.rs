@@ -4,12 +4,12 @@ use crate::subprocess::Tool;
 pub struct StatusSnapshot;
 
 impl StatusSnapshot {
-    /// Gather a status snapshot: unfinished beads, claims, inbox, ready beads, active workers.
+    /// Gather a status snapshot: unfinished bones, claims, inbox, ready bones, active workers.
     pub fn gather(agent: &str, project: &str) -> Option<String> {
         let mut sections = Vec::new();
 
-        // Unfinished beads (crash recovery)
-        if let Some(s) = gather_unfinished_beads(agent) {
+        // Unfinished bones (crash recovery)
+        if let Some(s) = gather_unfinished_bones(agent) {
             sections.push(s);
         }
 
@@ -23,8 +23,8 @@ impl StatusSnapshot {
             sections.push(s);
         }
 
-        // Ready beads
-        if let Some(s) = gather_ready_beads() {
+        // Ready bones
+        if let Some(s) = gather_ready_bones() {
             sections.push(s);
         }
 
@@ -41,9 +41,9 @@ impl StatusSnapshot {
     }
 }
 
-fn gather_unfinished_beads(agent: &str) -> Option<String> {
-    let output = Tool::new("br")
-        .args(&["list", "--status", "in_progress", "--assignee", agent, "--json"])
+fn gather_unfinished_bones(agent: &str) -> Option<String> {
+    let output = Tool::new("bn")
+        .args(&["list", "--state", "doing", "--assignee", agent, "--json"])
         .in_workspace("default")
         .ok()?
         .run()
@@ -53,31 +53,33 @@ fn gather_unfinished_beads(agent: &str) -> Option<String> {
         return None;
     }
 
-    let beads: Vec<serde_json::Value> = serde_json::from_str(&output.stdout).ok()?;
-    if beads.is_empty() {
+    let bones: Vec<serde_json::Value> = serde_json::from_str(&output.stdout).ok()?;
+    if bones.is_empty() {
         return None;
     }
 
-    let lines: Vec<String> = beads
+    let lines: Vec<String> = bones
         .iter()
         .map(|b| {
             let id = b["id"].as_str().unwrap_or("?");
-            let priority = b["priority"].as_u64().unwrap_or(2);
+            let urgency = b["urgency"].as_str().unwrap_or("default");
             let title = b["title"].as_str().unwrap_or("?");
-            format!("  {id} P{priority}: {title}")
+            format!("  {id} [{urgency}]: {title}")
         })
         .collect();
 
     Some(format!(
-        "UNFINISHED BEADS ({}):\n{}",
-        beads.len(),
+        "UNFINISHED BONES ({}):\n{}",
+        bones.len(),
         lines.join("\n")
     ))
 }
 
 fn gather_claims(agent: &str) -> Option<String> {
     let output = Tool::new("bus")
-        .args(&["claims", "list", "--agent", agent, "--mine", "--format", "json"])
+        .args(&[
+            "claims", "list", "--agent", agent, "--mine", "--format", "json",
+        ])
         .run()
         .ok()?;
 
@@ -94,7 +96,7 @@ fn gather_claims(agent: &str) -> Option<String> {
             c["patterns"].as_array().is_some_and(|patterns| {
                 patterns.iter().any(|p| {
                     let s = p.as_str().unwrap_or("");
-                    s.starts_with("bead://") || s.starts_with("workspace://")
+                    s.starts_with("bone://") || s.starts_with("workspace://")
                 })
             })
         })
@@ -139,7 +141,13 @@ fn gather_claims(agent: &str) -> Option<String> {
 fn gather_inbox(agent: &str, project: &str) -> Option<String> {
     let output = Tool::new("bus")
         .args(&[
-            "inbox", "--agent", agent, "--channels", project, "--format", "json",
+            "inbox",
+            "--agent",
+            agent,
+            "--channels",
+            project,
+            "--format",
+            "json",
         ])
         .run()
         .ok()?;
@@ -183,9 +191,9 @@ fn gather_inbox(agent: &str, project: &str) -> Option<String> {
     ))
 }
 
-fn gather_ready_beads() -> Option<String> {
-    let output = Tool::new("br")
-        .args(&["ready", "--json"])
+fn gather_ready_bones() -> Option<String> {
+    let output = Tool::new("bn")
+        .args(&["next", "--json"])
         .in_workspace("default")
         .ok()?
         .run()
@@ -196,30 +204,33 @@ fn gather_ready_beads() -> Option<String> {
     }
 
     let parsed: serde_json::Value = serde_json::from_str(&output.stdout).ok()?;
-    let beads = if let Some(arr) = parsed.as_array() {
+    let bones = if let Some(arr) = parsed.as_array() {
         arr.clone()
     } else if let Some(arr) = parsed["issues"].as_array() {
         arr.clone()
-    } else if let Some(arr) = parsed["beads"].as_array() {
+    } else if let Some(arr) = parsed["bones"].as_array() {
         arr.clone()
     } else {
         return None;
     };
 
-    if beads.is_empty() {
+    if bones.is_empty() {
         return None;
     }
 
-    let mut lines: Vec<String> = beads
+    let mut lines: Vec<String> = bones
         .iter()
         .take(10)
         .map(|b| {
             let id = b["id"].as_str().unwrap_or("?");
-            let priority = b["priority"].as_u64().unwrap_or(2);
-            let owner = b["owner"]
-                .as_str()
-                .filter(|o| !o.is_empty())
-                .map(|o| format!(" ({o})"))
+            let urgency = b["urgency"].as_str().unwrap_or("default");
+            let assignees = b["assignees"]
+                .as_array()
+                .filter(|a| !a.is_empty())
+                .map(|a| {
+                    let names: Vec<&str> = a.iter().filter_map(|v| v.as_str()).collect();
+                    format!(" ({})", names.join(","))
+                })
                 .unwrap_or_default();
             let title = b["title"].as_str().unwrap_or("?");
             let labels = b["labels"]
@@ -230,17 +241,17 @@ fn gather_ready_beads() -> Option<String> {
                     format!(" [{}]", labels_str.join(","))
                 })
                 .unwrap_or_default();
-            format!("  {id} P{priority}{owner}: {title}{labels}")
+            format!("  {id} [{urgency}]{assignees}: {title}{labels}")
         })
         .collect();
 
-    if beads.len() > 10 {
-        lines.push(format!("  ... and {} more", beads.len() - 10));
+    if bones.len() > 10 {
+        lines.push(format!("  ... and {} more", bones.len() - 10));
     }
 
     Some(format!(
-        "READY BEADS ({}):\n{}",
-        beads.len(),
+        "READY BONES ({}):\n{}",
+        bones.len(),
         lines.join("\n")
     ))
 }
@@ -261,11 +272,7 @@ fn gather_active_workers(agent: &str) -> Option<String> {
 
     let workers: Vec<_> = agents
         .iter()
-        .filter(|a| {
-            a["id"]
-                .as_str()
-                .is_some_and(|id| id.starts_with(&prefix))
-        })
+        .filter(|a| a["id"].as_str().is_some_and(|id| id.starts_with(&prefix)))
         .collect();
 
     if workers.is_empty() {

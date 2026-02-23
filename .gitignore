@@ -3,8 +3,8 @@ opencode.json
 # Rust build artifacts
 target/
 
-# bv (beads viewer) local config and caches
-.bv/
+# bones local data
+.bones/
 
 # Environment and secrets
 .env

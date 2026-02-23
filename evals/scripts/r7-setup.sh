@@ -3,7 +3,7 @@ set -euo pipefail
 
 # R7 Planning Eval — Setup
 # Creates a fresh eval environment with a Rust/Axum project and a large feature
-# request bead. The bead describes SQLite persistence but Cargo.toml has no DB
+# request bone. The bone describes SQLite persistence but Cargo.toml has no DB
 # crate — the agent must notice the gap and adapt.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -15,7 +15,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 
 # --- Init repo and botbox ---
 jj git init
-botbox init --name r7-eval --type api --tools beads,maw,crit,botbus,botty --init-beads --no-interactive
+botbox init --name r7-eval --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
 
 # --- Copy latest local workflow docs (installed package may be stale) ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/
@@ -75,10 +75,10 @@ echo "DEV_AGENT=$DEV_AGENT"
 botbus send --agent setup r7-eval "R7 eval environment initialized" -L mesh -L setup
 botbus mark-read --agent "$DEV_AGENT" r7-eval
 
-# --- Create the feature request bead ---
-PARENT_BEAD=$(br create --silent \
-  --title="Build task management API" \
-  --description="$(cat << 'DESC_EOF'
+# --- Create the feature request bone ---
+PARENT_BEAD=$(bn create \
+  --title "Build task management API" \
+  --description "$(cat << 'DESC_EOF'
 Build a complete task management API using Rust and Axum.
 
 ## Data Model
@@ -134,7 +134,7 @@ spawn the server and test with reqwest.
 - Tests pass and cover the happy path for each endpoint
 DESC_EOF
 )" \
-  --type=task --priority=1)
+  --kind task)
 
 echo "PARENT_BEAD=$PARENT_BEAD"
 
@@ -155,5 +155,5 @@ echo "EVAL_DIR=$EVAL_DIR"
 echo "DEV_AGENT=$DEV_AGENT"
 echo "PARENT_BEAD=$PARENT_BEAD"
 echo ""
-echo "Verify: cargo check clean, br ready shows 1 bead"
+echo "Verify: cargo check clean, bn next shows 1 bone"
 echo "Next: source .eval-env && bash $REPO_DIR/evals/scripts/r7-phase1.sh"

@@ -75,7 +75,6 @@ impl HookRegistry {
             .filter(|entry| entry.is_eligible(tools))
             .collect()
     }
-
 }
 
 #[cfg(test)]
@@ -120,7 +119,7 @@ mod tests {
     #[test]
     fn eligibility_all_tools() {
         let tools = ToolsConfig {
-            beads: true,
+            bones: true,
             maw: true,
             crit: true,
             botbus: true,
@@ -136,5 +135,4 @@ mod tests {
         let eligible = HookRegistry::eligible(&tools);
         assert_eq!(eligible.len(), 0);
     }
-
 }

@@ -4,12 +4,12 @@ set -euo pipefail
 # E10 Full Lifecycle Eval — Setup
 # Creates two Rust projects (Alpha API + Beta library) sharing an isolated botbus instance.
 # Alpha has a planted /debug vulnerability; Beta has a buggy validate_email (rejects +).
-# Seeds a registration bead on Alpha, registers projects in #projects channel.
+# Seeds a registration bone on Alpha, registers projects in #projects channel.
 #
 # Both projects use maw v2 layout (bare repo + ws/default/).
 
 # --- Preflight: fail fast on missing dependencies ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo claude jq)
+REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo claude jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -33,7 +33,7 @@ bus init
 # --- Capture tool versions for forensics ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit botty jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "model_alpha=opus"
@@ -131,9 +131,9 @@ jj describe -m "beta: validation library"
 jj bookmark create main -r @
 jj new
 
-# botbox init handles: maw init (→ bare repo + ws/default/), br init, crit init, hooks
+# botbox init handles: maw init (→ bare repo + ws/default/), bn init, crit init, hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name beta --type library --tools beads,maw,crit,botbus --init-beads --no-interactive
+  botbox init --name beta --type library --tools bones,maw,crit,botbus --init-bones --no-interactive
 
 # --- Alpha project ---
 # Create source files FIRST (before botbox init converts to bare repo via maw init)
@@ -218,9 +218,9 @@ jj describe -m "alpha: initial API with health and debug endpoints"
 jj bookmark create main -r @
 jj new
 
-# botbox init handles: maw init (→ bare repo + ws/default/), br init, crit init, hooks
+# botbox init handles: maw init (→ bare repo + ws/default/), bn init, crit init, hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name alpha --type api --tools beads,maw,crit,botbus,botty --reviewers security --init-beads --no-interactive
+  botbox init --name alpha --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
 
 # --- Hooks (verify they were registered by botbox init) ---
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1
@@ -233,10 +233,10 @@ ln -s "../../beta/ws/default" "$ALPHA_DIR/ws/beta"
 
 # --- Seed work ---
 cd "$ALPHA_DIR"
-BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" maw exec default -- br create --actor setup --owner "$ALPHA_DEV" \
-  --title="Add user registration with email validation" \
-  --description="Implement POST /users with beta::validate_email. Must support plus-addressing (user+tag@example.com)." \
-  --type=feature --priority=2 2>&1 | grep -oP 'bd-\w+')
+BEAD=$(BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" AGENT=setup maw exec default -- bn create \
+  --title "Add user registration with email validation" \
+  --description "Implement POST /users with beta::validate_email. Must support plus-addressing (user+tag@example.com)." \
+  --kind feature 2>&1 | grep -oP 'bn-\w+')
 
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus send --agent setup alpha \
   "New task: Add POST /users registration endpoint. Must support standard email formats including subaddressing (user+tag@example.com). Use beta's validate_email for validation." \

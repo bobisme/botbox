@@ -10,11 +10,11 @@ use crate::config::{
     ReviewerAgentConfig, ToolsConfig, WorkerAgentConfig,
 };
 use crate::error::ExitError;
-use crate::subprocess::{run_command, Tool};
+use crate::subprocess::{Tool, run_command};
 use crate::template::render_agents_md;
 
 const PROJECT_TYPES: &[&str] = &["api", "cli", "frontend", "library", "monorepo", "tui"];
-const AVAILABLE_TOOLS: &[&str] = &["beads", "maw", "crit", "botbus", "botty"];
+const AVAILABLE_TOOLS: &[&str] = &["bones", "maw", "crit", "botbus", "botty"];
 const REVIEWER_ROLES: &[&str] = &["security"];
 const LANGUAGES: &[&str] = &["rust", "python", "node", "go", "typescript", "java"];
 const CONFIG_VERSION: &str = "1.0.16";
@@ -45,7 +45,7 @@ pub struct InitArgs {
     /// Project types (comma-separated: api, cli, frontend, library, monorepo, tui)
     #[arg(long, value_delimiter = ',')]
     pub r#type: Vec<String>,
-    /// Tools to enable (comma-separated: beads, maw, crit, botbus, botty)
+    /// Tools to enable (comma-separated: bones, maw, crit, botbus, botty)
     #[arg(long, value_delimiter = ',')]
     pub tools: Vec<String>,
     /// Reviewer roles (comma-separated: security)
@@ -63,10 +63,10 @@ pub struct InitArgs {
     /// Non-interactive mode
     #[arg(long)]
     pub no_interactive: bool,
-    /// Skip beads initialization
-    #[arg(long)]
-    pub no_init_beads: bool,
-    /// Skip seeding initial work beads
+    /// Skip bones initialization
+    #[arg(long, alias = "no-init-beads")]
+    pub no_init_bones: bool,
+    /// Skip seeding initial work bones
     #[arg(long)]
     pub no_seed_work: bool,
     /// Force overwrite existing config
@@ -89,7 +89,7 @@ struct InitChoices {
     languages: Vec<String>,
     install_command: Option<String>,
     check_command: Option<String>,
-    init_beads: bool,
+    init_bones: bool,
     seed_work: bool,
 }
 
@@ -101,15 +101,12 @@ impl InitArgs {
             .unwrap_or_else(|| std::env::current_dir().expect("Failed to get current dir"));
 
         // Canonicalize project root and verify it contains config or is a new init target
-        let project_dir = project_dir
-            .canonicalize()
-            .unwrap_or(project_dir);
+        let project_dir = project_dir.canonicalize().unwrap_or(project_dir);
 
         // Detect maw v2 bare repo
         let ws_default = project_dir.join("ws/default");
         if config::find_config(&ws_default).is_some()
-            || (ws_default.exists()
-                && !project_dir.join(".agents/botbox").exists())
+            || (ws_default.exists() && !project_dir.join(".agents/botbox").exists())
         {
             return self.handle_bare_repo(&project_dir);
         }
@@ -182,11 +179,11 @@ impl InitArgs {
             println!("Symlinked CLAUDE.md → AGENTS.md");
         }
 
-        // Initialize beads
-        if choices.init_beads && choices.tools.contains(&"beads".to_string()) {
-            match run_command("br", &["init"], Some(&project_dir)) {
-                Ok(_) => println!("Initialized beads"),
-                Err(_) => eprintln!("Warning: br init failed (is beads installed?)"),
+        // Initialize bones
+        if choices.init_bones && choices.tools.contains(&"bones".to_string()) {
+            match run_command("bn", &["init"], Some(&project_dir)) {
+                Ok(_) => println!("Initialized bones"),
+                Err(_) => eprintln!("Warning: bn init failed (is bones installed?)"),
             }
         }
 
@@ -214,7 +211,7 @@ impl InitArgs {
                      .agents/botbox/\n\
                      \n\
                      # Ignore tool config and data files\n\
-                     .beads/\n\
+                     .bones/\n\
                      .crit/\n\
                      .maw.toml\n\
                      .botbox.toml\n\
@@ -259,12 +256,12 @@ impl InitArgs {
             }
         }
 
-        // Seed initial work beads
-        if choices.seed_work && choices.tools.contains(&"beads".to_string()) {
-            let count = seed_initial_beads(&project_dir, &choices.name, &choices.types);
+        // Seed initial work bones
+        if choices.seed_work && choices.tools.contains(&"bones".to_string()) {
+            let count = seed_initial_bones(&project_dir, &choices.name, &choices.types);
             if count > 0 {
                 let suffix = if count > 1 { "s" } else { "" };
-                println!("Created {count} seed bead{suffix}");
+                println!("Created {count} seed bone{suffix}");
             }
         }
 
@@ -309,12 +306,10 @@ impl InitArgs {
             // First init at bare root — fine, delegate to ws/default
         }
 
-        let mut args: Vec<String> = vec![
-            "exec", "default", "--", "botbox", "init",
-        ]
-        .into_iter()
-        .map(Into::into)
-        .collect();
+        let mut args: Vec<String> = vec!["exec", "default", "--", "botbox", "init"]
+            .into_iter()
+            .map(Into::into)
+            .collect();
 
         if let Some(ref name) = self.name {
             args.push("--name".into());
@@ -353,8 +348,8 @@ impl InitArgs {
         if self.no_commit {
             args.push("--no-commit".into());
         }
-        if self.no_init_beads {
-            args.push("--no-init-beads".into());
+        if self.no_init_bones {
+            args.push("--no-init-bones".into());
         }
         if self.no_seed_work {
             args.push("--no-seed-work".into());
@@ -429,11 +424,7 @@ impl InitArgs {
         Ok(())
     }
 
-    fn gather_choices(
-        &self,
-        interactive: bool,
-        detected: &DetectedConfig,
-    ) -> Result<InitChoices> {
+    fn gather_choices(&self, interactive: bool, detected: &DetectedConfig) -> Result<InitChoices> {
         // Project name
         let name = if let Some(ref n) = self.name {
             validate_name(n, "project name")?;
@@ -443,10 +434,9 @@ impl InitArgs {
             validate_name(&n, "project name")?;
             n
         } else {
-            let n = detected
-                .name
-                .clone()
-                .ok_or_else(|| ExitError::Other("--name is required in non-interactive mode".into()))?;
+            let n = detected.name.clone().ok_or_else(|| {
+                ExitError::Other("--name is required in non-interactive mode".into())
+            })?;
             validate_name(&n, "project name")?;
             n
         };
@@ -460,7 +450,11 @@ impl InitArgs {
                 .iter()
                 .map(|t| detected.types.contains(&t.to_string()))
                 .collect();
-            prompt_multi_select("Project type (select one or more)", PROJECT_TYPES, &defaults)?
+            prompt_multi_select(
+                "Project type (select one or more)",
+                PROJECT_TYPES,
+                &defaults,
+            )?
         } else {
             if detected.types.is_empty() {
                 return Err(
@@ -523,11 +517,11 @@ impl InitArgs {
             Vec::new()
         };
 
-        // Init beads
-        let init_beads = if self.no_init_beads {
+        // Init bones
+        let init_bones = if self.no_init_bones {
             false
         } else if interactive {
-            prompt_confirm("Initialize beads?", true)?
+            prompt_confirm("Initialize bones?", true)?
         } else {
             false
         };
@@ -536,7 +530,7 @@ impl InitArgs {
         let seed_work = if self.no_seed_work {
             false
         } else if interactive {
-            prompt_confirm("Seed initial work beads?", false)?
+            prompt_confirm("Seed initial work bones?", false)?
         } else {
             false
         };
@@ -561,7 +555,10 @@ impl InitArgs {
             let auto = detect_check_command(&languages);
             if interactive {
                 let default = auto.as_deref().unwrap_or("just check");
-                Some(prompt_input("Build/check command (run before merging)", Some(default))?)
+                Some(prompt_input(
+                    "Build/check command (run before merging)",
+                    Some(default),
+                )?)
             } else {
                 auto
             }
@@ -575,7 +572,7 @@ impl InitArgs {
             languages,
             install_command,
             check_command,
-            init_beads,
+            init_bones,
             seed_work,
         })
     }
@@ -588,9 +585,7 @@ fn prompt_input(prompt: &str, default: Option<&str>) -> Result<String> {
     if let Some(d) = default {
         builder = builder.default(d.to_string());
     }
-    builder
-        .interact_text()
-        .context("reading user input")
+    builder.interact_text().context("reading user input")
 }
 
 fn prompt_multi_select(prompt: &str, items: &[&str], defaults: &[bool]) -> Result<Vec<String>> {
@@ -601,7 +596,10 @@ fn prompt_multi_select(prompt: &str, items: &[&str], defaults: &[bool]) -> Resul
         .interact()
         .context("reading user selection")?;
 
-    Ok(selections.into_iter().map(|i| items[i].to_string()).collect())
+    Ok(selections
+        .into_iter()
+        .map(|i| items[i].to_string())
+        .collect())
 }
 
 fn prompt_confirm(prompt: &str, default: bool) -> Result<bool> {
@@ -615,14 +613,18 @@ fn prompt_confirm(prompt: &str, default: bool) -> Result<bool> {
 // --- Validation ---
 
 fn validate_values(values: &[String], valid: &[&str], label: &str) -> Result<()> {
-    let invalid: Vec<&String> = values.iter().filter(|v| !valid.contains(&v.as_str())).collect();
+    let invalid: Vec<&String> = values
+        .iter()
+        .filter(|v| !valid.contains(&v.as_str()))
+        .collect();
     if !invalid.is_empty() {
-        let inv = invalid.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+        let inv = invalid
+            .iter()
+            .map(|s| s.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
         let val = valid.join(", ");
-        return Err(ExitError::Other(format!(
-            "Unknown {label}: {inv}. Valid: {val}"
-        ))
-        .into());
+        return Err(ExitError::Other(format!("Unknown {label}: {inv}. Valid: {val}")).into());
     }
     Ok(())
 }
@@ -691,7 +693,7 @@ fn build_config(choices: &InitChoices) -> Config {
             critical_approvers: None,
         },
         tools: ToolsConfig {
-            beads: choices.tools.contains(&"beads".to_string()),
+            bones: choices.tools.contains(&"bones".to_string()),
             maw: choices.tools.contains(&"maw".to_string()),
             crit: choices.tools.contains(&"crit".to_string()),
             botbus: choices.tools.contains(&"botbus".to_string()),
@@ -735,15 +737,12 @@ fn build_config(choices: &InitChoices) -> Config {
 // --- Sync helpers (reuse embedded content from sync.rs) ---
 
 // Re-embed the same workflow docs as sync.rs
-use crate::commands::sync::{
-    DESIGN_DOCS, REVIEWER_PROMPTS, WORKFLOW_DOCS,
-};
+use crate::commands::sync::{DESIGN_DOCS, REVIEWER_PROMPTS, WORKFLOW_DOCS};
 
 fn sync_workflow_docs(agents_dir: &Path) -> Result<()> {
     for (name, content) in WORKFLOW_DOCS {
         let path = agents_dir.join(name);
-        fs::write(&path, content)
-            .with_context(|| format!("writing {}", path.display()))?;
+        fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
     }
 
     // Write version marker
@@ -765,8 +764,7 @@ fn sync_prompts(agents_dir: &Path) -> Result<()> {
 
     for (name, content) in REVIEWER_PROMPTS {
         let path = prompts_dir.join(name);
-        fs::write(&path, content)
-            .with_context(|| format!("writing {}", path.display()))?;
+        fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
     }
 
     use sha2::{Digest, Sha256};
@@ -787,8 +785,7 @@ fn sync_design_docs(agents_dir: &Path) -> Result<()> {
 
     for (name, content) in DESIGN_DOCS {
         let path = design_dir.join(name);
-        fs::write(&path, content)
-            .with_context(|| format!("writing {}", path.display()))?;
+        fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
     }
 
     use sha2::{Digest, Sha256};
@@ -804,9 +801,9 @@ fn sync_design_docs(agents_dir: &Path) -> Result<()> {
 }
 
 fn sync_hooks(project_dir: &Path) -> Result<()> {
-    use std::collections::HashMap;
-    use crate::hooks::HookRegistry;
     use crate::config::Config;
+    use crate::hooks::HookRegistry;
+    use std::collections::HashMap;
 
     let claude_dir = project_dir.join(".claude");
     fs::create_dir_all(&claude_dir)?;
@@ -819,8 +816,7 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
     let project_root_str = canonical.display().to_string();
 
     // Load config to determine eligible hooks
-    let config_path = config::find_config(project_dir)
-        .context("no config file found")?;
+    let config_path = config::find_config(project_dir).context("no config file found")?;
     let config = Config::load(&config_path)?;
     let eligible_hooks = HookRegistry::eligible(&config.tools);
 
@@ -864,20 +860,19 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
         if let Some(arr) = event_array.as_array_mut() {
             // Remove existing botbox entries (identified by command containing "botbox")
             arr.retain(|entry| {
-                let is_botbox = entry
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .is_some_and(|hooks| {
-                        hooks.iter().any(|hook| {
-                            hook.get("command")
-                                .and_then(|c| c.as_array())
-                                .is_some_and(|cmd| {
-                                    cmd.first()
-                                        .and_then(|c| c.as_str())
-                                        == Some("botbox")
-                                })
-                        })
-                    });
+                let is_botbox =
+                    entry
+                        .get("hooks")
+                        .and_then(|h| h.as_array())
+                        .is_some_and(|hooks| {
+                            hooks.iter().any(|hook| {
+                                hook.get("command")
+                                    .and_then(|c| c.as_array())
+                                    .is_some_and(|cmd| {
+                                        cmd.first().and_then(|c| c.as_str()) == Some("botbox")
+                                    })
+                            })
+                        });
                 !is_botbox
             });
 
@@ -918,13 +913,7 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
     // Register reviewer hooks
     for role in reviewers {
         let reviewer_agent = format!("{name}-{role}");
-        register_reviewer_hook(
-            &hook_cwd,
-            &spawn_cwd,
-            name,
-            &agent,
-            &reviewer_agent,
-        );
+        register_reviewer_hook(&hook_cwd, &spawn_cwd, name, &agent, &reviewer_agent);
     }
 }
 
@@ -933,20 +922,16 @@ fn detect_hook_paths(abs_path: &Path) -> (String, String) {
     let abs_str = abs_path.display().to_string();
     if let Some(parent) = abs_path.parent()
         && parent.file_name().is_some_and(|n| n == "ws")
-            && let Some(bare_root) = parent.parent()
-                && bare_root.join(".jj").exists() {
-                    let bare_str = bare_root.display().to_string();
-                    return (bare_str.clone(), bare_str);
-                }
+        && let Some(bare_root) = parent.parent()
+        && bare_root.join(".jj").exists()
+    {
+        let bare_str = bare_root.display().to_string();
+        return (bare_str.clone(), bare_str);
+    }
     (abs_str.clone(), abs_str)
 }
 
-fn register_router_hook(
-    hook_cwd: &str,
-    spawn_cwd: &str,
-    name: &str,
-    agent: &str,
-) {
+fn register_router_hook(hook_cwd: &str, spawn_cwd: &str, name: &str, agent: &str) {
     let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
     let claim_uri = format!("agent://{name}-router");
     let spawn_name = format!("{name}-router");
@@ -955,19 +940,31 @@ fn register_router_hook(
     match crate::subprocess::ensure_bus_hook(
         &description,
         &[
-            "--agent", agent,
-            "--channel", name,
-            "--claim", &claim_uri,
-            "--claim-owner", agent,
-            "--cwd", hook_cwd,
-            "--ttl", "600",
+            "--agent",
+            agent,
+            "--channel",
+            name,
+            "--claim",
+            &claim_uri,
+            "--claim-owner",
+            agent,
+            "--cwd",
+            hook_cwd,
+            "--ttl",
+            "600",
             "--",
-            "botty", "spawn",
-            "--env-inherit", env_inherit,
-            "--name", &spawn_name,
-            "--cwd", spawn_cwd,
+            "botty",
+            "spawn",
+            "--env-inherit",
+            env_inherit,
+            "--name",
+            &spawn_name,
+            "--cwd",
+            spawn_cwd,
             "--",
-            "botbox", "run", "responder",
+            "botbox",
+            "run",
+            "responder",
         ],
     ) {
         Ok((action, _id)) => println!("Router hook {action} for #{name}"),
@@ -993,22 +990,37 @@ fn register_reviewer_hook(
     match crate::subprocess::ensure_bus_hook(
         &description,
         &[
-            "--agent", agent,
-            "--channel", name,
-            "--mention", reviewer_agent,
-            "--claim", &claim_uri,
-            "--claim-owner", reviewer_agent,
-            "--ttl", "600",
-            "--priority", "1",
-            "--cwd", hook_cwd,
+            "--agent",
+            agent,
+            "--channel",
+            name,
+            "--mention",
+            reviewer_agent,
+            "--claim",
+            &claim_uri,
+            "--claim-owner",
+            reviewer_agent,
+            "--ttl",
+            "600",
+            "--priority",
+            "1",
+            "--cwd",
+            hook_cwd,
             "--",
-            "botty", "spawn",
-            "--env-inherit", env_inherit,
-            "--name", reviewer_agent,
-            "--cwd", spawn_cwd,
+            "botty",
+            "spawn",
+            "--env-inherit",
+            env_inherit,
+            "--name",
+            reviewer_agent,
+            "--cwd",
+            spawn_cwd,
             "--",
-            "botbox", "run", "reviewer-loop",
-            "--agent", reviewer_agent,
+            "botbox",
+            "run",
+            "reviewer-loop",
+            "--agent",
+            reviewer_agent,
         ],
     ) {
         Ok((action, _id)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
@@ -1016,24 +1028,19 @@ fn register_reviewer_hook(
     }
 }
 
-// --- Seed beads ---
+// --- Seed bones ---
 
-fn seed_initial_beads(project_dir: &Path, name: &str, types: &[String]) -> usize {
-    let agent = format!("{name}-dev");
+fn seed_initial_bones(project_dir: &Path, _name: &str, types: &[String]) -> usize {
     let mut count = 0;
 
-    let create_bead = |title: &str, description: &str, priority: u32| -> bool {
-        Tool::new("br")
+    let create_bone = |title: &str, description: &str, urgency: &str| -> bool {
+        Tool::new("bn")
             .args(&[
                 "create",
-                "--actor",
-                &agent,
-                "--owner",
-                &agent,
                 &format!("--title={title}"),
                 &format!("--description={description}"),
-                "--type=task",
-                &format!("--priority={priority}"),
+                "--kind=task",
+                &format!("--urgency={urgency}"),
             ])
             .run()
             .is_ok_and(|o| o.success())
@@ -1042,10 +1049,12 @@ fn seed_initial_beads(project_dir: &Path, name: &str, types: &[String]) -> usize
     // Scout for spec files
     for spec in ["spec.md", "SPEC.md", "specification.md", "design.md"] {
         if project_dir.join(spec).exists()
-            && create_bead(
-                &format!("Review {spec} and create implementation beads"),
-                &format!("Read {spec}, understand requirements, and break down into actionable beads with acceptance criteria."),
-                1,
+            && create_bone(
+                &format!("Review {spec} and create implementation bones"),
+                &format!(
+                    "Read {spec}, understand requirements, and break down into actionable bones with acceptance criteria."
+                ),
+                "urgent",
             )
         {
             count += 1;
@@ -1054,10 +1063,10 @@ fn seed_initial_beads(project_dir: &Path, name: &str, types: &[String]) -> usize
 
     // Scout for README
     if project_dir.join("README.md").exists()
-        && create_bead(
+        && create_bone(
             "Review README and align project setup",
-            "Read README.md for project goals, architecture decisions, and setup requirements. Create beads for any gaps.",
-            2,
+            "Read README.md for project goals, architecture decisions, and setup requirements. Create bones for any gaps.",
+            "default",
         )
     {
         count += 1;
@@ -1065,13 +1074,13 @@ fn seed_initial_beads(project_dir: &Path, name: &str, types: &[String]) -> usize
 
     // Scout for source structure
     if !project_dir.join("src").exists()
-        && create_bead(
+        && create_bone(
             "Create initial source structure",
             &format!(
                 "Set up src/ directory and project scaffolding for project type: {}.",
                 types.join(", ")
             ),
-            2,
+            "default",
         )
     {
         count += 1;
@@ -1079,10 +1088,10 @@ fn seed_initial_beads(project_dir: &Path, name: &str, types: &[String]) -> usize
 
     // Fallback
     if count == 0
-        && create_bead(
-            "Scout project and create initial beads",
-            "Explore the repository, understand the project goals, and create actionable beads for initial implementation work.",
-            1,
+        && create_bone(
+            "Scout project and create initial bones",
+            "Explore the repository, understand the project goals, and create actionable bones for initial implementation work.",
+            "urgent",
         )
     {
         count += 1;
@@ -1131,11 +1140,11 @@ mod tests {
 
     #[test]
     fn test_detect_from_agents_md() {
-        let content = "# myproject\n\nProject type: cli, api\nTools: `beads`, `maw`, `crit`\nReviewer roles: security\n";
+        let content = "# myproject\n\nProject type: cli, api\nTools: `bones`, `maw`, `crit`\nReviewer roles: security\n";
         let detected = detect_from_agents_md(content);
         assert_eq!(detected.name, Some("myproject".to_string()));
         assert_eq!(detected.types, vec!["cli", "api"]);
-        assert_eq!(detected.tools, vec!["beads", "maw", "crit"]);
+        assert_eq!(detected.tools, vec!["bones", "maw", "crit"]);
         assert_eq!(detected.reviewers, vec!["security"]);
     }
 
@@ -1150,13 +1159,13 @@ mod tests {
 
     #[test]
     fn test_validate_values_ok() {
-        let values = vec!["beads".to_string(), "maw".to_string()];
+        let values = vec!["bones".to_string(), "maw".to_string()];
         assert!(validate_values(&values, AVAILABLE_TOOLS, "tool").is_ok());
     }
 
     #[test]
     fn test_validate_values_invalid() {
-        let values = vec!["beads".to_string(), "invalid".to_string()];
+        let values = vec!["bones".to_string(), "invalid".to_string()];
         let result = validate_values(&values, AVAILABLE_TOOLS, "tool");
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
@@ -1168,12 +1177,12 @@ mod tests {
         let choices = InitChoices {
             name: "test".to_string(),
             types: vec!["cli".to_string()],
-            tools: vec!["beads".to_string(), "maw".to_string()],
+            tools: vec!["bones".to_string(), "maw".to_string()],
             reviewers: vec!["security".to_string()],
             languages: vec!["rust".to_string()],
             install_command: Some("just install".to_string()),
             check_command: Some("cargo test && cargo clippy -- -D warnings".to_string()),
-            init_beads: true,
+            init_bones: true,
             seed_work: false,
         };
 
@@ -1181,7 +1190,7 @@ mod tests {
         assert_eq!(config.project.name, "test");
         assert_eq!(config.project.default_agent, Some("test-dev".to_string()));
         assert_eq!(config.project.channel, Some("test".to_string()));
-        assert!(config.tools.beads);
+        assert!(config.tools.bones);
         assert!(config.tools.maw);
         assert!(!config.tools.crit);
         assert!(config.review.enabled);

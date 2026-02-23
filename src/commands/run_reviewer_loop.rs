@@ -35,8 +35,11 @@ pub fn get_reviewer_prompt_name(role: Option<&str>) -> String {
 
 /// Validate that a name matches expected agent/project pattern (alphanumeric + hyphens).
 fn validate_name(name: &str, label: &str) -> Result<()> {
-    if name.is_empty() || name.len() > 64
-        || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'/')
+    if name.is_empty()
+        || name.len() > 64
+        || !name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'/')
         || name.starts_with('-')
     {
         anyhow::bail!("invalid {label} name {name:?}: must match [a-z0-9-/]+, max 64 chars");
@@ -45,7 +48,12 @@ fn validate_name(name: &str, label: &str) -> Result<()> {
 }
 
 /// Load a prompt template and substitute {{VARIABLE}} placeholders.
-pub fn load_prompt(prompt_name: &str, agent: &str, project: &str, prompts_dir: &Path) -> Result<String> {
+pub fn load_prompt(
+    prompt_name: &str,
+    agent: &str,
+    project: &str,
+    prompts_dir: &Path,
+) -> Result<String> {
     // Validate inputs to prevent template injection
     validate_name(agent, "agent")?;
     validate_name(project, "project")?;
@@ -57,8 +65,8 @@ pub fn load_prompt(prompt_name: &str, agent: &str, project: &str, prompts_dir: &
 
     let file_path = prompts_dir.join(format!("{}.md", prompt_name));
 
-    let template = fs::read_to_string(&file_path)
-        .with_context(|| "reading prompt template".to_string())?;
+    let template =
+        fs::read_to_string(&file_path).with_context(|| "reading prompt template".to_string())?;
 
     // Simple variable substitution
     let mut result = template;
@@ -84,7 +92,8 @@ fn get_cache_dir() -> Result<PathBuf> {
     };
 
     // Canonicalize current dir to prevent path traversal via symlinks
-    let current_dir = env::current_dir()?.canonicalize()
+    let current_dir = env::current_dir()?
+        .canonicalize()
         .unwrap_or_else(|_| env::current_dir().unwrap_or_default());
 
     // Use a safe slug: replace path separators, strip leading dashes, limit length
@@ -187,10 +196,7 @@ fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
     for ws in workspaces {
         // Sync crit index to pick up newly created reviews (avoids race
         // condition when reviewer spawns before crit has indexed a new review)
-        let _ = Tool::new("crit")
-            .in_workspace(&ws)?
-            .args(&["sync"])
-            .run();
+        let _ = Tool::new("crit").in_workspace(&ws)?.args(&["sync"]).run();
 
         // Check crit inbox in this workspace
         let result = Tool::new("crit")
@@ -200,33 +206,34 @@ fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
 
         if let Ok(output) = result
             && output.success()
-                && let Ok(inbox) = output.parse_json::<CritInbox>() {
-                    // Deduplicate reviews
-                    for review in inbox.reviews_awaiting_vote {
-                        if seen_reviews.insert(review.review_id.clone()) {
-                            work_items.push(WorkItem {
-                                workspace: ws.clone(),
-                                review_id: review.review_id,
-                                title: review.title,
-                                is_thread: false,
-                                thread_id: None,
-                            });
-                        }
-                    }
-
-                    // Deduplicate threads
-                    for thread in inbox.threads_with_new_responses {
-                        if seen_threads.insert(thread.thread_id.clone()) {
-                            work_items.push(WorkItem {
-                                workspace: ws.clone(),
-                                review_id: thread.review_id.unwrap_or_default(),
-                                title: None,
-                                is_thread: true,
-                                thread_id: Some(thread.thread_id),
-                            });
-                        }
-                    }
+            && let Ok(inbox) = output.parse_json::<CritInbox>()
+        {
+            // Deduplicate reviews
+            for review in inbox.reviews_awaiting_vote {
+                if seen_reviews.insert(review.review_id.clone()) {
+                    work_items.push(WorkItem {
+                        workspace: ws.clone(),
+                        review_id: review.review_id,
+                        title: review.title,
+                        is_thread: false,
+                        thread_id: None,
+                    });
                 }
+            }
+
+            // Deduplicate threads
+            for thread in inbox.threads_with_new_responses {
+                if seen_threads.insert(thread.thread_id.clone()) {
+                    work_items.push(WorkItem {
+                        workspace: ws.clone(),
+                        review_id: thread.review_id.unwrap_or_default(),
+                        title: None,
+                        is_thread: true,
+                        thread_id: Some(thread.thread_id),
+                    });
+                }
+            }
+        }
         // Silently skip workspaces where crit fails (stale, no .crit, etc.)
     }
 
@@ -253,7 +260,10 @@ fn build_prompt(
     let mut base_prompt = match load_prompt(&prompt_name, agent, project, &prompts_dir) {
         Ok(p) => p,
         Err(_) if role.is_some() => {
-            eprintln!("Warning: {}.md not found, using base reviewer prompt", prompt_name);
+            eprintln!(
+                "Warning: {}.md not found, using base reviewer prompt",
+                prompt_name
+            );
             load_prompt("reviewer", agent, project, &prompts_dir)?
         }
         Err(e) => return Err(e),
@@ -352,10 +362,12 @@ fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
         let _ = Tool::new("bus")
             .args(&[
                 "send",
-                "--agent", agent,
+                "--agent",
+                agent,
                 project,
                 &format!("Reviewer {} signing off.", agent),
-                "-L", "agent-idle",
+                "-L",
+                "agent-idle",
             ])
             .new_process_group()
             .run();
@@ -367,7 +379,13 @@ fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
         .run();
 
     let _ = Tool::new("bus")
-        .args(&["claims", "release", "--agent", agent, &format!("agent://{}", agent)])
+        .args(&[
+            "claims",
+            "release",
+            "--agent",
+            agent,
+            &format!("agent://{}", agent),
+        ])
         .new_process_group()
         .run();
 
@@ -401,12 +419,16 @@ pub fn run_reviewer_loop(
     let project = config.channel();
 
     // Get reviewer config
-    let reviewer_config = config.agents.reviewer.clone().unwrap_or(ReviewerAgentConfig {
-        model: "opus".to_string(),
-        max_loops: 20,
-        pause: 2,
-        timeout: 900,
-    });
+    let reviewer_config = config
+        .agents
+        .reviewer
+        .clone()
+        .unwrap_or(ReviewerAgentConfig {
+            model: "opus".to_string(),
+            max_loops: 20,
+            pause: 2,
+            timeout: 900,
+        });
 
     let model_raw = model_override.unwrap_or(reviewer_config.model);
     let model = config.resolve_model(&model_raw);
@@ -434,16 +456,25 @@ pub fn run_reviewer_loop(
 
     // Try to refresh claim, otherwise stake
     let refresh = Tool::new("bus")
-        .args(&["claims", "refresh", "--agent", &agent, &format!("agent://{}", agent)])
+        .args(&[
+            "claims",
+            "refresh",
+            "--agent",
+            &agent,
+            &format!("agent://{}", agent),
+        ])
         .run();
 
     if refresh.is_err() || !refresh.as_ref().unwrap().success() {
         let stake = Tool::new("bus")
             .args(&[
-                "claims", "stake",
-                "--agent", &agent,
+                "claims",
+                "stake",
+                "--agent",
+                &agent,
                 &format!("agent://{}", agent),
-                "-m", &format!("reviewer-loop for {}", project),
+                "-m",
+                &format!("reviewer-loop for {}", project),
             ])
             .run();
 
@@ -456,16 +487,26 @@ pub fn run_reviewer_loop(
     let _ = Tool::new("bus")
         .args(&[
             "send",
-            "--agent", &agent,
+            "--agent",
+            &agent,
             &project,
             &format!("Reviewer {} online, starting review loop", agent),
-            "-L", "spawn-ack",
+            "-L",
+            "spawn-ack",
         ])
         .run();
 
     // Set starting status
     let _ = Tool::new("bus")
-        .args(&["statuses", "set", "--agent", &agent, "Starting loop", "--ttl", "10m"])
+        .args(&[
+            "statuses",
+            "set",
+            "--agent",
+            &agent,
+            "Starting loop",
+            "--ttl",
+            "10m",
+        ])
         .run();
 
     // Truncate journal at start
@@ -499,10 +540,12 @@ pub fn run_reviewer_loop(
             let _ = Tool::new("bus")
                 .args(&[
                     "send",
-                    "--agent", &agent,
+                    "--agent",
+                    &agent,
                     &project,
                     &format!("No reviews pending. Reviewer {} signing off.", agent),
-                    "-L", "agent-idle",
+                    "-L",
+                    "agent-idle",
                 ])
                 .run();
 
@@ -512,11 +555,15 @@ pub fn run_reviewer_loop(
 
         let review_count = work_items.iter().filter(|w| !w.is_thread).count();
         let thread_count = work_items.iter().filter(|w| w.is_thread).count();
-        eprintln!("  {} reviews awaiting vote, {} threads with responses", review_count, thread_count);
+        eprintln!(
+            "  {} reviews awaiting vote, {} threads with responses",
+            review_count, thread_count
+        );
 
         // Build prompt
         let last_iteration = read_last_iteration(&journal_path);
-        let last_iter_ref = last_iteration.as_ref()
+        let last_iter_ref = last_iteration
+            .as_ref()
             .map(|(content, age)| (content.as_str(), age.as_str()));
 
         let prompt = build_prompt(&agent, &project, &work_items, last_iter_ref)?;
@@ -561,8 +608,14 @@ mod tests {
 
     #[test]
     fn test_derive_role_security() {
-        assert_eq!(derive_role_from_agent_name("myproject-security"), Some("security".to_string()));
-        assert_eq!(derive_role_from_agent_name("foo-bar-security"), Some("security".to_string()));
+        assert_eq!(
+            derive_role_from_agent_name("myproject-security"),
+            Some("security".to_string())
+        );
+        assert_eq!(
+            derive_role_from_agent_name("foo-bar-security"),
+            Some("security".to_string())
+        );
     }
 
     #[test]
@@ -574,8 +627,10 @@ mod tests {
 
     #[test]
     fn test_get_reviewer_prompt_name() {
-        assert_eq!(get_reviewer_prompt_name(Some("security")), "reviewer-security");
+        assert_eq!(
+            get_reviewer_prompt_name(Some("security")),
+            "reviewer-security"
+        );
         assert_eq!(get_reviewer_prompt_name(None), "reviewer");
     }
-
 }
