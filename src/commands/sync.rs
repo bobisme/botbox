@@ -891,28 +891,44 @@ fn migrate_beads_to_bones(project_root: &Path, config_path: &Path) -> Result<()>
         }
     }
 
-    // 4. Update .critignore: .beads/ → .bones/
+    // 4. Update .critignore: remove .beads/ line (bones handles its own critignore)
     let critignore = project_root.join(".critignore");
     if critignore.exists() {
         let content = fs::read_to_string(&critignore)?;
         if content.contains(".beads/") {
-            let updated = content.replace(".beads/", ".bones/");
+            let updated: String = content
+                .lines()
+                .filter(|line| line.trim() != ".beads/")
+                .collect::<Vec<_>>()
+                .join("\n");
+            let updated = if content.ends_with('\n') {
+                format!("{updated}\n")
+            } else {
+                updated
+            };
             fs::write(&critignore, updated)?;
-            println!("Updated .critignore: .beads/ → .bones/");
+            println!("Updated .critignore: removed .beads/ entry");
         }
     }
 
-    // 5. Update .gitignore: replace .bv/ with .bones/
+    // 5. Update .gitignore: remove .bv/ line (bones is tracked, not ignored)
     let gitignore = project_root.join(".gitignore");
     if gitignore.exists() {
         let content = fs::read_to_string(&gitignore)?;
-        let mut updated = content.clone();
-        if updated.contains(".bv/") {
-            updated = updated.replace(".bv/", ".bones/");
-        }
-        if updated != content {
+        if content.contains(".bv/") {
+            let updated: String = content
+                .lines()
+                .filter(|line| line.trim() != ".bv/")
+                .collect::<Vec<_>>()
+                .join("\n");
+            // Preserve trailing newline if original had one
+            let updated = if content.ends_with('\n') {
+                format!("{updated}\n")
+            } else {
+                updated
+            };
             fs::write(&gitignore, updated)?;
-            println!("Updated .gitignore: replaced .bv/ with .bones/");
+            println!("Updated .gitignore: removed .bv/ entry");
         }
     }
 

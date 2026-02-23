@@ -211,7 +211,6 @@ impl InitArgs {
                      .agents/botbox/\n\
                      \n\
                      # Ignore tool config and data files\n\
-                     .bones/\n\
                      .crit/\n\
                      .maw.toml\n\
                      .botbox.toml\n\
