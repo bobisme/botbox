@@ -416,7 +416,7 @@ impl Config {
 
         // Add header comment
         doc.decor_mut().set_prefix(
-            "# Botbox project configuration\n# See: https://github.com/anthropics/botbox\n\n",
+            "# Botbox project configuration\n# See: https://github.com/bobisme/botbox\n\n",
         );
 
         // Add comments before section headers using item decor
