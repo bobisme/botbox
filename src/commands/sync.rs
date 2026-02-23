@@ -582,25 +582,20 @@ impl SyncArgs {
             return Ok(()); // No VCS found, skip commit
         }
 
-        // Validate changed_files are expected botbox-managed paths
-        let allowed_prefixes = [
+        // All paths that botbox sync may touch — git add is a no-op for unchanged files
+        let managed_paths: &[&str] = &[
             ".agents/botbox/",
             "AGENTS.md",
             ".claude/settings.json",
             ".pi/",
+            ".critignore",
+            ".botbox.toml",
+            ".botbox.json",
+            ".gitignore",
         ];
-        let sanitized: Vec<&str> = changed_files
-            .iter()
-            .filter(|f| allowed_prefixes.iter().any(|p| f.starts_with(p)))
-            .copied()
-            .collect();
 
-        if sanitized.is_empty() {
-            return Ok(());
-        }
-
-        // Sanitize file names in commit message (strip control chars)
-        let files_str: String = sanitized
+        // Build a human-readable summary from the caller's changed_files list
+        let files_str: String = changed_files
             .join(", ")
             .chars()
             .filter(|c| !c.is_control())
@@ -619,11 +614,21 @@ impl SyncArgs {
                 )?;
             }
             Vcs::Git => {
-                // Stage only the sanitized files
+                // Stage all managed paths — git add ignores paths that don't exist or haven't changed
                 let mut args = vec!["add", "--"];
-                args.extend_from_slice(&sanitized);
+                args.extend_from_slice(managed_paths);
                 run_command("git", &args, Some(project_root))?;
-                run_command("git", &["commit", "-m", &message], Some(project_root))?;
+
+                // Only commit if there are staged changes
+                let status = run_command(
+                    "git",
+                    &["diff", "--cached", "--quiet"],
+                    Some(project_root),
+                );
+                if status.is_err() {
+                    // diff --cached --quiet exits 1 when there are staged changes
+                    run_command("git", &["commit", "-m", &message], Some(project_root))?;
+                }
             }
             Vcs::None => unreachable!(),
         }
