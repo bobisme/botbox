@@ -151,7 +151,12 @@ impl InitArgs {
             DetectedConfig::default()
         };
 
-        let interactive = !self.no_interactive && std::io::stdin().is_terminal();
+        // dialoguer reads from /dev/tty, not stdin, so stdin may be piped
+        // (e.g. via `maw exec`) while the user still has an interactive terminal.
+        // Check /dev/tty directly, falling back to stderr (which dialoguer uses for output).
+        let has_tty = std::fs::File::open("/dev/tty").is_ok()
+            || std::io::stderr().is_terminal();
+        let interactive = !self.no_interactive && has_tty;
         let choices = self.gather_choices(interactive, &detected)?;
 
         // Create .agents/botbox/
