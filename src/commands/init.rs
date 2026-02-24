@@ -151,12 +151,7 @@ impl InitArgs {
             DetectedConfig::default()
         };
 
-        // dialoguer reads from /dev/tty, not stdin, so stdin may be piped
-        // (e.g. via `maw exec`) while the user still has an interactive terminal.
-        // Check /dev/tty directly, falling back to stderr (which dialoguer uses for output).
-        let has_tty = std::fs::File::open("/dev/tty").is_ok()
-            || std::io::stderr().is_terminal();
-        let interactive = !self.no_interactive && has_tty;
+        let interactive = !self.no_interactive && std::io::stdin().is_terminal();
         let choices = self.gather_choices(interactive, &detected)?;
 
         // Create .agents/botbox/
@@ -332,58 +327,61 @@ impl InitArgs {
             .canonicalize()
             .context("canonicalizing project root")?;
 
-        if config::find_config(&project_dir).is_none()
-            && config::find_config(&project_dir.join("ws/default")).is_none()
-        {
-            // First init at bare root — fine, delegate to ws/default
-        }
+        // Gather interactive choices HERE (where stdin is a terminal) so that
+        // the inner `maw exec` invocation can run non-interactively.
+        let ws_default = project_dir.join("ws/default");
+        let agents_md_path = ws_default.join("AGENTS.md");
+        let detected = if agents_md_path.exists() {
+            let content = fs::read_to_string(&agents_md_path)?;
+            detect_from_agents_md(&content)
+        } else {
+            DetectedConfig::default()
+        };
+
+        let interactive = !self.no_interactive && std::io::stdin().is_terminal();
+        let choices = self.gather_choices(interactive, &detected)?;
 
         let mut args: Vec<String> = vec!["exec", "default", "--", "botbox", "init"]
             .into_iter()
             .map(Into::into)
             .collect();
 
-        if let Some(ref name) = self.name {
-            args.push("--name".into());
-            args.push(name.clone());
-        }
-        if !self.r#type.is_empty() {
-            args.push("--type".into());
-            args.push(self.r#type.join(","));
-        }
-        if !self.tools.is_empty() {
-            args.push("--tools".into());
-            args.push(self.tools.join(","));
-        }
-        if !self.reviewers.is_empty() {
+        // Always pass gathered choices as explicit args so inner invocation
+        // doesn't need interactive input.
+        args.push("--name".into());
+        args.push(choices.name.clone());
+        args.push("--type".into());
+        args.push(choices.types.join(","));
+        args.push("--tools".into());
+        args.push(choices.tools.join(","));
+        if !choices.reviewers.is_empty() {
             args.push("--reviewers".into());
-            args.push(self.reviewers.join(","));
+            args.push(choices.reviewers.join(","));
         }
-        if !self.language.is_empty() {
+        if !choices.languages.is_empty() {
             args.push("--language".into());
-            args.push(self.language.join(","));
+            args.push(choices.languages.join(","));
         }
-        if let Some(ref cmd) = self.install_command {
+        if let Some(ref cmd) = choices.install_command {
             args.push("--install-command".into());
             args.push(cmd.clone());
         }
-        if let Some(ref cmd) = self.check_command {
+        if let Some(ref cmd) = choices.check_command {
             args.push("--check-command".into());
             args.push(cmd.clone());
         }
         if self.force {
             args.push("--force".into());
         }
-        if self.no_interactive {
-            args.push("--no-interactive".into());
-        }
+        // Inner invocation is always non-interactive (stdin piped by maw exec)
+        args.push("--no-interactive".into());
         if self.no_commit {
             args.push("--no-commit".into());
         }
-        if self.no_init_bones {
+        if !choices.init_bones {
             args.push("--no-init-bones".into());
         }
-        if self.no_seed_work {
+        if !choices.seed_work {
             args.push("--no-seed-work".into());
         }
 
