@@ -21,6 +21,34 @@ const CONFIG_VERSION: &str = "1.0.16";
 
 /// Validate that a name (project, reviewer role) matches [a-z0-9][a-z0-9-]* and is ≤64 chars.
 /// Prevents command injection and path traversal via user-supplied names.
+/// Infer project name from the current directory (or ws/default parent).
+fn infer_project_name() -> Option<String> {
+    let cwd = std::env::current_dir().ok()?;
+    // If we're in ws/default, go up two levels
+    let dir = if cwd.ends_with("ws/default") {
+        cwd.parent()?.parent()?
+    } else {
+        &cwd
+    };
+    let name = dir.file_name()?.to_str()?;
+    // Lowercase and replace non-alphanumeric with hyphens
+    let sanitized: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let trimmed = sanitized.trim_matches('-').to_string();
+    if trimmed.is_empty() || validate_name(&trimmed, "project name").is_err() {
+        return None;
+    }
+    Some(trimmed)
+}
+
 fn validate_name(name: &str, label: &str) -> Result<()> {
     if name.is_empty() || name.len() > 64 {
         anyhow::bail!("{label} must be 1-64 characters, got {}", name.len());
@@ -433,9 +461,13 @@ impl InitArgs {
             validate_name(&n, "project name")?;
             n
         } else {
-            let n = detected.name.clone().ok_or_else(|| {
-                ExitError::Other("--name is required in non-interactive mode".into())
-            })?;
+            let n = detected
+                .name
+                .clone()
+                .or_else(|| infer_project_name())
+                .ok_or_else(|| {
+                    ExitError::Other("--name is required in non-interactive mode".into())
+                })?;
             validate_name(&n, "project name")?;
             n
         };
@@ -456,11 +488,10 @@ impl InitArgs {
             )?
         } else {
             if detected.types.is_empty() {
-                return Err(
-                    ExitError::Other("--type is required in non-interactive mode".into()).into(),
-                );
+                vec!["cli".to_string()]
+            } else {
+                detected.types.clone()
             }
-            detected.types.clone()
         };
 
         // Tools
