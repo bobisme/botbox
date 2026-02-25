@@ -8,15 +8,23 @@ use crate::subprocess::Tool;
 
 /// Check if there are unreleased user-visible commits (feat: or fix:).
 pub fn has_unreleased_changes() -> bool {
-    let output = Tool::new("jj")
-        .args(&[
-            "log",
-            "-r",
-            "tags()..main",
-            "--no-graph",
-            "-T",
-            "description.first_line() ++ \"\\n\"",
-        ])
+    // Get the latest tag
+    let tag_output = Tool::new("git")
+        .args(&["describe", "--tags", "--abbrev=0"])
+        .in_workspace("default")
+        .ok()
+        .and_then(|t| t.run().ok());
+
+    let range = match tag_output {
+        Some(ref o) if o.success() => {
+            let tag = o.stdout.trim();
+            format!("{tag}..HEAD")
+        }
+        _ => "HEAD~20..HEAD".to_string(),
+    };
+
+    let output = Tool::new("git")
+        .args(&["log", "--oneline", &range])
         .in_workspace("default")
         .ok()
         .and_then(|t| t.run().ok());
@@ -25,7 +33,11 @@ pub fn has_unreleased_changes() -> bool {
         Some(o) if o.success() => o
             .stdout
             .lines()
-            .any(|line| line.starts_with("feat:") || line.starts_with("fix:")),
+            .any(|line| {
+                // git log --oneline: "<hash> <message>"
+                let msg = line.split_once(' ').map_or(line, |(_, m)| m);
+                msg.starts_with("feat:") || msg.starts_with("fix:")
+            }),
         _ => false,
     }
 }

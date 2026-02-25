@@ -50,20 +50,16 @@ pub fn run_init_agent(project_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Run the check-jj hook: remind agent to use jj commands
+/// Run the check-jj hook: remind agent about VCS and maw workspace management.
 pub fn run_check_jj(project_root: &Path) -> Result<()> {
-    let jj_dir = project_root.join(".jj");
-
-    if jj_dir.exists() || is_jj_repo(project_root) {
+    if is_maw_repo(project_root) {
+        println!(
+            "This project uses Git + maw for version control. Use `maw ws create <name>` to create isolated workspaces, `maw ws merge <name> --destroy` to merge back to main. Do NOT run jj commands."
+        );
+    } else if project_root.join(".jj").exists() || is_jj_repo(project_root) {
         println!(
             "IMPORTANT: This project uses Jujutsu (jj) for version control with GitHub for sharing. Use jj commands instead of git (e.g., `jj status`, `jj describe`, `jj log`). To push to GitHub, use bookmarks and `jj bookmark set <name> -r @` then `jj git push`."
         );
-
-        if is_maw_repo(project_root) {
-            println!(
-                "This project uses maw for workspace management. Use `maw ws create <name>` to create isolated workspaces, `maw ws merge <name> --destroy` to merge back to main."
-            );
-        }
     }
 
     Ok(())

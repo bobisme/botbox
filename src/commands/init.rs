@@ -218,7 +218,7 @@ impl InitArgs {
         // Initialize maw
         if choices.tools.contains(&"maw".to_string()) {
             match run_command("maw", &["init"], Some(&project_dir)) {
-                Ok(_) => println!("Initialized maw (jj)"),
+                Ok(_) => println!("Initialized maw"),
                 Err(_) => eprintln!("Warning: maw init failed (is maw installed?)"),
             }
         }
@@ -1152,16 +1152,24 @@ fn fetch_gitignore(languages: &[String]) -> Result<String> {
 // --- Auto-commit ---
 
 fn auto_commit(project_dir: &Path, config: &Config) -> Result<()> {
-    let jj_dir = project_dir.join(".jj");
-    if !jj_dir.exists() {
-        return Ok(());
-    }
-
     let message = format!("chore: initialize botbox v{}", config.version);
 
-    match run_command("jj", &["describe", "-m", &message], Some(project_dir)) {
-        Ok(_) => println!("Committed: {message}"),
-        Err(_) => eprintln!("Warning: Failed to auto-commit (jj error)"),
+    // Try git first, fall back to jj for legacy projects
+    if project_dir.join(".git").exists()
+        || project_dir
+            .ancestors()
+            .any(|p| p.join(".git").exists() || p.join("repo.git").exists())
+    {
+        let _ = run_command("git", &["add", "-A"], Some(project_dir));
+        match run_command("git", &["commit", "-m", &message], Some(project_dir)) {
+            Ok(_) => println!("Committed: {message}"),
+            Err(_) => eprintln!("Warning: Failed to auto-commit (git error)"),
+        }
+    } else if project_dir.join(".jj").exists() {
+        match run_command("jj", &["describe", "-m", &message], Some(project_dir)) {
+            Ok(_) => println!("Committed: {message}"),
+            Err(_) => eprintln!("Warning: Failed to auto-commit (jj error)"),
+        }
     }
 
     Ok(())

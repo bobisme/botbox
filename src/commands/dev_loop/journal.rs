@@ -46,7 +46,7 @@ impl Journal {
 
         let mut header = format!("\n--- {timestamp}");
         if let Some(cid) = change_id {
-            header.push_str(&format!(" | jj:{cid}"));
+            header.push_str(&format!(" | git:{cid}"));
         }
         header.push_str(" ---\n");
 
@@ -117,10 +117,10 @@ fn dirs_home() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("/tmp"))
 }
 
-/// Get the current jj change ID from the default workspace.
+/// Get the current git HEAD short hash from the default workspace.
 fn get_jj_change_id() -> Option<String> {
-    let output = Tool::new("jj")
-        .args(&["log", "-r", "@", "--no-graph", "-T", "change_id.short()"])
+    let output = Tool::new("git")
+        .args(&["rev-parse", "--short", "HEAD"])
         .in_workspace("default")
         .ok()?
         .run()

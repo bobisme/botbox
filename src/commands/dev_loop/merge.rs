@@ -107,11 +107,10 @@ pub fn release_merge_mutex(agent: &str, project: &str) {
         .run();
 }
 
-/// Rebase a workspace onto main.
-pub fn rebase_workspace(ws: &str) -> anyhow::Result<()> {
-    Tool::new("jj")
-        .args(&["rebase", "-d", "main"])
-        .in_workspace(ws)?
+/// Check merge readiness for a workspace.
+pub fn check_merge(ws: &str) -> anyhow::Result<()> {
+    Tool::new("maw")
+        .args(&["ws", "merge", ws, "--check"])
         .run_ok()?;
     Ok(())
 }

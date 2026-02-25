@@ -321,10 +321,9 @@ COMMAND PATTERN — maw exec: All bn commands run in the default workspace. All 
   crit: maw exec $WS -- crit <args>
   other: maw exec $WS -- <command>           (cargo test, etc.)
 
-CRITICAL — NO JJ COMMANDS: Workers must NEVER run jj commands (jj status, jj describe, jj diff, jj log, etc.).
-  jj shares a single operation log across all workspaces. Concurrent jj commands from multiple workers
-  cause operation forks (opforks) that corrupt the repo and require manual recovery.
-  Edit files directly using absolute workspace paths. The lead handles all jj operations during merge.
+VERSION CONTROL: This project uses Git + maw. Do NOT run jj commands.
+  Workers commit with: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<message>"
+  The lead handles merging workspaces into main.
 
 {dispatched}{dispatched_intro}
 
@@ -456,7 +455,7 @@ Key rules:
 - All bus and crit commands use --agent {agent}.
 - All file operations use the absolute workspace path from maw ws create output. Do NOT cd into the workspace and stay there.
 - All bn commands: maw exec default -- bn ...
-- All crit/jj commands in a workspace: maw exec $WS -- crit/jj ...
+- All crit/git commands in a workspace: maw exec $WS -- crit/git ...
 - If a tool behaves unexpectedly, report it: bus send --agent {agent} {project} "Tool issue: <details>" -L tool-issue.
 - STOP after completing one task or determining no work. Do not loop.
 - Always output <promise>COMPLETE</promise> or <promise>BLOCKED</promise> at the end.

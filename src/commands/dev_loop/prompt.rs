@@ -261,13 +261,14 @@ IMPORTANT: Use --agent {agent} on ALL bus and crit commands. bn resolves agent i
 
 CRITICAL - HUMAN MESSAGE PRIORITY: If you see a system reminder with "STOP:" showing unread bus messages, these are from humans or other agents trying to reach you. IMMEDIATELY check inbox and respond before continuing your current task. Human questions, clarifications, and redirects take priority over heads-down work.
 
-COMMAND PATTERN — maw exec: All bn commands run in the default workspace. All crit/jj commands run in their workspace.
+COMMAND PATTERN — maw exec: All bn commands run in the default workspace. All crit commands run in their workspace.
   bn:   maw exec default -- bn <args>
   crit: maw exec $WS -- crit <args>
-  jj:   maw exec $WS -- jj <args>
+  git:  maw exec $WS -- git <args>
   other: maw exec $WS -- <command>           (cargo test, etc.)
 Inside `maw exec <ws>`, CWD is already `ws/<ws>/`. Use `maw exec default -- ls src/`, NOT `maw exec default -- ls ws/default/src/`
 For file reads/edits outside maw exec, use the full absolute path: `ws/<ws>/src/...`
+VERSION CONTROL: This project uses Git + maw. Do NOT run jj commands.
 {previous_context}{status_section}{sibling_section}Execute exactly ONE dev cycle. Triage inbox, assess ready bones, either work on one yourself
 or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
 
@@ -297,7 +298,7 @@ For EACH unfinished bone:
           - Fix the code in the workspace (use absolute WS_PATH for file edits)
           - Reply: maw exec $WS -- crit reply <thread-id> --agent {agent} "Fixed: <what you did>"
           - Resolve: maw exec $WS -- crit threads resolve <thread-id> --agent {agent}
-       3. Update commit: maw exec $WS -- jj describe -m "<id>: <summary> (addressed review feedback)"
+       3. Commit changes: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: <summary> (addressed review feedback)"
        4. Re-request: maw exec $WS -- crit reviews request <review-id> --reviewers {project}-security --agent {agent}
        5. Announce: bus send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
        STOP this iteration — wait for re-review
@@ -415,7 +416,7 @@ WORK:
 8. Implement the task. All file operations use absolute WS_PATH.
    For commands in workspace: maw exec $WS -- <command>. Do NOT cd into workspace and stay there.
 9. maw exec default -- bn bone comment add <id> "Progress: ..."
-10. Describe: maw exec $WS -- jj describe -m "<id>: <summary>"
+10. Commit: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: <summary>"
 
 REVIEW (risk-aware):
 Check the bone's risk label (maw exec default -- bn show <id>). No risk label = risk:medium.
@@ -577,15 +578,14 @@ After protocol merge reports Ready, close the bone:
 
 Every merge into default MUST follow this protocol to prevent concurrent merge conflicts:
 
-  a0. SNAPSHOT WORKER FILES (critical — workers don't run jj):
-      Workers edit files directly without running jj commands. Their changes are on disk but NOT in
-      jj's commit tree. You MUST snapshot the workspace before any jj operation or the changes will be lost:
-        maw exec $WS -- jj status
-      This triggers jj's working-copy snapshot, capturing all on-disk edits into the workspace commit.
-      If you skip this step, maw ws merge will merge an EMPTY commit and all worker changes are lost.
+  a0. COMMIT WORKER FILES (critical — workers may have uncommitted changes):
+      Workers may edit files without committing. Ensure changes are committed before merge:
+        maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: worker changes" --allow-empty
+      If you skip this step, maw ws merge may miss uncommitted worker changes.
 
-  a. PREFLIGHT REBASE (outside mutex — reduces lock hold time):
-     maw exec $WS -- jj rebase -d main
+  a. PREFLIGHT CHECK (outside mutex — early conflict detection):
+     maw ws merge $WS --check
+     If conflicts are detected, resolve them before acquiring the mutex.
 
   b. ACQUIRE MERGE MUTEX:
      bus claims stake --agent {agent} "workspace://{project}/default" --ttl 120 -m "merging $WS for <id>"
@@ -595,15 +595,15 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
      If a new coord:merge appeared since your last attempt, retry immediately (the lock may be free).
      If still held after {merge_timeout}s total: post to bus and skip this merge for now.
 
-  c. AUTHORITATIVE REBASE (under mutex — catches merges that landed during wait):
-     maw exec $WS -- jj rebase -d main
+  c. CONFLICT CHECK (under mutex — catches merges that landed during wait):
+     maw ws merge $WS --check
      If conflicts: resolve them before proceeding. Use this workflow:
        1. Identify the bone: maw exec default -- bn show <id> — read what the worker was trying to do
-       2. See what changed in main since the worker started: maw exec default -- jj log -n 10
+       2. See what changed in main recently: maw exec default -- git log --oneline -10
        3. Read the conflicted files in the workspace (ws/$WS/<path>) — understand both sides
        4. Resolve by keeping BOTH sides' intent: the worker's new code AND main's recent additions.
           For registry files (match arms, mod declarations, use statements), this usually means keeping all entries.
-       5. After resolving: maw exec $WS -- jj describe -m "<id>: <summary> (conflict resolved)"
+       5. After resolving: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: <summary> (conflict resolved)"
 
   d. MERGE:
      maw ws merge $WS --destroy
@@ -695,7 +695,7 @@ Before outputting COMPLETE, check if a release is needed:
    If the claim fails (another lead is already releasing): skip the release check entirely.
    The other lead will handle it. Proceed directly to the output signal.
 
-1. Check for unreleased commits: maw exec default -- jj log -r 'tags()..main' --no-graph -T 'description.first_line() ++ "\n"'
+1. Check for unreleased commits: maw exec default -- git log --oneline $(git describe --tags --abbrev=0 2>/dev/null || echo HEAD~20)..HEAD
 2. If any commits start with "feat:" or "fix:" (user-visible changes), a release is needed:
    - Bump version in Cargo.toml/package.json (semantic versioning)
    - Update changelog if one exists
@@ -711,7 +711,7 @@ Key rules:
 - Monitor dispatched workers, merge when ready
 - All bus/crit commands use --agent {agent}
 - All bn commands: maw exec default -- bn ...
-- All crit/jj commands in a workspace: maw exec $WS -- crit/jj ...
+- All crit/git commands in a workspace: maw exec $WS -- crit/git ...
 - For parallel dispatch, note limitations of this prompt-based approach
 - RISK LABELS: Always assess risk during grooming. risk:low (evals, docs, tests, config) skips security review entirely — self-review and merge directly. risk:medium gets standard review (when REVIEW is true). risk:high requires failure-mode checklist. risk:critical requires human approval.{mission_rules}{multi_lead_rules}
 - Output completion signal at end"#

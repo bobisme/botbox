@@ -677,15 +677,8 @@ fn extract_iteration_summary(output: &str) -> Option<String> {
 
 /// Get commits on main since origin (for release tracking).
 fn get_commits_since_origin() -> Vec<String> {
-    let output = Tool::new("jj")
-        .args(&[
-            "log",
-            "-r",
-            "main@origin..main",
-            "--no-graph",
-            "--template",
-            "commit_id.short() ++ \" \" ++ description.first_line() ++ \"\\n\"",
-        ])
+    let output = Tool::new("git")
+        .args(&["log", "--oneline", "origin/main..main"])
         .in_workspace("default")
         .ok()
         .and_then(|t| t.run().ok());
