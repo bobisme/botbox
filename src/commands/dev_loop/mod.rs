@@ -68,7 +68,7 @@ pub fn run(
         missions_config,
         multi_lead_enabled,
         multi_lead_config,
-        project_dir: config_dir.display().to_string(),
+        project_dir: project_root.display().to_string(),
     };
 
     eprintln!("Agent:     {agent}");

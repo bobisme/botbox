@@ -956,7 +956,7 @@ fn detect_hook_paths(abs_path: &Path) -> (String, String) {
     if let Some(parent) = abs_path.parent()
         && parent.file_name().is_some_and(|n| n == "ws")
         && let Some(bare_root) = parent.parent()
-        && bare_root.join(".jj").exists()
+        && bare_root.join(".manifold").exists()
     {
         let bare_str = bare_root.display().to_string();
         return (bare_str.clone(), bare_str);
@@ -964,7 +964,7 @@ fn detect_hook_paths(abs_path: &Path) -> (String, String) {
     (abs_str.clone(), abs_str)
 }
 
-fn register_router_hook(hook_cwd: &str, spawn_cwd: &str, name: &str, agent: &str) {
+pub(super) fn register_router_hook(hook_cwd: &str, spawn_cwd: &str, name: &str, agent: &str) {
     let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
     let claim_uri = format!("agent://{name}-router");
     let spawn_name = format!("{name}-router");
@@ -1005,7 +1005,7 @@ fn register_router_hook(hook_cwd: &str, spawn_cwd: &str, name: &str, agent: &str
     }
 }
 
-fn register_reviewer_hook(
+pub(super) fn register_reviewer_hook(
     hook_cwd: &str,
     spawn_cwd: &str,
     name: &str,

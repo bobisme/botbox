@@ -493,7 +493,7 @@ For each dispatched bone, spawn a worker via botty with hierarchical naming:
     --env "BOTBUS_CHANNEL={project}" \
     --env "BOTBOX_PROJECT={project}" \
     --timeout <model-timeout> \
-    --cwd {project_dir} \
+    --cwd {project_dir}/ws/$WS \
     -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
 
 Set --timeout to {worker_timeout} (from config agents.worker.timeout).
@@ -736,7 +736,7 @@ mod tests {
             missions_config: None,
             multi_lead_enabled: false,
             multi_lead_config: None,
-            project_dir: "/home/test/project/ws/default".to_string(),
+            project_dir: "/home/test/project".to_string(),
         }
     }
 

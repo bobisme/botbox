@@ -209,6 +209,9 @@ impl SyncArgs {
         // Migrate bus hooks from bun .mjs to botbox run
         migrate_bus_hooks(&config);
 
+        // Fix hook --cwd for maw v2 (ws/default → repo root)
+        migrate_hook_cwd(&config, &project_root);
+
         // Migrate beads → bones (config, data, tooling files)
         if !self.check {
             migrate_beads_to_bones(&project_root, &config_path)?;
@@ -830,6 +833,117 @@ fn migrate_bus_hooks(config: &Config) {
                 Err(e) => eprintln!(
                     "  Warning: failed to re-register reviewer hook for {reviewer_agent}: {e}"
                 ),
+            }
+        }
+    }
+}
+
+/// Fix hook --cwd for maw v2 bare repos.
+///
+/// Earlier versions of `detect_hook_paths` checked for `.jj` to identify bare repos,
+/// which broke after the migration to Git+manifold. This re-registers hooks that have
+/// `--cwd .../ws/default` with `--cwd .../` (the repo root) instead.
+fn migrate_hook_cwd(config: &Config, project_root: &Path) {
+    // Detect maw v2: project_root may be ws/default/ (inner sync) or the bare root
+    let bare_root = if project_root.ends_with("ws/default") {
+        project_root.parent().and_then(Path::parent)
+    } else if project_root.join(".manifold").exists() {
+        Some(project_root)
+    } else {
+        None
+    };
+
+    let bare_root = match bare_root {
+        Some(r) if r.join(".manifold").exists() => r,
+        _ => return,
+    };
+
+    let ws_default_str = bare_root
+        .join("ws")
+        .join("default")
+        .display()
+        .to_string();
+    let root_str = bare_root.display().to_string();
+
+    let output = match Tool::new("bus")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(o) if o.success() => o,
+        _ => return,
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let hooks = match parsed.get("hooks").and_then(|h| h.as_array()) {
+        Some(h) => h,
+        None => return,
+    };
+
+    let name = &config.project.name;
+    let agent = config.default_agent();
+    let reviewers: Vec<String> = config
+        .review
+        .reviewers
+        .iter()
+        .map(|r| format!("{name}-{r}"))
+        .collect();
+
+    for hook in hooks {
+        let desc = hook
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
+        if !desc.starts_with(&format!("botbox:{name}:")) {
+            continue;
+        }
+
+        let cmd = match hook.get("command").and_then(|c| c.as_array()) {
+            Some(c) => c,
+            None => continue,
+        };
+        let cmd_strs: Vec<&str> = cmd.iter().filter_map(|v| v.as_str()).collect();
+
+        // Check if any --cwd arg still points to ws/default
+        let has_stale_cwd = cmd_strs
+            .windows(2)
+            .any(|w| w[0] == "--cwd" && w[1] == ws_default_str);
+        if !has_stale_cwd {
+            continue;
+        }
+
+        // Re-register with the correct cwd via the init helpers
+        let id = match hook.get("id").and_then(|i| i.as_str()) {
+            Some(id) => id,
+            None => continue,
+        };
+
+        // Remove old hook first
+        if Tool::new("bus")
+            .args(&["hooks", "remove", id])
+            .run()
+            .is_err()
+        {
+            continue;
+        }
+
+        let is_router = desc.ends_with(":responder");
+        if is_router {
+            super::init::register_router_hook(&root_str, &root_str, name, &agent);
+            println!("  Fixed hook --cwd: {desc} → repo root");
+        } else {
+            // Find which reviewer this is for
+            for reviewer in &reviewers {
+                if desc.contains(&reviewer.replace(&format!("{name}-"), "")) {
+                    super::init::register_reviewer_hook(
+                        &root_str, &root_str, name, &agent, reviewer,
+                    );
+                    println!("  Fixed hook --cwd: {desc} → repo root");
+                    break;
+                }
             }
         }
     }
