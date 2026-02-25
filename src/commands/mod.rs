@@ -1,4 +1,5 @@
 pub mod dev_loop;
+pub mod schema;
 pub mod doctor;
 pub mod hooks;
 pub mod init;

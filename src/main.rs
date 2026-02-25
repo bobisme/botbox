@@ -55,6 +55,8 @@ enum Commands {
     },
     /// Run triage (bone scoring and recommendations)
     Triage,
+    /// Print the JSON Schema for .botbox.toml
+    Schema,
 }
 
 fn main() -> ExitCode {
@@ -69,6 +71,7 @@ fn main() -> ExitCode {
         Commands::Hooks { command } => command.execute(),
         Commands::Protocol { command } => command.execute(),
         Commands::Triage => commands::triage::run_triage(),
+        Commands::Schema => commands::schema::run_schema(),
     };
 
     match result {

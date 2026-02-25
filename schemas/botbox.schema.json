@@ -1,0 +1,451 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Config",
+  "description": "Top-level .botbox.toml config.\n\nAll structs use snake_case (TOML native) with `alias` attributes for backwards compatibility when loading legacy camelCase JSON configs.",
+  "type": "object",
+  "required": [
+    "project",
+    "version"
+  ],
+  "properties": {
+    "version": {
+      "type": "string"
+    },
+    "project": {
+      "$ref": "#/definitions/ProjectConfig"
+    },
+    "tools": {
+      "default": {
+        "bones": false,
+        "botbus": false,
+        "botty": false,
+        "crit": false,
+        "maw": false
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ToolsConfig"
+        }
+      ]
+    },
+    "review": {
+      "default": {
+        "enabled": false,
+        "reviewers": []
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ReviewConfig"
+        }
+      ]
+    },
+    "push_main": {
+      "default": false,
+      "type": "boolean"
+    },
+    "agents": {
+      "default": {
+        "dev": null,
+        "responder": null,
+        "reviewer": null,
+        "worker": null
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/AgentsConfig"
+        }
+      ]
+    },
+    "models": {
+      "default": {
+        "balanced": [
+          "anthropic/claude-sonnet-4-6:medium",
+          "google-gemini-cli/gemini-3-pro-preview:medium",
+          "openai-codex/gpt-5.3-codex:medium"
+        ],
+        "fast": [
+          "anthropic/claude-haiku-4-5:low",
+          "google-gemini-cli/gemini-3-flash-preview:low",
+          "openai-codex/gpt-5.3-codex-spark:low"
+        ],
+        "strong": [
+          "anthropic/claude-opus-4-6:high",
+          "openai-codex/gpt-5.3-codex:xhigh"
+        ]
+      },
+      "allOf": [
+        {
+          "$ref": "#/definitions/ModelsConfig"
+        }
+      ]
+    }
+  },
+  "definitions": {
+    "ProjectConfig": {
+      "type": "object",
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "languages": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "default_agent": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "channel": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "install_command": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "check_command": {
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "critical_approvers": {
+          "default": null,
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "ToolsConfig": {
+      "type": "object",
+      "properties": {
+        "bones": {
+          "default": false,
+          "type": "boolean"
+        },
+        "maw": {
+          "default": false,
+          "type": "boolean"
+        },
+        "crit": {
+          "default": false,
+          "type": "boolean"
+        },
+        "botbus": {
+          "default": false,
+          "type": "boolean"
+        },
+        "botty": {
+          "default": false,
+          "type": "boolean"
+        }
+      }
+    },
+    "ReviewConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "type": "boolean"
+        },
+        "reviewers": {
+          "default": [],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AgentsConfig": {
+      "type": "object",
+      "properties": {
+        "dev": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DevAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "worker": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/WorkerAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reviewer": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ReviewerAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "responder": {
+          "default": null,
+          "anyOf": [
+            {
+              "$ref": "#/definitions/ResponderAgentConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "DevAgentConfig": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "opus",
+          "type": "string"
+        },
+        "max_loops": {
+          "default": 100,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "pause": {
+          "default": 2,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "timeout": {
+          "default": 1800,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "missions": {
+          "default": {
+            "checkpoint_interval_sec": 30,
+            "enabled": true,
+            "max_children": 12,
+            "max_workers": 4
+          },
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MissionsConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "multi_lead": {
+          "default": {
+            "enabled": true,
+            "max_leads": 3,
+            "merge_timeout_sec": 120
+          },
+          "anyOf": [
+            {
+              "$ref": "#/definitions/MultiLeadConfig"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "MissionsConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_workers": {
+          "default": 4,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "max_children": {
+          "default": 12,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "checkpoint_interval_sec": {
+          "default": 30,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "MultiLeadConfig": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "type": "boolean"
+        },
+        "max_leads": {
+          "default": 3,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "merge_timeout_sec": {
+          "default": 120,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "WorkerAgentConfig": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "balanced",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 900,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "ReviewerAgentConfig": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "strong",
+          "type": "string"
+        },
+        "max_loops": {
+          "default": 100,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "pause": {
+          "default": 2,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        },
+        "timeout": {
+          "default": 900,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        }
+      }
+    },
+    "ResponderAgentConfig": {
+      "type": "object",
+      "properties": {
+        "model": {
+          "default": "balanced",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 300,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "wait_timeout": {
+          "default": 300,
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0.0
+        },
+        "max_conversations": {
+          "default": 10,
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0.0
+        }
+      }
+    },
+    "ModelsConfig": {
+      "description": "Model tier configuration for cross-provider load balancing.\n\nEach tier maps to a list of `provider/model:thinking` strings. When an agent config specifies a tier name (e.g. \"fast\"), `resolve_model()` randomly picks one model from that tier's pool.",
+      "type": "object",
+      "properties": {
+        "fast": {
+          "default": [
+            "anthropic/claude-haiku-4-5:low",
+            "google-gemini-cli/gemini-3-flash-preview:low",
+            "openai-codex/gpt-5.3-codex-spark:low"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "balanced": {
+          "default": [
+            "anthropic/claude-sonnet-4-6:medium",
+            "google-gemini-cli/gemini-3-pro-preview:medium",
+            "openai-codex/gpt-5.3-codex:medium"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "strong": {
+          "default": [
+            "anthropic/claude-opus-4-6:high",
+            "openai-codex/gpt-5.3-codex:xhigh"
+          ],
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use rand::seq::{IndexedRandom, SliceRandom};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::ExitError;
@@ -74,7 +75,7 @@ pub fn find_config_in_project(root: &Path) -> anyhow::Result<(PathBuf, PathBuf)>
 ///
 /// All structs use snake_case (TOML native) with `alias` attributes for
 /// backwards compatibility when loading legacy camelCase JSON configs.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
     pub version: String,
     pub project: ProjectConfig,
@@ -90,7 +91,7 @@ pub struct Config {
     pub models: ModelsConfig,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProjectConfig {
     pub name: String,
     #[serde(default, rename = "type")]
@@ -109,7 +110,7 @@ pub struct ProjectConfig {
     pub critical_approvers: Option<Vec<String>>,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ToolsConfig {
     #[serde(default, alias = "beads")]
     pub bones: bool,
@@ -146,7 +147,7 @@ impl ToolsConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, JsonSchema)]
 pub struct ReviewConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -159,7 +160,7 @@ pub struct ReviewConfig {
 /// Each tier maps to a list of `provider/model:thinking` strings.
 /// When an agent config specifies a tier name (e.g. "fast"), `resolve_model()`
 /// randomly picks one model from that tier's pool.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ModelsConfig {
     #[serde(default = "default_tier_fast")]
     pub fast: Vec<String>,
@@ -202,7 +203,7 @@ fn default_tier_strong() -> Vec<String> {
     ]
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct AgentsConfig {
     #[serde(default)]
     pub dev: Option<DevAgentConfig>,
@@ -214,7 +215,7 @@ pub struct AgentsConfig {
     pub responder: Option<ResponderAgentConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct DevAgentConfig {
     #[serde(default = "default_model_dev")]
     pub model: String,
@@ -243,7 +244,7 @@ impl Default for DevAgentConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MissionsConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -258,7 +259,7 @@ pub struct MissionsConfig {
     pub checkpoint_interval_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct MultiLeadConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -268,7 +269,7 @@ pub struct MultiLeadConfig {
     pub merge_timeout_sec: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct WorkerAgentConfig {
     #[serde(default = "default_model_worker")]
     pub model: String,
@@ -276,7 +277,7 @@ pub struct WorkerAgentConfig {
     pub timeout: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ReviewerAgentConfig {
     #[serde(default = "default_model_reviewer")]
     pub model: String,
@@ -288,7 +289,7 @@ pub struct ReviewerAgentConfig {
     pub timeout: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ResponderAgentConfig {
     #[serde(default = "default_model_responder")]
     pub model: String,
@@ -414,9 +415,11 @@ impl Config {
             .parse()
             .context("parsing generated TOML for comment injection")?;
 
-        // Add header comment
+        // Add header comment with taplo schema reference for editor autocomplete
         doc.decor_mut().set_prefix(
-            "# Botbox project configuration\n# See: https://github.com/bobisme/botbox\n\n",
+            "#:schema https://raw.githubusercontent.com/bobisme/botbox/main/schemas/botbox.schema.json\n\
+             # Botbox project configuration\n\
+             # Schema: https://github.com/bobisme/botbox/blob/main/schemas/botbox.schema.json\n\n",
         );
 
         // Add comments before section headers using item decor
@@ -1011,6 +1014,7 @@ bones = true
         )
         .unwrap();
         let output = config.to_toml().unwrap();
+        assert!(output.contains("#:schema https://raw.githubusercontent.com/bobisme/botbox"));
         assert!(output.contains("# Botbox project configuration"));
         assert!(output.contains("# Companion tools to enable"));
     }
