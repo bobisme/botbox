@@ -724,9 +724,50 @@ pub fn run_worker_loop(
     model: Option<String>,
 ) -> anyhow::Result<()> {
     let worker = WorkerLoop::new(project_root, agent, model)?;
-    let status = worker.run_once()?;
 
-    match status {
+    // Announce startup on bus (survives botty log eviction)
+    let bone_info = worker
+        .dispatched_bone
+        .as_deref()
+        .unwrap_or("(triage)");
+    let ws_info = worker
+        .dispatched_workspace
+        .as_deref()
+        .unwrap_or("(none)");
+    let _ = Tool::new("bus")
+        .args(&[
+            "send",
+            "--agent",
+            &worker.agent,
+            &worker.project,
+            &format!("Worker started: {bone_info} in ws/{ws_info}"),
+            "-L",
+            "worker-lifecycle",
+        ])
+        .run();
+
+    let status = worker.run_once();
+
+    // Announce exit on bus regardless of outcome
+    let exit_msg = match &status {
+        Ok(LoopStatus::Complete) => format!("Worker exited OK: {bone_info} COMPLETE"),
+        Ok(LoopStatus::Blocked) => format!("Worker exited OK: {bone_info} BLOCKED"),
+        Ok(LoopStatus::Unknown) => format!("Worker exited: {bone_info} (no completion signal)"),
+        Err(e) => format!("Worker exited ERROR: {bone_info} — {e}"),
+    };
+    let _ = Tool::new("bus")
+        .args(&[
+            "send",
+            "--agent",
+            &worker.agent,
+            &worker.project,
+            &exit_msg,
+            "-L",
+            "worker-lifecycle",
+        ])
+        .run();
+
+    match status? {
         LoopStatus::Complete => {
             eprintln!("Worker loop completed successfully");
             Ok(())

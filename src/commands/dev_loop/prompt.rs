@@ -502,6 +502,8 @@ Set --timeout to {worker_timeout} (from config agents.worker.timeout).
 The hierarchical name ({agent}/<suffix>) lets you find all your workers via `botty list`.
 The BOTBOX_BONE and BOTBOX_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
 
+COLLISION GUARD: NEVER dispatch a worker for a bone you are currently working on or have already started fixing yourself this iteration. If you took over a failed worker's bone, do NOT also dispatch a new worker for it.
+
 After dispatching all workers, skip to step 6 (MONITOR).
 {mission_section_5c}
 ## 6. MONITOR (if workers are dispatched)
