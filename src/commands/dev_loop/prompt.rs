@@ -363,8 +363,9 @@ Process each message:
 
 ## 4. TRIAGE
 
-Run: botbox triage
+Run: maw exec default -- bn triage
 This gives you scored top picks, blockers, quick wins, and project health in one command.
+Use `maw exec default -- bn next N` to get top N triaged bones for dispatch (e.g., `bn next 4` for 4 workers).
 If no actionable bones and inbox created none: output <promise>COMPLETE</promise> and stop.
 {mission_triage}
 GROOM each ready bone:

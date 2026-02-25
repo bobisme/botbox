@@ -42,15 +42,15 @@ project-root/          ← bare repo (no source files here)
 
 | Operation | Command |
 |-----------|---------|
-| View next work | `maw exec default -- bn next` |
+| Triage (scores) | `maw exec default -- bn triage` |
+| Next bone | `maw exec default -- bn next` |
+| Next N bones | `maw exec default -- bn next N` (e.g., `bn next 4` for dispatch) |
 | Show bone | `maw exec default -- bn show <id>` |
-| Create | `maw exec default -- bn create --title "..." --kind task` |
+| Create | `maw exec default -- bn create --title "..." --description "..."` |
 | Start work | `maw exec default -- bn do <id>` |
 | Add comment | `maw exec default -- bn bone comment add <id> "message"` |
 | Close | `maw exec default -- bn done <id>` |
 | Add dependency | `maw exec default -- bn triage dep add <blocker> --blocks <blocked>` |
-| Triage (scores) | `maw exec default -- bn triage` |
-| Next bone | `maw exec default -- bn next` |
 | Search | `maw exec default -- bn search <query>` |
 
 Identity resolved from `$AGENT` env. No flags needed in agent loops.
