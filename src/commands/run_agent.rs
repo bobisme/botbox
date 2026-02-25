@@ -62,6 +62,7 @@ struct Style {
     dim: &'static str,
     reset: &'static str,
     green: &'static str,
+    red: &'static str,
     cyan: &'static str,
     yellow: &'static str,
     bullet: &'static str,
@@ -76,6 +77,7 @@ const PRETTY_STYLE: Style = Style {
     dim: "\x1b[2m",
     reset: "\x1b[0m",
     green: "\x1b[32m",
+    red: "\x1b[31m",
     cyan: "\x1b[36m",
     yellow: "\x1b[33m",
     bullet: "\u{2022}",
@@ -90,6 +92,7 @@ const TEXT_STYLE: Style = Style {
     dim: "",
     reset: "",
     green: "",
+    red: "",
     cyan: "",
     yellow: "",
     bullet: "-",
@@ -409,22 +412,11 @@ fn print_claude_assistant_event(event: &Value, style: &Style) {
                 && let Some(tool_name) = item.get("name").and_then(|n| n.as_str())
             {
                 let input = item.get("input").unwrap_or(&Value::Null);
-                let input_str = serde_json::to_string(input).unwrap_or_default();
-                let truncated = if input_str.len() > 80 {
-                    format!("{}...", truncate_safe(&input_str, 80))
-                } else {
-                    input_str
-                };
                 println!(
-                    "\n{} {}{}{} {}{}{}",
-                    style.tool_arrow,
-                    style.bold_bright,
-                    tool_name,
-                    style.reset,
-                    style.dim,
-                    truncated,
-                    style.reset
+                    "\n{} {}{}{}",
+                    style.tool_arrow, style.bold_bright, tool_name, style.reset
                 );
+                print_tool_args(tool_name, input, style);
             }
         }
     }
@@ -563,9 +555,82 @@ fn print_pi_toolcall_start(ae: &Value, style: &Style) {
 }
 
 fn print_pi_toolcall_end(ae: &Value, style: &Style) {
-    // Print tool call arguments
     if let Some(tc) = ae.get("toolCall") {
+        let name = tc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         if let Some(args) = tc.get("arguments") {
+            print_tool_args(name, args, style);
+        }
+    }
+}
+
+/// Format tool call arguments based on tool type.
+/// - bash: show the full command
+/// - edit: show file path and a unified diff of old_string → new_string
+/// - read: show the file path with offset/limit
+/// - write: show the file path
+/// - other tools: truncated JSON (default)
+fn print_tool_args(name: &str, args: &Value, style: &Style) {
+    match name {
+        "bash" | "Bash" => {
+            if let Some(cmd) = args.get("command").and_then(|c| c.as_str()) {
+                println!("  {}$ {}{}", style.dim, cmd, style.reset);
+            }
+        }
+        "edit" | "Edit" => {
+            let path = args
+                .get("file_path")
+                .or_else(|| args.get("path"))
+                .and_then(|p| p.as_str());
+            if let Some(path) = path {
+                let short = path.rsplit('/').next().unwrap_or(path);
+                println!("  {}{}{}", style.dim, short, style.reset);
+            }
+            let old = args
+                .get("old_string")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            let new = args
+                .get("new_string")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            if !old.is_empty() || !new.is_empty() {
+                print_inline_diff(old, new, style);
+            }
+        }
+        "read" | "Read" => {
+            let path = args
+                .get("file_path")
+                .or_else(|| args.get("path"))
+                .and_then(|p| p.as_str());
+            if let Some(path) = path {
+                let short = path.rsplit('/').next().unwrap_or(path);
+                let mut extra = Vec::new();
+                if let Some(off) = args.get("offset").and_then(|o| o.as_u64()) {
+                    extra.push(format!(":{off}"));
+                }
+                if let Some(lim) = args.get("limit").and_then(|l| l.as_u64()) {
+                    extra.push(format!("+{lim}"));
+                }
+                println!(
+                    "  {}{}{}{}",
+                    style.dim,
+                    short,
+                    extra.join(""),
+                    style.reset
+                );
+            }
+        }
+        "write" | "Write" => {
+            let path = args
+                .get("file_path")
+                .or_else(|| args.get("path"))
+                .and_then(|p| p.as_str());
+            if let Some(path) = path {
+                let short = path.rsplit('/').next().unwrap_or(path);
+                println!("  {}{}{}", style.dim, short, style.reset);
+            }
+        }
+        _ => {
             let args_str = serde_json::to_string(args).unwrap_or_default();
             let truncated = if args_str.len() > 80 {
                 format!("{}...", truncate_safe(&args_str, 80))
@@ -573,6 +638,52 @@ fn print_pi_toolcall_end(ae: &Value, style: &Style) {
                 args_str
             };
             println!("  {}{}{}", style.dim, truncated, style.reset);
+        }
+    }
+}
+
+/// Print a compact inline diff of old → new text.
+/// Shows removed lines in red with - prefix and added lines in green with + prefix.
+/// Limits output to MAX_DIFF_LINES lines total.
+fn print_inline_diff(old: &str, new: &str, style: &Style) {
+    const MAX_DIFF_LINES: usize = 12;
+    let old_lines: Vec<&str> = old.lines().collect();
+    let new_lines: Vec<&str> = new.lines().collect();
+
+    let mut output_lines = Vec::new();
+
+    for line in &old_lines {
+        output_lines.push(format!(
+            "  {}-{} {}{}",
+            style.red, style.reset, line, style.reset
+        ));
+    }
+    for line in &new_lines {
+        output_lines.push(format!(
+            "  {}+{} {}{}",
+            style.green, style.reset, line, style.reset
+        ));
+    }
+
+    let total = output_lines.len();
+    if total <= MAX_DIFF_LINES {
+        for line in &output_lines {
+            println!("{line}");
+        }
+    } else {
+        let head = MAX_DIFF_LINES / 2;
+        let tail = MAX_DIFF_LINES - head - 1;
+        for line in &output_lines[..head] {
+            println!("{line}");
+        }
+        println!(
+            "  {}... {} more lines ...{}",
+            style.dim,
+            total - head - tail,
+            style.reset
+        );
+        for line in &output_lines[total - tail..] {
+            println!("{line}");
         }
     }
 }
