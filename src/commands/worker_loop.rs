@@ -40,6 +40,15 @@ impl WorkerLoop {
         // Agent name: CLI arg > auto-generated (empty for worker)
         let agent = agent.unwrap_or_default();
 
+        // Set AGENT and BOTBUS_AGENT env so spawned tools resolve identity correctly
+        // SAFETY: single-threaded at this point in startup, before spawning any threads
+        if !agent.is_empty() {
+            unsafe {
+                std::env::set_var("AGENT", &agent);
+                std::env::set_var("BOTBUS_AGENT", &agent);
+            }
+        }
+
         // Project name from config
         let project = config.channel();
 

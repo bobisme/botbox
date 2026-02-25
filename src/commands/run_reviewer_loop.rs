@@ -416,6 +416,13 @@ pub fn run_reviewer_loop(
         .or_else(|| config.project.default_agent.clone())
         .unwrap_or_else(|| config.default_agent());
 
+    // Set AGENT and BOTBUS_AGENT env so spawned tools (crit, bus) resolve identity correctly
+    // SAFETY: single-threaded at this point in startup, before spawning any threads
+    unsafe {
+        env::set_var("AGENT", &agent);
+        env::set_var("BOTBUS_AGENT", &agent);
+    }
+
     let project = config.channel();
 
     // Get reviewer config

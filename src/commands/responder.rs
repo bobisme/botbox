@@ -521,6 +521,14 @@ impl Responder {
         // they're set to the message *sender*, not the responder's identity.
         let agent = agent.unwrap_or(default_agent);
 
+        // Override AGENT/BOTBUS_AGENT env with the resolved identity so spawned tools
+        // (bus, crit, bn) use the responder's identity, not the message sender's.
+        // SAFETY: single-threaded at this point in startup, before spawning any threads
+        unsafe {
+            std::env::set_var("AGENT", &agent);
+            std::env::set_var("BOTBUS_AGENT", &agent);
+        }
+
         // Resolve channel from env (set by hook) — required
         let channel = std::env::var("BOTBUS_CHANNEL")
             .map_err(|_| anyhow!("BOTBUS_CHANNEL not set (should be set by hook)"))?;

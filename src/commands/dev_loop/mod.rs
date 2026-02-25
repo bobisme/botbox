@@ -36,6 +36,14 @@ pub fn run(
     let (config, config_dir) = load_config(&project_root)?;
 
     let agent = resolve_agent(&config, agent_override)?;
+
+    // Set AGENT and BOTBUS_AGENT env so spawned tools resolve identity correctly
+    // SAFETY: single-threaded at this point in startup, before spawning any threads
+    unsafe {
+        std::env::set_var("AGENT", &agent);
+        std::env::set_var("BOTBUS_AGENT", &agent);
+    }
+
     let project = config.channel();
     let model = resolve_model(&config, model_override);
     let worker_model = resolve_worker_model(&config);
