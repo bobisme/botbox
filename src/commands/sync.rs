@@ -614,9 +614,17 @@ impl SyncArgs {
                 )?;
             }
             Vcs::Git => {
-                // Stage all managed paths — git add ignores paths that don't exist or haven't changed
+                // Stage managed paths that exist — git add errors on missing pathspecs
+                let existing: Vec<&str> = managed_paths
+                    .iter()
+                    .copied()
+                    .filter(|p| project_root.join(p).exists())
+                    .collect();
+                if existing.is_empty() {
+                    return Ok(());
+                }
                 let mut args = vec!["add", "--"];
-                args.extend_from_slice(managed_paths);
+                args.extend_from_slice(&existing);
                 run_command("git", &args, Some(project_root))?;
 
                 // Only commit if there are staged changes
