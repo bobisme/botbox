@@ -285,20 +285,11 @@ impl SyncArgs {
 
         // Create stubs at bare root
         let stub_agents = project_root.join("AGENTS.md");
-        let stub_claude = project_root.join("CLAUDE.md");
-        let stub_content = "**Do not edit the root AGENTS.md or CLAUDE.md for memories or instructions. Use the AGENTS.md in ws/default/.**\n@ws/default/AGENTS.md\n";
+        let stub_content = "**Do not edit the root AGENTS.md for memories or instructions. Use the AGENTS.md in ws/default/.**\n@ws/default/AGENTS.md\n";
 
         if !stub_agents.exists() {
             fs::write(&stub_agents, stub_content)?;
             println!("Created bare-root AGENTS.md stub");
-        }
-
-        if !stub_claude.exists() {
-            #[cfg(unix)]
-            std::os::unix::fs::symlink("AGENTS.md", &stub_claude)?;
-            #[cfg(windows)]
-            std::os::windows::fs::symlink_file("AGENTS.md", &stub_claude)?;
-            println!("Symlinked bare-root CLAUDE.md → AGENTS.md");
         }
 
         // Symlink .claude directory — use atomic approach to avoid TOCTOU

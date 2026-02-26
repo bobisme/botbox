@@ -197,16 +197,6 @@ impl InitArgs {
             println!("Generated AGENTS.md");
         }
 
-        // Symlink CLAUDE.md → AGENTS.md
-        let claude_md_path = project_dir.join("CLAUDE.md");
-        if !claude_md_path.exists() {
-            #[cfg(unix)]
-            std::os::unix::fs::symlink("AGENTS.md", &claude_md_path)?;
-            #[cfg(windows)]
-            std::os::windows::fs::symlink_file("AGENTS.md", &claude_md_path)?;
-            println!("Symlinked CLAUDE.md → AGENTS.md");
-        }
-
         // Initialize bones
         if choices.init_bones && choices.tools.contains(&"bones".to_string()) {
             match run_command("bn", &["init"], Some(&project_dir)) {
@@ -389,20 +379,11 @@ impl InitArgs {
         run_command("maw", &arg_refs, Some(&project_dir))?;
 
         // Create bare root stubs
-        let stub_content = "**Do not edit the root AGENTS.md or CLAUDE.md for memories or instructions. Use the AGENTS.md in ws/default/.**\n@ws/default/AGENTS.md\n";
+        let stub_content = "**Do not edit the root AGENTS.md for memories or instructions. Use the AGENTS.md in ws/default/.**\n@ws/default/AGENTS.md\n";
         let stub_agents = project_dir.join("AGENTS.md");
         if !stub_agents.exists() {
             fs::write(&stub_agents, stub_content)?;
             println!("Created bare-root AGENTS.md stub");
-        }
-
-        let stub_claude = project_dir.join("CLAUDE.md");
-        if !stub_claude.exists() {
-            #[cfg(unix)]
-            std::os::unix::fs::symlink("AGENTS.md", &stub_claude)?;
-            #[cfg(windows)]
-            std::os::windows::fs::symlink_file("AGENTS.md", &stub_claude)?;
-            println!("Symlinked bare-root CLAUDE.md → AGENTS.md");
         }
 
         // Symlink .claude → ws/default/.claude

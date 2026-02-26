@@ -297,7 +297,7 @@ Migrations run automatically during `botbox sync` when the config version is beh
 
 ### Init vs Sync
 
-**`botbox init`** does everything: interactive config, creates `.agents/botbox/`, copies all files, generates AGENTS.md + CLAUDE.md symlink + `.botbox.json`, initializes external tools (`bn init`, `maw init`, `crit init`), registers botbus hooks, seeds initial bones, creates .gitignore.
+**`botbox init`** does everything: interactive config, creates `.agents/botbox/`, copies all files, generates AGENTS.md + `.botbox.json`, initializes external tools (`bn init`, `maw init`, `crit init`), registers botbus hooks, seeds initial bones, creates .gitignore.
 
 **`botbox sync`** is incremental: checks staleness, runs pending migrations, updates only changed components, preserves user edits outside managed markers. `--check` mode exits non-zero without changing anything (CI use).
 
@@ -498,8 +498,7 @@ project-root/          ← bare repo (no source files here)
 │   └── amber-reef/    ← another agent workspace
 ├── .manifold/         ← maw metadata/artifacts
 ├── .git/              ← git data (core.bare=true)
-├── AGENTS.md          ← stub redirecting to ws/default/AGENTS.md
-└── CLAUDE.md          ← symlink → AGENTS.md
+└── AGENTS.md          ← stub redirecting to ws/default/AGENTS.md
 ```
 
 **Key rules:**
