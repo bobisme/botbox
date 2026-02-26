@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
@@ -89,6 +90,10 @@ pub struct Config {
     pub agents: AgentsConfig,
     #[serde(default)]
     pub models: ModelsConfig,
+    /// Environment variables to pass to all spawned agents.
+    /// Values support shell variable expansion (e.g. `$HOME`, `${HOME}`).
+    #[serde(default)]
+    pub env: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -443,6 +448,11 @@ impl Config {
             "models",
             "\n# Model tier pools for load balancing\n# Each tier maps to a list of \"provider/model:thinking\" strings\n",
         );
+        set_table_comment(
+            &mut doc,
+            "env",
+            "\n# Environment variables passed to all spawned agents\n# Values support shell variable expansion ($HOME, ${HOME})\n",
+        );
 
         Ok(doc.to_string())
     }
@@ -461,6 +471,14 @@ impl Config {
             .channel
             .clone()
             .unwrap_or_else(|| self.project.name.clone())
+    }
+
+    /// Returns env vars with shell variables expanded (e.g. `$HOME` → `/home/user`).
+    pub fn resolved_env(&self) -> HashMap<String, String> {
+        self.env
+            .iter()
+            .map(|(k, v)| (k.clone(), expand_env_value(v)))
+            .collect()
     }
 
     /// Resolve a model string to the full pool of models for that tier.
@@ -520,6 +538,51 @@ impl Config {
             .cloned()
             .unwrap_or_else(|| model.to_string())
     }
+}
+
+/// Expand shell-style variable references in a string.
+/// Supports `$VAR` and `${VAR}` syntax. Unknown variables are left as-is.
+fn expand_env_value(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '$' {
+            // ${VAR} syntax
+            if chars.peek() == Some(&'{') {
+                chars.next(); // consume '{'
+                let var_name: String = chars.by_ref().take_while(|&c| c != '}').collect();
+                if let Ok(val) = std::env::var(&var_name) {
+                    result.push_str(&val);
+                } else {
+                    result.push_str(&format!("${{{var_name}}}"));
+                }
+            } else {
+                // $VAR syntax — peek-collect alphanumeric + underscore
+                let mut var_name = String::new();
+                while let Some(&ch) = chars.peek() {
+                    if ch.is_alphanumeric() || ch == '_' {
+                        var_name.push(ch);
+                        chars.next();
+                    } else {
+                        break;
+                    }
+                }
+                if var_name.is_empty() {
+                    result.push('$');
+                } else if let Ok(val) = std::env::var(&var_name) {
+                    result.push_str(&val);
+                } else {
+                    result.push('$');
+                    result.push_str(&var_name);
+                }
+            }
+        } else {
+            result.push(c);
+        }
+    }
+
+    result
 }
 
 /// Convert a JSON config string to TOML format.
@@ -1017,5 +1080,76 @@ bones = true
         assert!(output.contains("#:schema https://raw.githubusercontent.com/bobisme/botbox"));
         assert!(output.contains("# Botbox project configuration"));
         assert!(output.contains("# Companion tools to enable"));
+    }
+
+    #[test]
+    fn parse_toml_with_env_section() {
+        let toml_str = r#"
+version = "1.0.0"
+
+[project]
+name = "test"
+
+[env]
+CARGO_BUILD_JOBS = "2"
+RUSTC_WRAPPER = "sccache"
+"#;
+
+        let config = Config::parse_toml(toml_str).unwrap();
+        assert_eq!(config.env.len(), 2);
+        assert_eq!(config.env["CARGO_BUILD_JOBS"], "2");
+        assert_eq!(config.env["RUSTC_WRAPPER"], "sccache");
+    }
+
+    #[test]
+    fn parse_toml_without_env_section() {
+        let toml_str = r#"
+version = "1.0.0"
+[project]
+name = "test"
+"#;
+        let config = Config::parse_toml(toml_str).unwrap();
+        assert!(config.env.is_empty());
+    }
+
+    #[test]
+    fn expand_env_value_dollar_var() {
+        // Set a test var then expand it
+        unsafe { std::env::set_var("BOTBOX_TEST_VAR", "/test/path"); }
+        assert_eq!(expand_env_value("$BOTBOX_TEST_VAR/sub"), "/test/path/sub");
+        assert_eq!(expand_env_value("${BOTBOX_TEST_VAR}/sub"), "/test/path/sub");
+        unsafe { std::env::remove_var("BOTBOX_TEST_VAR"); }
+    }
+
+    #[test]
+    fn expand_env_value_unset_var_preserved() {
+        // Unset vars should be left as-is
+        let result = expand_env_value("$BOTBOX_NONEXISTENT_VAR_12345");
+        assert_eq!(result, "$BOTBOX_NONEXISTENT_VAR_12345");
+        let result = expand_env_value("${BOTBOX_NONEXISTENT_VAR_12345}");
+        assert_eq!(result, "${BOTBOX_NONEXISTENT_VAR_12345}");
+    }
+
+    #[test]
+    fn expand_env_value_no_vars() {
+        assert_eq!(expand_env_value("plain string"), "plain string");
+        assert_eq!(expand_env_value("/usr/bin/sccache"), "/usr/bin/sccache");
+    }
+
+    #[test]
+    fn resolved_env_expands_values() {
+        unsafe { std::env::set_var("BOTBOX_TEST_HOME", "/home/test"); }
+        let config = Config::parse_toml(r#"
+version = "1.0.0"
+[project]
+name = "test"
+[env]
+SCCACHE_DIR = "$BOTBOX_TEST_HOME/.cache/sccache"
+PLAIN = "no-vars"
+"#).unwrap();
+        let resolved = config.resolved_env();
+        assert_eq!(resolved["SCCACHE_DIR"], "/home/test/.cache/sccache");
+        assert_eq!(resolved["PLAIN"], "no-vars");
+        unsafe { std::env::remove_var("BOTBOX_TEST_HOME"); }
     }
 }

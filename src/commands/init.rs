@@ -764,6 +764,7 @@ fn build_config(choices: &InitChoices) -> Config {
             responder: None,
         },
         models: Default::default(),
+        env: Default::default(),
     }
 }
 

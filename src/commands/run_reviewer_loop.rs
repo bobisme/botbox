@@ -423,6 +423,14 @@ pub fn run_reviewer_loop(
         env::set_var("BOTBUS_AGENT", &agent);
     }
 
+    // Apply config [env] vars to our own process
+    for (k, v) in config.resolved_env() {
+        // SAFETY: single-threaded at startup
+        unsafe {
+            env::set_var(&k, &v);
+        }
+    }
+
     let project = config.channel();
 
     // Get reviewer config

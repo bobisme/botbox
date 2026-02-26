@@ -469,6 +469,8 @@ struct Responder {
     multi_lead_enabled: bool,
     multi_lead_max_leads: u32,
     config: Option<Config>,
+    /// Pre-resolved env vars from config (shell variables already expanded).
+    spawn_env: std::collections::HashMap<String, String>,
 }
 
 impl Responder {
@@ -545,6 +547,11 @@ impl Responder {
             .map(|c| c.resolve_model(&default_model))
             .unwrap_or(default_model);
 
+        let spawn_env = config
+            .as_ref()
+            .map(|c| c.resolved_env())
+            .unwrap_or_default();
+
         Ok(Self {
             project,
             agent,
@@ -557,6 +564,7 @@ impl Responder {
             multi_lead_max_leads,
             transcript: Transcript::new(),
             config,
+            spawn_env,
         })
     }
 
@@ -995,6 +1003,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         // Hand off to dev-loop with inherited stdio — replaces our process
         let status = Command::new("botbox")
             .args(["run", "dev-loop", "--agent", &self.agent])
+            .envs(&self.spawn_env)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())
@@ -1057,6 +1066,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
         let status = Command::new("botbox")
             .args(["run", "dev-loop", "--agent", &self.agent])
+            .envs(&self.spawn_env)
             .env("BOTBOX_MISSION", &bone_id)
             .stdin(Stdio::inherit())
             .stdout(Stdio::inherit())
@@ -1244,26 +1254,36 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 Ok(output) if output.success() => {
                     // Slot acquired — spawn lead
                     eprintln!("Acquired slot {slot}, spawning lead: {lead_name}");
+                    let mut spawn_args: Vec<String> = vec![
+                        "spawn".into(),
+                        "--env-inherit".into(),
+                        "SSH_AUTH_SOCK".into(),
+                        "--env".into(),
+                        format!("AGENT={lead_name}"),
+                        "--env".into(),
+                        format!("BOTBUS_CHANNEL={}", self.channel),
+                    ];
+                    // Inject config [env] vars
+                    for (k, v) in &self.spawn_env {
+                        spawn_args.push("--env".into());
+                        spawn_args.push(format!("{k}={v}"));
+                    }
+                    spawn_args.extend([
+                        "--name".into(),
+                        lead_name.clone(),
+                        "--cwd".into(),
+                        cwd.clone(),
+                        "--".into(),
+                        "botbox".into(),
+                        "run".into(),
+                        "dev-loop".into(),
+                        "--agent".into(),
+                        lead_name.clone(),
+                    ]);
+                    let spawn_arg_refs: Vec<&str> =
+                        spawn_args.iter().map(|s| s.as_str()).collect();
                     let spawn_result = Tool::new("botty")
-                        .args(&[
-                            "spawn",
-                            "--env-inherit",
-                            "SSH_AUTH_SOCK",
-                            "--env",
-                            &format!("AGENT={lead_name}"),
-                            "--env",
-                            &format!("BOTBUS_CHANNEL={}", self.channel),
-                            "--name",
-                            &lead_name,
-                            "--cwd",
-                            &cwd,
-                            "--",
-                            "botbox",
-                            "run",
-                            "dev-loop",
-                            "--agent",
-                            &lead_name,
-                        ])
+                        .args(&spawn_arg_refs)
                         .run();
 
                     match spawn_result {

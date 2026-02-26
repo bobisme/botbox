@@ -252,6 +252,14 @@ When all children are closed:
     let project_dir = &ctx.project_dir;
     let worker_timeout = ctx.worker_timeout;
 
+    // Build extra --env flags from config [env] section for botty spawn template
+    let spawn_env_flags: String = ctx
+        .spawn_env
+        .iter()
+        .map(|(k, v)| format!("    --env \"{k}={v}\" \\"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let check_command = ctx.check_command.as_deref().unwrap_or("just check");
 
     format!(
@@ -493,6 +501,7 @@ For each dispatched bone, spawn a worker via botty with hierarchical naming:
     --env "BOTBOX_WORKSPACE=$WS" \
     --env "BOTBUS_CHANNEL={project}" \
     --env "BOTBOX_PROJECT={project}" \
+{spawn_env_flags}
     --timeout <model-timeout> \
     --cwd {project_dir}/ws/$WS \
     -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
@@ -739,6 +748,7 @@ mod tests {
             multi_lead_enabled: false,
             multi_lead_config: None,
             project_dir: "/home/test/project".to_string(),
+            spawn_env: Default::default(),
         }
     }
 

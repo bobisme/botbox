@@ -44,6 +44,14 @@ pub fn run(
         std::env::set_var("BOTBUS_AGENT", &agent);
     }
 
+    // Apply config [env] vars to our own process so tools we invoke (cargo, etc.) inherit them
+    for (k, v) in config.resolved_env() {
+        // SAFETY: single-threaded at startup
+        unsafe {
+            std::env::set_var(&k, &v);
+        }
+    }
+
     let project = config.channel();
     let model = resolve_model(&config, model_override);
     let worker_model = resolve_worker_model(&config);
@@ -63,6 +71,8 @@ pub fn run(
     let check_command = config.project.check_command.clone();
     let worker_timeout = config.agents.worker.as_ref().map_or(900, |w| w.timeout);
 
+    let spawn_env = config.resolved_env();
+
     let ctx = LoopContext {
         agent: agent.clone(),
         project: project.clone(),
@@ -77,6 +87,7 @@ pub fn run(
         multi_lead_enabled,
         multi_lead_config,
         project_dir: project_root.display().to_string(),
+        spawn_env,
     };
 
     eprintln!("Agent:     {agent}");
@@ -339,6 +350,8 @@ pub struct LoopContext {
     pub multi_lead_enabled: bool,
     pub multi_lead_config: Option<crate::config::MultiLeadConfig>,
     pub project_dir: String,
+    /// Pre-resolved env vars from config [env] section.
+    pub spawn_env: std::collections::HashMap<String, String>,
 }
 
 /// Info about a sibling lead agent.

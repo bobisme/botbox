@@ -49,6 +49,14 @@ impl WorkerLoop {
             }
         }
 
+        // Apply config [env] vars to our own process so tools we invoke (cargo, etc.) inherit them
+        for (k, v) in config.resolved_env() {
+            // SAFETY: single-threaded at startup
+            unsafe {
+                std::env::set_var(&k, &v);
+            }
+        }
+
         // Project name from config
         let project = config.channel();
 
