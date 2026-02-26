@@ -764,8 +764,20 @@ fn build_config(choices: &InitChoices) -> Config {
             responder: None,
         },
         models: Default::default(),
-        env: Default::default(),
+        env: build_default_env(&choices.languages),
     }
+}
+
+/// Build default [env] vars based on project languages.
+fn build_default_env(languages: &[String]) -> std::collections::HashMap<String, String> {
+    let mut env = std::collections::HashMap::new();
+    let has_rust = languages.iter().any(|l| l.eq_ignore_ascii_case("rust"));
+    if has_rust {
+        env.insert("CARGO_BUILD_JOBS".into(), "2".into());
+        env.insert("RUSTC_WRAPPER".into(), "sccache".into());
+        env.insert("SCCACHE_DIR".into(), "$HOME/.cache/sccache".into());
+    }
+    env
 }
 
 // --- Sync helpers (reuse embedded content from sync.rs) ---
@@ -1247,6 +1259,31 @@ mod tests {
         assert_eq!(dev.model, "strong");
         assert_eq!(dev.max_loops, 100);
         assert!(dev.missions.is_some());
+
+        // Rust project should seed [env] with cargo/sccache defaults
+        assert_eq!(config.env.get("CARGO_BUILD_JOBS").unwrap(), "2");
+        assert_eq!(config.env.get("RUSTC_WRAPPER").unwrap(), "sccache");
+        assert_eq!(
+            config.env.get("SCCACHE_DIR").unwrap(),
+            "$HOME/.cache/sccache"
+        );
+    }
+
+    #[test]
+    fn test_build_config_no_env_for_non_rust() {
+        let choices = InitChoices {
+            name: "jsapp".to_string(),
+            types: vec!["web".to_string()],
+            tools: vec!["bones".to_string()],
+            reviewers: vec![],
+            languages: vec!["typescript".to_string()],
+            install_command: None,
+            check_command: None,
+            init_bones: false,
+            seed_work: false,
+        };
+        let config = build_config(&choices);
+        assert!(config.env.is_empty());
     }
 
     #[test]
