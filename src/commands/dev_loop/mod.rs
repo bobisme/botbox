@@ -520,8 +520,13 @@ fn parse_inbox_count(json: &str) -> u64 {
 }
 
 /// Parse ready bones count from JSON response.
+///
+/// `bn next --json` returns `{"mode": "...", "assignments": [...]}` (bones v0.17.5+).
 fn parse_ready_count(json: &str) -> usize {
     if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+        if let Some(arr) = v["assignments"].as_array() {
+            return arr.len();
+        }
         if let Some(arr) = v.as_array() {
             return arr.len();
         }
@@ -823,5 +828,43 @@ fn kill_child_workers(agent: &str) {
             }
             eprintln!("Killed child worker: {name}");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_ready_count_assignments_envelope() {
+        // bn next --json format since bones v0.17.5
+        let json = r#"{"mode": "balanced", "assignments": [{"agent_slot": 1, "id": "bn-3smm"}]}"#;
+        assert_eq!(parse_ready_count(json), 1);
+    }
+
+    #[test]
+    fn parse_ready_count_assignments_multiple() {
+        let json = r#"{"mode": "balanced", "assignments": [{"agent_slot": 1, "id": "bn-abc"}, {"agent_slot": 2, "id": "bn-def"}]}"#;
+        assert_eq!(parse_ready_count(json), 2);
+    }
+
+    #[test]
+    fn parse_ready_count_empty() {
+        assert_eq!(parse_ready_count(r#"{"mode": "balanced", "assignments": []}"#), 0);
+        assert_eq!(parse_ready_count("{}"), 0);
+        assert_eq!(parse_ready_count("[]"), 0);
+        assert_eq!(parse_ready_count(""), 0);
+        assert_eq!(parse_ready_count("null"), 0);
+    }
+
+    #[test]
+    fn parse_inbox_count_total_unread() {
+        let json = r#"{"total_unread": 3}"#;
+        assert_eq!(parse_inbox_count(json), 3);
+    }
+
+    #[test]
+    fn parse_inbox_count_bare_number() {
+        assert_eq!(parse_inbox_count("5"), 5);
     }
 }
