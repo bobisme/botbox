@@ -315,7 +315,9 @@ fn build_finish_steps(
 
     // 3. Merge workspace (unless --no-merge)
     if !no_merge {
-        steps.push(shell::ws_merge_cmd(workspace));
+        // Use a conventional commit message derived from the bone title
+        let merge_msg = format!("feat: {}", bead_title);
+        steps.push(shell::ws_merge_cmd(workspace, Some(&merge_msg)));
     }
 
     // 4. Mark review as merged (if review exists)
@@ -444,12 +446,18 @@ mod tests {
         // Should have git add + commit
         assert!(guidance.steps.iter().any(|s| s.contains("git add -A")));
         assert!(guidance.steps.iter().any(|s| s.contains("git commit -m")));
-        // Should have ws merge
+        // Should have ws merge with --message
         assert!(
             guidance
                 .steps
                 .iter()
                 .any(|s| s.contains("maw ws merge frost-castle --destroy"))
+        );
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("--message") && s.contains("test feature"))
         );
         // Should have mark-merged
         assert!(

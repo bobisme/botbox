@@ -308,8 +308,9 @@ fn build_merge_steps(
 ) {
     let mut steps = Vec::new();
 
-    // 1. Merge workspace
-    steps.push(shell::ws_merge_cmd(workspace));
+    // 1. Merge workspace — use a conventional commit message if bone_id is known
+    let merge_msg = bone_id.map(|id| format!("feat: work from {}", id));
+    steps.push(shell::ws_merge_cmd(workspace, merge_msg.as_deref()));
 
     // 2. Mark review as merged (if review exists)
     if let Some(rid) = review_id {
@@ -526,6 +527,13 @@ mod tests {
                 .steps
                 .iter()
                 .any(|s| s.contains("maw ws merge frost-castle --destroy"))
+        );
+        // Should include --message with bone id
+        assert!(
+            guidance
+                .steps
+                .iter()
+                .any(|s| s.contains("--message") && s.contains("bd-abc"))
         );
         assert!(
             guidance

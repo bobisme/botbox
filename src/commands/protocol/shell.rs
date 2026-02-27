@@ -335,8 +335,11 @@ pub fn ws_create_cmd() -> String {
     "maw ws create --random".to_string()
 }
 
-/// Build: `maw ws merge <ws> --destroy`
-pub fn ws_merge_cmd(workspace: &str) -> String {
+/// Build: `maw ws merge <ws> --destroy [--message <msg>]`
+///
+/// Pass `message` to set a conventional commit message on the merge commit.
+/// Without a message, maw generates a generic "epoch: <workspace>" message.
+pub fn ws_merge_cmd(workspace: &str, message: Option<&str>) -> String {
     // Validate workspace name before use
     let workspace_safe = if validate_workspace_name(workspace).is_ok() {
         safe_ident(workspace)
@@ -344,7 +347,14 @@ pub fn ws_merge_cmd(workspace: &str) -> String {
         std::borrow::Cow::Owned(shell_escape(workspace))
     };
 
-    format!("maw ws merge {} --destroy", workspace_safe)
+    match message {
+        Some(msg) => format!(
+            "maw ws merge {} --destroy --message {}",
+            workspace_safe,
+            shell_escape(msg)
+        ),
+        None => format!("maw ws merge {} --destroy", workspace_safe),
+    }
 }
 
 /// Build: `maw exec <ws> -- crit reviews create --agent <agent> --title '<title>' --reviewers <reviewers>`
@@ -736,8 +746,17 @@ mod tests {
 
     #[test]
     fn ws_merge_basic() {
-        let cmd = ws_merge_cmd("frost-castle");
+        let cmd = ws_merge_cmd("frost-castle", None);
         assert_eq!(cmd, "maw ws merge frost-castle --destroy");
+    }
+
+    #[test]
+    fn ws_merge_with_message() {
+        let cmd = ws_merge_cmd("frost-castle", Some("feat: add login flow"));
+        assert_eq!(
+            cmd,
+            "maw ws merge frost-castle --destroy --message 'feat: add login flow'"
+        );
     }
 
     #[test]

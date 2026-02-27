@@ -459,7 +459,7 @@ RISK:CRITICAL — Security review + human approval:
   STOP.
 
 If REVIEW is false:
-  Merge: maw ws merge $WS --destroy (produces linear squashed history and auto-moves main)
+  Merge: maw ws merge $WS --destroy --message "feat: <bone-title>" (use conventional commit prefix; produces linear squashed history and auto-moves main)
   maw exec default -- bn done <id> --reason="Completed"
   bus send --agent {agent} {project} "Completed <id>: <title>" -L task-done
   bus claims release --agent {agent} --all
@@ -623,7 +623,9 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
        5. After resolving: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: <summary> (conflict resolved)"
 
   d. MERGE:
-     maw ws merge $WS --destroy
+     maw ws merge $WS --destroy --message "feat: <bone-title>"
+     (Use a conventional commit prefix: feat: for features, fix: for bugs, chore: for maintenance, etc.
+      Replace <bone-title> with the actual bone title from `bn show <id>`.)
 
   d2. RELEASE WORKER CLAIMS (for dispatched workers only):
       For workspace that was dispatched to a worker (check bone comments for "Dispatched worker"):
