@@ -47,16 +47,20 @@ fn validate_name(name: &str, label: &str) -> Result<()> {
     Ok(())
 }
 
-/// Load a prompt template and substitute {{VARIABLE}} placeholders.
+/// Load a prompt template and substitute `{{ VARIABLE }}` placeholders.
 pub fn load_prompt(
     prompt_name: &str,
     agent: &str,
     project: &str,
     prompts_dir: &Path,
+    workspace: Option<&str>,
 ) -> Result<String> {
     // Validate inputs to prevent template injection
     validate_name(agent, "agent")?;
     validate_name(project, "project")?;
+    if let Some(ws) = workspace {
+        validate_name(ws, "workspace")?;
+    }
 
     // Prevent path traversal in prompt name
     if prompt_name.contains('/') || prompt_name.contains('\\') || prompt_name.contains("..") {
@@ -68,10 +72,17 @@ pub fn load_prompt(
     let template =
         fs::read_to_string(&file_path).with_context(|| "reading prompt template".to_string())?;
 
-    // Simple variable substitution
+    // Simple variable substitution (support both spaced and unspaced forms)
     let mut result = template;
+    result = result.replace("{{ AGENT }}", agent);
     result = result.replace("{{AGENT}}", agent);
+    result = result.replace("{{ PROJECT }}", project);
     result = result.replace("{{PROJECT}}", project);
+
+    // Replace {{ WORKSPACE }} with actual workspace or fallback to $WS
+    let ws_value = workspace.unwrap_or("$WS");
+    result = result.replace("{{ WORKSPACE }}", ws_value);
+    result = result.replace("{{WORKSPACE}}", ws_value);
 
     Ok(result)
 }
@@ -256,18 +267,38 @@ fn build_prompt(
         prompts_dir = PathBuf::from("ws/default/.agents/botbox/prompts");
     }
 
+    // Determine target workspace from first work item
+    let target_workspace = work_items.first().map(|w| w.workspace.as_str());
+
     // Try to load specialized prompt, fall back to base reviewer if not found
-    let mut base_prompt = match load_prompt(&prompt_name, agent, project, &prompts_dir) {
+    let mut base_prompt = match load_prompt(
+        &prompt_name,
+        agent,
+        project,
+        &prompts_dir,
+        target_workspace,
+    ) {
         Ok(p) => p,
         Err(_) if role.is_some() => {
             eprintln!(
                 "Warning: {}.md not found, using base reviewer prompt",
                 prompt_name
             );
-            load_prompt("reviewer", agent, project, &prompts_dir)?
+            load_prompt("reviewer", agent, project, &prompts_dir, target_workspace)?
         }
         Err(e) => return Err(e),
     };
+
+    // Prepend workspace preamble so the agent sees it before any steps
+    if let Some(ws) = target_workspace {
+        let preamble = format!(
+            "## WORKSPACE CONTEXT\n\
+             All code for this review is in workspace **{ws}**.\n\
+             Use `maw exec {ws} -- ...` for ALL crit commands.\n\
+             Read source files from `ws/{ws}/...` — NOT `ws/default/`.\n\n",
+        );
+        base_prompt.insert_str(0, &preamble);
+    }
 
     // Append workspace context
     if !work_items.is_empty() {
