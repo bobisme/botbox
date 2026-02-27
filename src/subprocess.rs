@@ -125,11 +125,27 @@ impl Tool {
             cmd.process_group(0);
         }
 
+        let start = crate::telemetry::metrics::time_start();
+
         let output: Output = if let Some(timeout) = self.timeout {
             run_with_timeout(&mut cmd, timeout, &self.program)?
         } else {
             cmd.output().map_err(|e| self.not_found_or_other(e))?
         };
+
+        let success = output.status.success();
+        let tool_name = &self.program;
+        let success_str = if success { "true" } else { "false" };
+        crate::telemetry::metrics::time_record(
+            "botbox.subprocess.duration_seconds",
+            start,
+            &[("tool", tool_name), ("success", success_str)],
+        );
+        crate::telemetry::metrics::counter(
+            "botbox.subprocess.calls_total",
+            1,
+            &[("tool", tool_name), ("success", success_str)],
+        );
 
         Ok(RunOutput {
             stdout: String::from_utf8_lossy(&output.stdout).into_owned(),

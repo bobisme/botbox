@@ -543,6 +543,11 @@ pub fn run_reviewer_loop(
     // Main loop
     for i in 1..=max_loops {
         eprintln!("\n--- Review loop {}/{} ---", i, max_loops);
+        crate::telemetry::metrics::counter(
+            "botbox.reviewer.iterations_total",
+            1,
+            &[("agent", &agent)],
+        );
 
         let work_items = find_work(&agent)?;
 
@@ -585,6 +590,7 @@ pub fn run_reviewer_loop(
         let prompt = build_prompt(&agent, &project, &work_items, last_iter_ref)?;
 
         // Run agent via Pi (default runtime)
+        let reviewer_start = crate::telemetry::metrics::time_start();
         let run_agent_result = crate::commands::run_agent::run_agent(
             "pi",
             &prompt,
@@ -593,12 +599,14 @@ pub fn run_reviewer_loop(
             None,
             false,
         );
+        crate::telemetry::metrics::time_record(
+            "botbox.reviewer.agent_run_duration_seconds",
+            reviewer_start,
+            &[("agent", &agent)],
+        );
 
         match run_agent_result {
             Ok(_) => {
-                // run_agent already prints output to stdout, we just need to check signals
-                // For now, we'll re-run to capture output (non-ideal, but matches JS behavior)
-                // TODO: modify run_agent to return output string
                 eprintln!("✓ Review iteration complete");
             }
             Err(e) => {

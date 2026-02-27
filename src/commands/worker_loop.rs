@@ -156,10 +156,21 @@ impl WorkerLoop {
         let prompt = self.build_prompt();
 
         // Run agent via botbox run agent (Pi by default), with rate limit fallback
+        let start = crate::telemetry::metrics::time_start();
         let output = run_agent_with_fallback(&prompt, &self.model_pool, self.timeout)?;
+        crate::telemetry::metrics::time_record(
+            "botbox.worker.agent_run_duration_seconds",
+            start,
+            &[("agent", &self.agent), ("project", &self.project)],
+        );
 
         // Parse completion signal
         let status = parse_completion_signal(&output);
+        crate::telemetry::metrics::counter(
+            "botbox.worker.runs_total",
+            1,
+            &[("agent", &self.agent), ("project", &self.project)],
+        );
 
         Ok(status)
     }
@@ -593,6 +604,11 @@ fn run_agent_with_fallback(
                     eprintln!(
                         "Rate limited on {} (detected in output), trying next model...",
                         model
+                    );
+                    crate::telemetry::metrics::counter(
+                        "botbox.worker.rate_limit_retries_total",
+                        1,
+                        &[("model", model)],
                     );
                     continue;
                 }

@@ -673,9 +673,15 @@ impl Responder {
     fn run_agent(&self, prompt: &str, model: &str) -> anyhow::Result<String> {
         eprintln!("Running agent (model: {model})...");
         let timeout_str = self.claude_timeout.to_string();
+        let start = crate::telemetry::metrics::time_start();
         let output = Tool::new("botbox")
             .args(&["run", "agent", prompt, "-m", model, "-t", &timeout_str])
             .run_ok()?;
+        crate::telemetry::metrics::time_record(
+            "botbox.responder.agent_run_duration_seconds",
+            start,
+            &[("model", model)],
+        );
         Ok(output.stdout)
     }
 
@@ -1611,6 +1617,21 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             .map(|m| format!(" (model: {m})"))
             .unwrap_or_default();
         eprintln!("Route:   {:?}{model_info}", route.route_type);
+
+        let route_label = match route.route_type {
+            RouteType::Dev => "dev",
+            RouteType::Bone => "bone",
+            RouteType::Mission => "mission",
+            RouteType::Leads => "leads",
+            RouteType::Question => "question",
+            RouteType::Triage => "triage",
+            RouteType::Oneshot => "oneshot",
+        };
+        crate::telemetry::metrics::counter(
+            "botbox.responder.messages_routed_total",
+            1,
+            &[("route_type", route_label)],
+        );
 
         // Dispatch to handler
         match route.route_type {

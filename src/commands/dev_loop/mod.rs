@@ -182,6 +182,11 @@ pub fn run(
     // Main loop
     for i in 1..=max_loops {
         eprintln!("\n--- Dev loop {i}/{max_loops} ---");
+        crate::telemetry::metrics::counter(
+            "botbox.dev_loop.iterations_total",
+            1,
+            &[("agent", &agent), ("project", &project)],
+        );
 
         // Refresh agent claim TTL
         let _ = Tool::new("bus")
@@ -264,6 +269,7 @@ pub fn run(
             status_snapshot.as_deref(),
         );
 
+        let agent_start = crate::telemetry::metrics::time_start();
         match run_agent_subprocess(&prompt_text, &ctx.model, timeout_secs) {
             Ok(output) => {
                 // Check completion signals in the tail of the output
@@ -317,6 +323,11 @@ pub fn run(
                 // Continue on non-fatal errors
             }
         }
+        crate::telemetry::metrics::time_record(
+            "botbox.dev_loop.agent_run_duration_seconds",
+            agent_start,
+            &[("agent", &agent), ("project", &project)],
+        );
 
         if i < max_loops {
             std::thread::sleep(Duration::from_secs(pause_secs.into()));

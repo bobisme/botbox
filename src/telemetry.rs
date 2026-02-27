@@ -20,6 +20,8 @@ pub struct TelemetryGuard {
     trace_provider: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
     #[cfg(feature = "otel")]
     log_provider: Option<opentelemetry_sdk::logs::SdkLoggerProvider>,
+    #[cfg(feature = "otel")]
+    meter_provider: Option<opentelemetry_sdk::metrics::SdkMeterProvider>,
 }
 
 impl Drop for TelemetryGuard {
@@ -35,6 +37,11 @@ impl Drop for TelemetryGuard {
                 && let Err(e) = provider.shutdown()
             {
                 eprintln!("otel log shutdown error: {e}");
+            }
+            if let Some(provider) = self.meter_provider.take()
+                && let Err(e) = provider.shutdown()
+            {
+                eprintln!("otel meter shutdown error: {e}");
             }
         }
     }
@@ -67,6 +74,8 @@ const fn init_noop() -> TelemetryGuard {
         trace_provider: None,
         #[cfg(feature = "otel")]
         log_provider: None,
+        #[cfg(feature = "otel")]
+        meter_provider: None,
     }
 }
 
@@ -92,6 +101,8 @@ fn init_stderr() -> TelemetryGuard {
         trace_provider: None,
         #[cfg(feature = "otel")]
         log_provider: None,
+        #[cfg(feature = "otel")]
+        meter_provider: None,
     }
 }
 
@@ -141,12 +152,31 @@ fn init_otlp() -> TelemetryGuard {
 
     let log_provider = opentelemetry_sdk::logs::SdkLoggerProvider::builder()
         .with_simple_exporter(log_exporter)
-        .with_resource(resource)
+        .with_resource(resource.clone())
         .build();
 
     let log_layer = opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge::new(
         &log_provider,
     );
+
+    // --- Metrics ---
+    let metric_exporter = match opentelemetry_otlp::MetricExporter::builder()
+        .with_http()
+        .build()
+    {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("warning: failed to init OTLP metric exporter: {e}");
+            return init_noop();
+        }
+    };
+
+    let meter_provider = opentelemetry_sdk::metrics::SdkMeterProvider::builder()
+        .with_periodic_exporter(metric_exporter)
+        .with_resource(resource)
+        .build();
+
+    opentelemetry::global::set_meter_provider(meter_provider.clone());
 
     // --- Parent context (distributed tracing) ---
     install_parent_context();
@@ -163,6 +193,7 @@ fn init_otlp() -> TelemetryGuard {
     TelemetryGuard {
         trace_provider: Some(trace_provider),
         log_provider: Some(log_provider),
+        meter_provider: Some(meter_provider),
     }
 }
 
@@ -218,4 +249,69 @@ fn otel_resource() -> opentelemetry_sdk::Resource {
         .with_attribute(KeyValue::new("service.name", env!("CARGO_PKG_NAME")))
         .with_attribute(KeyValue::new("service.version", env!("CARGO_PKG_VERSION")))
         .build()
+}
+
+// ---------------------------------------------------------------------------
+// Metrics helpers — thin wrappers so call sites don't need #[cfg] blocks
+// ---------------------------------------------------------------------------
+
+/// Lightweight metrics API. No-ops when the `otel` feature is disabled.
+#[cfg(feature = "otel")]
+pub mod metrics {
+    use opentelemetry::KeyValue;
+    use std::time::Instant;
+
+    /// Increment a counter by `value`.
+    pub fn counter(name: &'static str, value: u64, attrs: &[(&'static str, &str)]) {
+        let meter = opentelemetry::global::meter("botbox");
+        let kv: Vec<KeyValue> = attrs
+            .iter()
+            .map(|(k, v)| KeyValue::new(*k, v.to_string()))
+            .collect();
+        meter.u64_counter(name).build().add(value, &kv);
+    }
+
+    /// Record a histogram observation.
+    pub fn histogram(name: &'static str, value: f64, attrs: &[(&'static str, &str)]) {
+        let meter = opentelemetry::global::meter("botbox");
+        let kv: Vec<KeyValue> = attrs
+            .iter()
+            .map(|(k, v)| KeyValue::new(*k, v.to_string()))
+            .collect();
+        meter.f64_histogram(name).build().record(value, &kv);
+    }
+
+    /// Capture the start of a timed section.
+    #[must_use]
+    pub fn time_start() -> Instant {
+        Instant::now()
+    }
+
+    /// Record elapsed time (seconds) since `start` as a histogram observation.
+    pub fn time_record(name: &'static str, start: Instant, attrs: &[(&'static str, &str)]) {
+        histogram(name, start.elapsed().as_secs_f64(), attrs);
+    }
+}
+
+#[cfg(not(feature = "otel"))]
+pub mod metrics {
+    /// Increment a counter (no-op).
+    pub fn counter(_name: &'static str, _value: u64, _attrs: &[(&'static str, &str)]) {}
+
+    /// Record a histogram observation (no-op).
+    pub fn histogram(_name: &'static str, _value: f64, _attrs: &[(&'static str, &str)]) {}
+
+    /// Capture the start of a timed section.
+    #[must_use]
+    pub fn time_start() -> std::time::Instant {
+        std::time::Instant::now()
+    }
+
+    /// Record elapsed time (no-op).
+    pub fn time_record(
+        _name: &'static str,
+        _start: std::time::Instant,
+        _attrs: &[(&'static str, &str)],
+    ) {
+    }
 }
