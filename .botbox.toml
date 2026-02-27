@@ -45,6 +45,7 @@ merge_timeout_sec = 120
 [agents.worker]
 model = "haiku"
 timeout = 600
+memory_limit = "3G"
 
 [agents.reviewer]
 model = "opus"
