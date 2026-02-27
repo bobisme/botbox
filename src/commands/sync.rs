@@ -212,6 +212,9 @@ impl SyncArgs {
         // Fix hook --cwd for maw v2 (ws/default → repo root)
         migrate_hook_cwd(&config, &project_root);
 
+        // Migrate router hook claim from agent://{name}-router → agent://{name}-dev
+        migrate_router_hook_claim(&config, &project_root);
+
         // Migrate beads → bones (config, data, tooling files)
         if !self.check {
             migrate_beads_to_bones(&project_root, &config_path)?;
@@ -726,8 +729,8 @@ fn migrate_bus_hooks(config: &Config) {
         }
 
         if is_router {
-            let claim_uri = format!("agent://{name}-router");
-            let spawn_name = format!("{name}-router");
+            let claim_uri = format!("agent://{name}-dev");
+            let spawn_name = format!("{name}-responder");
             let description = format!("botbox:{name}:responder");
             let responder_ml = config
                 .agents
@@ -965,6 +968,92 @@ fn migrate_hook_cwd(config: &Config, project_root: &Path) {
                 }
             }
         }
+    }
+}
+
+/// Migrate router hook claim pattern from `agent://{name}-router` to `agent://{name}-dev`
+/// and spawn name from `{name}-router` to `{name}-responder`.
+///
+/// Earlier versions used a vestigial `-router` claim that nobody actually staked.
+/// The new pattern uses `-dev` which matches the responder's own agent claim,
+/// preventing re-trigger while processing.
+fn migrate_router_hook_claim(config: &Config, project_root: &Path) {
+    let output = match Tool::new("bus")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(o) if o.success() => o,
+        _ => return,
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let hooks = match parsed.get("hooks").and_then(|h| h.as_array()) {
+        Some(h) => h,
+        None => return,
+    };
+
+    let name = &config.project.name;
+    let old_claim = format!("agent://{name}-router");
+
+    for hook in hooks {
+        let desc = hook
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
+        if desc != format!("botbox:{name}:responder") {
+            continue;
+        }
+
+        // Check if the hook still uses the old claim pattern
+        let claim = hook
+            .get("condition")
+            .and_then(|c| c.get("pattern"))
+            .and_then(|p| p.as_str())
+            .unwrap_or("");
+        if claim != old_claim {
+            continue;
+        }
+
+        let id = match hook.get("id").and_then(|i| i.as_str()) {
+            Some(id) => id,
+            None => continue,
+        };
+
+        // Remove old hook and re-register with new claim pattern
+        if Tool::new("bus")
+            .args(&["hooks", "remove", id])
+            .run()
+            .is_err()
+        {
+            continue;
+        }
+
+        let agent = config.default_agent();
+        // Resolve hook paths the same way migrate_hook_cwd does
+        let bare_root = if project_root.ends_with("ws/default") {
+            project_root
+                .parent()
+                .and_then(Path::parent)
+                .filter(|r| r.join(".manifold").exists())
+        } else if project_root.join(".manifold").exists() {
+            Some(project_root)
+        } else {
+            None
+        };
+        let root_str = bare_root
+            .map(|r| r.display().to_string())
+            .unwrap_or_else(|| project_root.display().to_string());
+        let responder_ml = config
+            .agents
+            .responder
+            .as_ref()
+            .and_then(|r| r.memory_limit.as_deref());
+        super::init::register_router_hook(&root_str, &root_str, name, &agent, responder_ml);
+        println!("  Migrated router hook claim: agent://{name}-router → agent://{name}-dev");
     }
 }
 

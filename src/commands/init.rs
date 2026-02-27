@@ -979,8 +979,8 @@ pub(super) fn register_router_hook(
     memory_limit: Option<&str>,
 ) {
     let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
-    let claim_uri = format!("agent://{name}-router");
-    let spawn_name = format!("{name}-router");
+    let claim_uri = format!("agent://{name}-dev");
+    let spawn_name = format!("{name}-responder");
     let description = format!("botbox:{name}:responder");
 
     let mut args: Vec<&str> = vec![

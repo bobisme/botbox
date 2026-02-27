@@ -1,5 +1,4 @@
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
 
 use anyhow::{Context, anyhow};
 use serde::Deserialize;
@@ -16,7 +15,6 @@ pub enum RouteType {
     Dev,
     Bone,
     Mission,
-    Leads,
     Question,
     Triage,
     Oneshot,
@@ -59,10 +57,10 @@ pub fn route_message(body: &str) -> Route {
         };
     }
 
-    // !leads [message] — spawn multi-lead session
+    // !leads [message] — alias for !dev (multi-lead via count arg)
     if let Some(rest) = strip_prefix_ci(trimmed, "!leads") {
         return Route {
-            route_type: RouteType::Leads,
+            route_type: RouteType::Dev,
             body: rest.to_string(),
             model: None,
         };
@@ -867,7 +865,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     }
                     if let Some(reason) = Self::extract_escalation(&output) {
                         eprintln!("Escalation detected: {reason}");
-                        self.handle_dev(&reason)?;
+                        self.handle_dev(&reason, None)?;
                         return Ok(());
                     }
                 }
@@ -905,7 +903,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 RouteType::Dev => {
                     self.transcript
                         .add("user", &follow_up.agent, &follow_up.body);
-                    self.handle_dev(&re_parsed.body)?;
+                    self.handle_dev(&re_parsed.body, None)?;
                     return Ok(());
                 }
                 RouteType::Mission => {
@@ -998,25 +996,137 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         Ok(())
     }
 
-    fn handle_dev(&self, _body: &str) -> anyhow::Result<()> {
-        eprintln!(
-            "Exec into dev-loop: botbox run dev-loop --agent {}",
-            self.agent
-        );
+    fn handle_dev(&self, body: &str, mission_bone: Option<&str>) -> anyhow::Result<()> {
+        // Parse optional count from body (e.g., "!dev 3" → 3, "!dev" → 1)
+        let requested: u32 = body
+            .trim()
+            .split_whitespace()
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1);
 
-        let _ = self.bus_send("Dev agent spawned — working on it.", Some("spawn-ack"));
+        // Cap at multi_lead_max_leads if enabled, otherwise cap at 1
+        let cap = if self.multi_lead_enabled {
+            requested.min(self.multi_lead_max_leads)
+        } else {
+            requested.min(1)
+        };
 
-        // Hand off to dev-loop with inherited stdio — replaces our process
-        let status = Command::new("botbox")
-            .args(["run", "dev-loop", "--agent", &self.agent])
-            .envs(&self.spawn_env)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("spawning dev-loop")?;
+        let cwd = std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let mut spawned: u32 = 0;
 
-        std::process::exit(status.code().unwrap_or(1));
+        for slot in 0..cap.max(self.multi_lead_max_leads) {
+            if spawned >= cap {
+                break;
+            }
+
+            let lead_name = format!("{}/{}", self.agent, slot);
+            let claim_uri = format!("agent://{}", lead_name);
+
+            // Try to stake the slot claim — atomic admission control
+            let claim_result = Tool::new("bus")
+                .args(&[
+                    "claims",
+                    "stake",
+                    "--agent",
+                    &lead_name,
+                    &claim_uri,
+                    "--ttl",
+                    "120",
+                    "-m",
+                    &format!("lead slot {slot}"),
+                ])
+                .run();
+
+            match claim_result {
+                Ok(output) if output.success() => {
+                    eprintln!("Acquired slot {slot}, spawning lead: {lead_name}");
+                    let mut spawn_args: Vec<String> = vec![
+                        "spawn".into(),
+                        "--env-inherit".into(),
+                        "SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+                    ];
+                    if let Some(limit) = self
+                        .config
+                        .as_ref()
+                        .and_then(|c| c.agents.dev.as_ref())
+                        .and_then(|d| d.memory_limit.as_deref())
+                    {
+                        spawn_args.push("--memory-limit".into());
+                        spawn_args.push(limit.to_string());
+                    }
+                    spawn_args.extend([
+                        "--env".into(),
+                        format!("AGENT={lead_name}"),
+                        "--env".into(),
+                        format!("BOTBUS_CHANNEL={}", self.channel),
+                    ]);
+                    if let Some(tp) = crate::telemetry::current_traceparent() {
+                        spawn_args.push("--env".into());
+                        spawn_args.push(format!("TRACEPARENT={tp}"));
+                    }
+                    if let Some(bone) = mission_bone {
+                        spawn_args.push("--env".into());
+                        spawn_args.push(format!("BOTBOX_MISSION={bone}"));
+                    }
+                    for (k, v) in &self.spawn_env {
+                        spawn_args.push("--env".into());
+                        spawn_args.push(format!("{k}={v}"));
+                    }
+                    spawn_args.extend([
+                        "--name".into(),
+                        lead_name.clone(),
+                        "--cwd".into(),
+                        cwd.clone(),
+                        "--".into(),
+                        "botbox".into(),
+                        "run".into(),
+                        "dev-loop".into(),
+                        "--agent".into(),
+                        lead_name.clone(),
+                    ]);
+                    let spawn_arg_refs: Vec<&str> =
+                        spawn_args.iter().map(|s| s.as_str()).collect();
+                    let spawn_result = Tool::new("botty")
+                        .args(&spawn_arg_refs)
+                        .run();
+
+                    match spawn_result {
+                        Ok(out) if out.success() => {
+                            spawned += 1;
+                            let _ = self.bus_send(
+                                &format!("Lead {lead_name} spawned ({spawned}/{cap})."),
+                                Some("spawn-ack"),
+                            );
+                        }
+                        Ok(out) => {
+                            eprintln!("Failed to spawn lead {lead_name}: {}", out.stderr);
+                            let _ = Tool::new("bus")
+                                .args(&["claims", "release", "--agent", &lead_name, &claim_uri])
+                                .run();
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to spawn lead {lead_name}: {e}");
+                            let _ = Tool::new("bus")
+                                .args(&["claims", "release", "--agent", &lead_name, &claim_uri])
+                                .run();
+                        }
+                    }
+                }
+                _ => {
+                    eprintln!("Slot {slot} occupied, skipping");
+                }
+            }
+        }
+
+        if spawned == 0 {
+            self.bus_send("No lead slots available.", Some("feedback"))?;
+        }
+
+        Ok(())
     }
 
     fn handle_mission(&self, body: &str) -> anyhow::Result<()> {
@@ -1060,27 +1170,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             &format!("Mission created: {bone_id}: {title}"),
             Some("feedback"),
         );
-        let _ = self.bus_send(
-            &format!("Dev agent spawned for mission {bone_id}."),
-            Some("spawn-ack"),
-        );
 
-        eprintln!(
-            "Exec into dev-loop with mission {bone_id}: botbox run dev-loop --agent {}",
-            self.agent
-        );
-
-        let status = Command::new("botbox")
-            .args(["run", "dev-loop", "--agent", &self.agent])
-            .envs(&self.spawn_env)
-            .env("BOTBOX_MISSION", &bone_id)
-            .stdin(Stdio::inherit())
-            .stdout(Stdio::inherit())
-            .stderr(Stdio::inherit())
-            .status()
-            .context("spawning dev-loop for mission")?;
-
-        std::process::exit(status.code().unwrap_or(1));
+        self.handle_dev("", Some(&bone_id))
     }
 
     fn handle_triage(&mut self, message: &BusMessage) -> anyhow::Result<()> {
@@ -1096,7 +1187,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 }
                 if let Some(reason) = Self::extract_escalation(&output) {
                     eprintln!("Triage → work: \"{reason}\"");
-                    self.handle_dev(&reason)?;
+                    self.handle_dev(&reason, None)?;
                     return Ok(());
                 }
                 // No escalation — enter conversation follow-up loop
@@ -1153,7 +1244,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 RouteType::Dev => {
                     self.transcript
                         .add("user", &follow_up.agent, &follow_up.body);
-                    self.handle_dev(&re_parsed.body)?;
+                    self.handle_dev(&re_parsed.body, None)?;
                     return Ok(());
                 }
                 RouteType::Mission => {
@@ -1196,7 +1287,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     }
                     if let Some(reason) = Self::extract_escalation(&output) {
                         eprintln!("Escalation detected: {reason}");
-                        self.handle_dev(&reason)?;
+                        self.handle_dev(&reason, None)?;
                         return Ok(());
                     }
                 }
@@ -1205,154 +1296,6 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     break;
                 }
             }
-        }
-
-        Ok(())
-    }
-
-    /// Handle !leads — spawn multi-lead session.
-    /// Uses numbered slot claims for admission control and identity (proposal §1, §3).
-    fn handle_leads(&self, body: &str) -> anyhow::Result<()> {
-        if !self.multi_lead_enabled {
-            self.bus_send("Multi-lead sessions are not enabled for this project. Set agents.dev.multi_lead.enabled in .botbox.toml.", None)?;
-            return Ok(());
-        }
-
-        // Parse requested count from body (e.g., "!leads 2" → 2), default to max
-        let requested: u32 = body
-            .trim()
-            .split_whitespace()
-            .next()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(self.multi_lead_max_leads);
-
-        let cwd = std::env::current_dir()
-            .unwrap_or_default()
-            .to_string_lossy()
-            .to_string();
-        let mut spawned: u32 = 0;
-
-        // Iterate slots 0..maxLeads, try to acquire each via atomic claim
-        for slot in 0..self.multi_lead_max_leads {
-            if spawned >= requested {
-                break;
-            }
-
-            let lead_name = format!("{}/{}", self.agent, slot);
-            let claim_uri = format!("agent://{}", lead_name);
-
-            // Try to stake the slot claim — atomic admission control
-            let claim_result = Tool::new("bus")
-                .args(&[
-                    "claims",
-                    "stake",
-                    "--agent",
-                    &lead_name,
-                    &claim_uri,
-                    "--ttl",
-                    "120",
-                    "-m",
-                    &format!("lead slot {slot}"),
-                ])
-                .run();
-
-            match claim_result {
-                Ok(output) if output.success() => {
-                    // Slot acquired — spawn lead
-                    eprintln!("Acquired slot {slot}, spawning lead: {lead_name}");
-                    let mut spawn_args: Vec<String> = vec![
-                        "spawn".into(),
-                        "--env-inherit".into(),
-                        "SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT".into(),
-                    ];
-                    // Add memory limit for dev-loop leads if configured
-                    if let Some(limit) = self
-                        .config
-                        .as_ref()
-                        .and_then(|c| c.agents.dev.as_ref())
-                        .and_then(|d| d.memory_limit.as_deref())
-                    {
-                        spawn_args.push("--memory-limit".into());
-                        spawn_args.push(limit.to_string());
-                    }
-                    spawn_args.extend([
-                        "--env".into(),
-                        format!("AGENT={lead_name}"),
-                        "--env".into(),
-                        format!("BOTBUS_CHANNEL={}", self.channel),
-                    ]);
-                    // Propagate current trace context so the spawned lead
-                    // joins the same distributed trace.
-                    if let Some(tp) = crate::telemetry::current_traceparent() {
-                        spawn_args.push("--env".into());
-                        spawn_args.push(format!("TRACEPARENT={tp}"));
-                    }
-                    // Inject config [env] vars
-                    for (k, v) in &self.spawn_env {
-                        spawn_args.push("--env".into());
-                        spawn_args.push(format!("{k}={v}"));
-                    }
-                    spawn_args.extend([
-                        "--name".into(),
-                        lead_name.clone(),
-                        "--cwd".into(),
-                        cwd.clone(),
-                        "--".into(),
-                        "botbox".into(),
-                        "run".into(),
-                        "dev-loop".into(),
-                        "--agent".into(),
-                        lead_name.clone(),
-                    ]);
-                    let spawn_arg_refs: Vec<&str> =
-                        spawn_args.iter().map(|s| s.as_str()).collect();
-                    let spawn_result = Tool::new("botty")
-                        .args(&spawn_arg_refs)
-                        .run();
-
-                    match spawn_result {
-                        Ok(output) if output.success() => {
-                            spawned += 1;
-                            let _ = self.bus_send(
-                                &format!("Lead {lead_name} spawned ({spawned}/{requested})."),
-                                Some("spawn-ack"),
-                            );
-                        }
-                        Ok(output) => {
-                            eprintln!("Failed to spawn lead {lead_name}: {}", output.stderr);
-                            // Release the claim since we couldn't spawn
-                            let _ = Tool::new("bus")
-                                .args(&["claims", "release", "--agent", &lead_name, &claim_uri])
-                                .run();
-                        }
-                        Err(e) => {
-                            eprintln!("Failed to spawn lead {lead_name}: {e}");
-                            let _ = Tool::new("bus")
-                                .args(&["claims", "release", "--agent", &lead_name, &claim_uri])
-                                .run();
-                        }
-                    }
-                }
-                _ => {
-                    // Slot occupied — skip to next
-                    eprintln!("Slot {slot} occupied, skipping");
-                }
-            }
-        }
-
-        if spawned == 0 {
-            self.bus_send(
-                &format!(
-                    "No lead slots available (0/{} free).",
-                    self.multi_lead_max_leads
-                ),
-                Some("feedback"),
-            )?;
-        } else {
-            let _ = self.bus_send(
-                &format!("Multi-lead session: {spawned} lead(s) spawned."),
-                Some("spawn-ack"),
-            );
         }
 
         Ok(())
@@ -1444,7 +1387,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                             eprintln!("Drain: message {} already claimed, skipping", id);
                             continue;
                         }
-                        self.handle_dev(&route.body)?;
+                        self.handle_dev(&route.body, None)?;
                     }
                     RouteType::Mission => {
                         eprintln!("Drain: processing !mission from {}", msg.agent);
@@ -1455,15 +1398,6 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                             continue;
                         }
                         self.handle_mission(&route.body)?;
-                    }
-                    RouteType::Leads => {
-                        eprintln!("Drain: processing !leads from {}", msg.agent);
-                        if let Some(ref id) = msg.id
-                            && !self.stake_message_claim(id)
-                        {
-                            continue;
-                        }
-                        self.handle_leads(&route.body)?;
                     }
                     _ => {
                         // Non-actionable messages (questions, triage) are not drained
@@ -1622,7 +1556,6 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
             RouteType::Dev => "dev",
             RouteType::Bone => "bone",
             RouteType::Mission => "mission",
-            RouteType::Leads => "leads",
             RouteType::Question => "question",
             RouteType::Triage => "triage",
             RouteType::Oneshot => "oneshot",
@@ -1635,9 +1568,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
         // Dispatch to handler
         match route.route_type {
-            RouteType::Dev => self.handle_dev(&route.body)?,
+            RouteType::Dev => self.handle_dev(&route.body, None)?,
             RouteType::Mission => self.handle_mission(&route.body)?,
-            RouteType::Leads => self.handle_leads(&route.body)?,
             RouteType::Bone => self.handle_bone(&route.body)?,
             RouteType::Question => self.handle_question(&route, &trigger_message)?,
             RouteType::Triage => self.handle_triage(&trigger_message)?,
@@ -1754,16 +1686,16 @@ mod tests {
     }
 
     #[test]
-    fn route_leads() {
+    fn route_leads_maps_to_dev() {
         let r = route_message("!leads spin up the team");
-        assert_eq!(r.route_type, RouteType::Leads);
+        assert_eq!(r.route_type, RouteType::Dev);
         assert_eq!(r.body, "spin up the team");
     }
 
     #[test]
     fn route_leads_no_body() {
         let r = route_message("!leads");
-        assert_eq!(r.route_type, RouteType::Leads);
+        assert_eq!(r.route_type, RouteType::Dev);
         assert_eq!(r.body, "");
     }
 
