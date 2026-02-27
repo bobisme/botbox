@@ -78,6 +78,14 @@
           "$ref": "#/definitions/ModelsConfig"
         }
       ]
+    },
+    "env": {
+      "description": "Environment variables to pass to all spawned agents. Values support shell variable expansion (e.g. `$HOME`, `${HOME}`).",
+      "default": {},
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
     }
   },
   "definitions": {
@@ -289,6 +297,14 @@
               "type": "null"
             }
           ]
+        },
+        "memory_limit": {
+          "description": "Memory limit for dev-loop agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -352,6 +368,14 @@
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "memory_limit": {
+          "description": "Memory limit for worker agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -379,6 +403,14 @@
           "type": "integer",
           "format": "uint64",
           "minimum": 0.0
+        },
+        "memory_limit": {
+          "description": "Memory limit for reviewer agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
@@ -406,6 +438,14 @@
           "type": "integer",
           "format": "uint32",
           "minimum": 0.0
+        },
+        "memory_limit": {
+          "description": "Memory limit for responder agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "default": null,
+          "type": [
+            "string",
+            "null"
+          ]
         }
       }
     },
