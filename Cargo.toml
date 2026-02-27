@@ -1,6 +1,6 @@
 [package]
 name = "botbox"
-version = "0.15.15"
+version = "0.16.0"
 edition = "2024"
 
 [[bin]]
