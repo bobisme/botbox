@@ -1678,3 +1678,5 @@
 1772161229482262	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEw6Qc		item.move	bn-2brc	{"reason":"Filed proper bone in bones repo (bn-p7rx)","state":"done"}	blake3:HQdh5e_XLtu3SjYeIDGCNJi3xNs-TfwwSNk_9w1xOTo
 1772161234165138	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEw6gc		item.move	bn-2yan	{"state":"doing"}	blake3:vVRvMNBgOw76O42LkZ26bU-dX4uht_ufIa4XSudieqk
 1772162291584031	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEw6wc		item.move	bn-2yan	{"reason":"Implemented: memory_limit field on all 4 agent config structs, wired through hooks.rs, init.rs, sync.rs, responder.rs, and dev_loop prompt","state":"done"}	blake3:9l91lh5kuxeTqrb01WAi5JPLr4pqP35TEseJECVjsfs
+1772162412732704	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEw7Ac		item.move	bn-38he	{"state":"doing"}	blake3:ikau5WD1tPLky2h4ALIllSgdu-CwUirsp_M9r0qdvfI
+1772163919976080	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEw7Qc		item.move	bn-38he	{"reason":"Added OTLP metrics: MeterProvider, subprocess duration/calls, dev-loop/worker/reviewer/responder instrumentation","state":"done"}	blake3:ipfY4s4WnB0SCw-hp3t5lVynOWmoalivMD30SGI8Kus
