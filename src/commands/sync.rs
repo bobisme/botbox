@@ -129,7 +129,7 @@ impl SyncArgs {
                     println!("Migrated .botbox.json -> .botbox.toml");
                 }
                 Err(e) => {
-                    eprintln!("Warning: failed to migrate .botbox.json to .botbox.toml: {e}");
+                    tracing::warn!("failed to migrate .botbox.json to .botbox.toml: {e}");
                 }
             }
         }
@@ -162,7 +162,7 @@ impl SyncArgs {
                 if design_docs_stale {
                     parts.push("design docs");
                 }
-                eprintln!("Stale components: {}", parts.join(", "));
+                tracing::warn!(components = %parts.join(", "), "stale components detected");
                 return Err(ExitError::new(1, "Project is out of sync".to_string()).into());
             } else {
                 println!("All components up to date");
@@ -266,7 +266,7 @@ impl SyncArgs {
             && crate::config::find_config(&project_root.join("ws/default")).is_some()
         {
             if self.check {
-                eprintln!("Stale .botbox.json at bare repo root (will be removed on sync)");
+                tracing::warn!("stale .botbox.json at bare repo root (will be removed on sync)");
                 return Err(
                     ExitError::new(1, "Stale .botbox.json at bare repo root".to_string()).into(),
                 );
@@ -277,7 +277,7 @@ impl SyncArgs {
                          (authoritative config lives in ws/default/)"
                     ),
                     Err(e) => {
-                        eprintln!("Warning: failed to remove stale .botbox.json at bare root: {e}")
+                        tracing::warn!("failed to remove stale .botbox.json at bare root: {e}")
                     }
                 }
             }
@@ -358,14 +358,14 @@ impl SyncArgs {
         let scripts_dir = agents_dir.join("scripts");
         if scripts_dir.is_dir() {
             if self.check {
-                eprintln!("Legacy scripts/ directory exists (will be removed on sync)");
+                tracing::warn!("legacy scripts/ directory exists (will be removed on sync)");
             } else {
                 match fs::remove_dir_all(&scripts_dir) {
                     Ok(_) => {
                         println!("Removed legacy scripts/ directory");
                         changed_files.push(".agents/botbox/scripts/");
                     }
-                    Err(e) => eprintln!("Warning: failed to remove legacy scripts/: {e}"),
+                    Err(e) => tracing::warn!("failed to remove legacy scripts/: {e}"),
                 }
             }
         }
@@ -374,14 +374,14 @@ impl SyncArgs {
         let hooks_dir = agents_dir.join("hooks");
         if hooks_dir.is_dir() {
             if self.check {
-                eprintln!("Legacy hooks/ directory exists (will be removed on sync)");
+                tracing::warn!("legacy hooks/ directory exists (will be removed on sync)");
             } else {
                 match fs::remove_dir_all(&hooks_dir) {
                     Ok(_) => {
                         println!("Removed legacy hooks/ directory");
                         changed_files.push(".agents/botbox/hooks/");
                     }
-                    Err(e) => eprintln!("Warning: failed to remove legacy hooks/: {e}"),
+                    Err(e) => tracing::warn!("failed to remove legacy hooks/: {e}"),
                 }
             }
         }
@@ -666,7 +666,7 @@ fn migrate_bus_hooks(config: &Config) {
 
     let name = &config.project.name;
     let agent = config.default_agent();
-    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
+    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
 
     for hook in hooks {
         let id = match hook.get("id").and_then(|i| i.as_str()) {
@@ -721,7 +721,7 @@ fn migrate_bus_hooks(config: &Config) {
         let remove = Tool::new("bus").args(&["hooks", "remove", &id]).run();
 
         if remove.is_err() || !remove.as_ref().unwrap().success() {
-            eprintln!("  Warning: failed to remove legacy hook {id}");
+            tracing::warn!(hook_id = %id, "failed to remove legacy hook");
             continue;
         }
 
@@ -729,39 +729,49 @@ fn migrate_bus_hooks(config: &Config) {
             let claim_uri = format!("agent://{name}-router");
             let spawn_name = format!("{name}-router");
             let description = format!("botbox:{name}:responder");
+            let responder_ml = config
+                .agents
+                .responder
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
 
-            match crate::subprocess::ensure_bus_hook(
-                &description,
-                &[
-                    "--agent",
-                    &agent,
-                    "--channel",
-                    name,
-                    "--claim",
-                    &claim_uri,
-                    "--claim-owner",
-                    &agent,
-                    "--cwd",
-                    spawn_cwd,
-                    "--ttl",
-                    "600",
-                    "--",
-                    "botty",
-                    "spawn",
-                    "--env-inherit",
-                    env_inherit,
-                    "--name",
-                    &spawn_name,
-                    "--cwd",
-                    spawn_cwd,
-                    "--",
-                    "botbox",
-                    "run",
-                    "responder",
-                ],
-            ) {
+            let mut router_args: Vec<&str> = vec![
+                "--agent",
+                &agent,
+                "--channel",
+                name,
+                "--claim",
+                &claim_uri,
+                "--claim-owner",
+                &agent,
+                "--cwd",
+                spawn_cwd,
+                "--ttl",
+                "600",
+                "--",
+                "botty",
+                "spawn",
+                "--env-inherit",
+                env_inherit,
+            ];
+            if let Some(limit) = responder_ml {
+                router_args.push("--memory-limit");
+                router_args.push(limit);
+            }
+            router_args.extend_from_slice(&[
+                "--name",
+                &spawn_name,
+                "--cwd",
+                spawn_cwd,
+                "--",
+                "botbox",
+                "run",
+                "responder",
+            ]);
+
+            match crate::subprocess::ensure_bus_hook(&description, &router_args) {
                 Ok(_) => println!("  Migrated router hook {id} → botbox run responder"),
-                Err(e) => eprintln!("  Warning: failed to re-register router hook: {e}"),
+                Err(e) => tracing::warn!("failed to re-register router hook: {e}"),
             }
         } else if is_reviewer {
             let reviewer_agent = hook
@@ -772,7 +782,7 @@ fn migrate_bus_hooks(config: &Config) {
                 .to_string();
 
             if reviewer_agent.is_empty() {
-                eprintln!("  Warning: could not determine reviewer agent for hook {id}");
+                tracing::warn!(hook_id = %id, "could not determine reviewer agent for hook");
                 continue;
             }
 
@@ -781,49 +791,57 @@ fn migrate_bus_hooks(config: &Config) {
                 .unwrap_or(&reviewer_agent);
             let claim_uri = format!("agent://{reviewer_agent}");
             let description = format!("botbox:{name}:reviewer-{role}");
+            let reviewer_ml = config
+                .agents
+                .reviewer
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
 
-            match crate::subprocess::ensure_bus_hook(
-                &description,
-                &[
-                    "--agent",
-                    &agent,
-                    "--channel",
-                    name,
-                    "--mention",
-                    &reviewer_agent,
-                    "--claim",
-                    &claim_uri,
-                    "--claim-owner",
-                    &reviewer_agent,
-                    "--ttl",
-                    "600",
-                    "--priority",
-                    "1",
-                    "--cwd",
-                    spawn_cwd,
-                    "--",
-                    "botty",
-                    "spawn",
-                    "--env-inherit",
-                    env_inherit,
-                    "--name",
-                    &reviewer_agent,
-                    "--cwd",
-                    spawn_cwd,
-                    "--",
-                    "botbox",
-                    "run",
-                    "reviewer-loop",
-                    "--agent",
-                    &reviewer_agent,
-                ],
-            ) {
+            let mut reviewer_args: Vec<&str> = vec![
+                "--agent",
+                &agent,
+                "--channel",
+                name,
+                "--mention",
+                &reviewer_agent,
+                "--claim",
+                &claim_uri,
+                "--claim-owner",
+                &reviewer_agent,
+                "--ttl",
+                "600",
+                "--priority",
+                "1",
+                "--cwd",
+                spawn_cwd,
+                "--",
+                "botty",
+                "spawn",
+                "--env-inherit",
+                env_inherit,
+            ];
+            if let Some(limit) = reviewer_ml {
+                reviewer_args.push("--memory-limit");
+                reviewer_args.push(limit);
+            }
+            reviewer_args.extend_from_slice(&[
+                "--name",
+                &reviewer_agent,
+                "--cwd",
+                spawn_cwd,
+                "--",
+                "botbox",
+                "run",
+                "reviewer-loop",
+                "--agent",
+                &reviewer_agent,
+            ]);
+
+            match crate::subprocess::ensure_bus_hook(&description, &reviewer_args) {
                 Ok(_) => println!(
                     "  Migrated reviewer hook {id} → botbox run reviewer-loop --agent {reviewer_agent}"
                 ),
-                Err(e) => eprintln!(
-                    "  Warning: failed to re-register reviewer hook for {reviewer_agent}: {e}"
-                ),
+                Err(e) => tracing::warn!(agent = %reviewer_agent, "failed to re-register reviewer hook: {e}"),
             }
         }
     }
@@ -923,14 +941,24 @@ fn migrate_hook_cwd(config: &Config, project_root: &Path) {
 
         let is_router = desc.ends_with(":responder");
         if is_router {
-            super::init::register_router_hook(&root_str, &root_str, name, &agent);
+            let responder_ml = config
+                .agents
+                .responder
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
+            super::init::register_router_hook(&root_str, &root_str, name, &agent, responder_ml);
             println!("  Fixed hook --cwd: {desc} → repo root");
         } else {
+            let reviewer_ml = config
+                .agents
+                .reviewer
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
             // Find which reviewer this is for
             for reviewer in &reviewers {
                 if desc.contains(&reviewer.replace(&format!("{name}-"), "")) {
                     super::init::register_reviewer_hook(
-                        &root_str, &root_str, name, &agent, reviewer,
+                        &root_str, &root_str, name, &agent, reviewer, reviewer_ml,
                     );
                     println!("  Fixed hook --cwd: {desc} → repo root");
                     break;
@@ -964,7 +992,7 @@ fn migrate_beads_to_bones(project_root: &Path, config_path: &Path) -> Result<()>
         // Initialize bones first
         match run_command("bn", &["init"], Some(project_root)) {
             Ok(_) => println!("Initialized bones"),
-            Err(e) => eprintln!("Warning: bn init failed: {e}"),
+            Err(e) => tracing::warn!("bn init failed: {e}"),
         }
         // Migrate data if beads.db exists
         if beads_db.exists() {
@@ -975,7 +1003,7 @@ fn migrate_beads_to_bones(project_root: &Path, config_path: &Path) -> Result<()>
                 Some(project_root),
             ) {
                 Ok(_) => println!("Migrated beads data to bones"),
-                Err(e) => eprintln!("Warning: beads data migration failed: {e}"),
+                Err(e) => tracing::warn!("beads data migration failed: {e}"),
             }
         }
     }

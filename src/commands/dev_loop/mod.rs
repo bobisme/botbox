@@ -72,6 +72,11 @@ pub fn run(
     let worker_timeout = config.agents.worker.as_ref().map_or(900, |w| w.timeout);
 
     let spawn_env = config.resolved_env();
+    let worker_memory_limit = config
+        .agents
+        .worker
+        .as_ref()
+        .and_then(|w| w.memory_limit.clone());
 
     let ctx = LoopContext {
         agent: agent.clone(),
@@ -88,6 +93,7 @@ pub fn run(
         multi_lead_config,
         project_dir: project_root.display().to_string(),
         spawn_env,
+        worker_memory_limit,
     };
 
     eprintln!("Agent:     {agent}");
@@ -352,6 +358,8 @@ pub struct LoopContext {
     pub project_dir: String,
     /// Pre-resolved env vars from config [env] section.
     pub spawn_env: std::collections::HashMap<String, String>,
+    /// Memory limit for worker agents (e.g. "4G"). Passed as --memory-limit to botty spawn.
+    pub worker_memory_limit: Option<String>,
 }
 
 /// Info about a sibling lead agent.

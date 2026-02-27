@@ -260,6 +260,12 @@ When all children are closed:
         .collect::<Vec<_>>()
         .join("\n");
 
+    let worker_memory_limit_flag = ctx
+        .worker_memory_limit
+        .as_deref()
+        .map(|limit| format!("    --memory-limit {limit} \\\n"))
+        .unwrap_or_default();
+
     let check_command = ctx.check_command.as_deref().unwrap_or("just check");
 
     format!(
@@ -495,14 +501,14 @@ For each dispatched bone, spawn a worker via botty with hierarchical naming:
 
   botty spawn --name "{agent}/<worker-suffix>" \
     --label worker --label "bone:<id>" \
-    --env-inherit BOTBUS_CHANNEL,BOTBUS_DATA_DIR \
+    --env-inherit BOTBUS_CHANNEL,BOTBUS_DATA_DIR,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT \
     --env "AGENT={agent}/<worker-suffix>" \
     --env "BOTBOX_BONE=<id>" \
     --env "BOTBOX_WORKSPACE=$WS" \
     --env "BOTBUS_CHANNEL={project}" \
     --env "BOTBOX_PROJECT={project}" \
 {spawn_env_flags}
-    --timeout <model-timeout> \
+{worker_memory_limit_flag}    --timeout <model-timeout> \
     --cwd {project_dir}/ws/$WS \
     -- {worker_cmd} --model <selected-model> --agent {agent}/<worker-suffix>
 
@@ -749,6 +755,7 @@ mod tests {
             multi_lead_config: None,
             project_dir: "/home/test/project".to_string(),
             spawn_env: Default::default(),
+            worker_memory_limit: None,
         }
     }
 

@@ -373,7 +373,7 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
         validate_name(reviewer, "reviewer name")?;
     }
 
-    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
+    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
     let root_str = root.display().to_string();
 
     // Register router hook (claim-based)
@@ -381,82 +381,104 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
     let spawn_name = format!("{project_name}-router");
     let description = format!("botbox:{project_name}:responder");
 
-    match crate::subprocess::ensure_bus_hook(
-        &description,
-        &[
-            "--agent",
-            &agent,
-            "--channel",
-            &channel,
-            "--claim",
-            &router_claim,
-            "--claim-owner",
-            &agent,
-            "--cwd",
-            &root_str,
-            "--ttl",
-            "600",
-            "--",
-            "botty",
-            "spawn",
-            "--env-inherit",
-            env_inherit,
-            "--name",
-            &spawn_name,
-            "--cwd",
-            &root_str,
-            "--",
-            "botbox",
-            "run",
-            "responder",
-        ],
-    ) {
+    let responder_memory_limit = config
+        .agents
+        .responder
+        .as_ref()
+        .and_then(|r| r.memory_limit.as_deref());
+
+    let mut router_args: Vec<&str> = vec![
+        "--agent",
+        &agent,
+        "--channel",
+        &channel,
+        "--claim",
+        &router_claim,
+        "--claim-owner",
+        &agent,
+        "--cwd",
+        &root_str,
+        "--ttl",
+        "600",
+        "--",
+        "botty",
+        "spawn",
+        "--env-inherit",
+        env_inherit,
+    ];
+    if let Some(limit) = responder_memory_limit {
+        router_args.push("--memory-limit");
+        router_args.push(limit);
+    }
+    router_args.extend_from_slice(&[
+        "--name",
+        &spawn_name,
+        "--cwd",
+        &root_str,
+        "--",
+        "botbox",
+        "run",
+        "responder",
+    ]);
+
+    match crate::subprocess::ensure_bus_hook(&description, &router_args) {
         Ok((action, _)) => println!("Router hook {action} for #{channel}"),
         Err(e) => eprintln!("Warning: failed to register router hook: {e}"),
     }
 
     // Register reviewer hooks (mention-based)
+    let reviewer_memory_limit = config
+        .agents
+        .reviewer
+        .as_ref()
+        .and_then(|r| r.memory_limit.as_deref());
+
     for reviewer in &config.review.reviewers {
         let reviewer_agent = format!("{project_name}-{reviewer}");
         let claim_uri = format!("agent://{reviewer_agent}");
         let desc = format!("botbox:{project_name}:reviewer-{reviewer}");
 
-        match crate::subprocess::ensure_bus_hook(
-            &desc,
-            &[
-                "--agent",
-                &agent,
-                "--channel",
-                &channel,
-                "--mention",
-                &reviewer_agent,
-                "--claim",
-                &claim_uri,
-                "--claim-owner",
-                &reviewer_agent,
-                "--ttl",
-                "600",
-                "--priority",
-                "1",
-                "--cwd",
-                &root_str,
-                "--",
-                "botty",
-                "spawn",
-                "--env-inherit",
-                env_inherit,
-                "--name",
-                &reviewer_agent,
-                "--cwd",
-                &root_str,
-                "--",
-                "botbox",
-                "run",
-                "reviewer-loop",
-                "--agent",
-                &reviewer_agent,
-            ],
-        ) {
+        let mut reviewer_args: Vec<&str> = vec![
+            "--agent",
+            &agent,
+            "--channel",
+            &channel,
+            "--mention",
+            &reviewer_agent,
+            "--claim",
+            &claim_uri,
+            "--claim-owner",
+            &reviewer_agent,
+            "--ttl",
+            "600",
+            "--priority",
+            "1",
+            "--cwd",
+            &root_str,
+            "--",
+            "botty",
+            "spawn",
+            "--env-inherit",
+            env_inherit,
+        ];
+        if let Some(limit) = reviewer_memory_limit {
+            reviewer_args.push("--memory-limit");
+            reviewer_args.push(limit);
+        }
+        reviewer_args.extend_from_slice(&[
+            "--name",
+            &reviewer_agent,
+            "--cwd",
+            &root_str,
+            "--",
+            "botbox",
+            "run",
+            "reviewer-loop",
+            "--agent",
+            &reviewer_agent,
+        ]);
+
+        match crate::subprocess::ensure_bus_hook(&desc, &reviewer_args) {
             Ok((action, _)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
             Err(e) => {
                 eprintln!("Warning: failed to register reviewer hook for @{reviewer_agent}: {e}")

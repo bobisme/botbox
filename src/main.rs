@@ -3,6 +3,7 @@ mod config;
 mod error;
 mod hooks;
 mod subprocess;
+mod telemetry;
 mod template;
 
 use std::process::ExitCode;
@@ -59,8 +60,28 @@ enum Commands {
     Schema,
 }
 
+impl Commands {
+    const fn name(&self) -> &'static str {
+        match self {
+            Self::Run { .. } => "run",
+            Self::Sync(_) => "sync",
+            Self::Init(_) => "init",
+            Self::Doctor(_) => "doctor",
+            Self::Status(_) => "status",
+            Self::Hooks { .. } => "hooks",
+            Self::Protocol { .. } => "protocol",
+            Self::Triage => "triage",
+            Self::Schema => "schema",
+        }
+    }
+}
+
 fn main() -> ExitCode {
+    let _telemetry = telemetry::init();
+
     let cli = Cli::parse();
+
+    let _span = tracing::info_span!("command", name = cli.command.name()).entered();
 
     let result = match cli.command {
         Commands::Run { command } => command.execute(),

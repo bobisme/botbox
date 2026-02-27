@@ -234,6 +234,9 @@ pub struct DevAgentConfig {
     pub missions: Option<MissionsConfig>,
     #[serde(default = "default_multi_lead", alias = "multiLead")]
     pub multi_lead: Option<MultiLeadConfig>,
+    /// Memory limit for dev-loop agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    #[serde(default)]
+    pub memory_limit: Option<String>,
 }
 
 impl Default for DevAgentConfig {
@@ -245,6 +248,7 @@ impl Default for DevAgentConfig {
             timeout: default_timeout_1800(),
             missions: default_missions(),
             multi_lead: default_multi_lead(),
+            memory_limit: None,
         }
     }
 }
@@ -280,6 +284,9 @@ pub struct WorkerAgentConfig {
     pub model: String,
     #[serde(default = "default_timeout_900")]
     pub timeout: u64,
+    /// Memory limit for worker agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    #[serde(default)]
+    pub memory_limit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -292,6 +299,9 @@ pub struct ReviewerAgentConfig {
     pub pause: u32,
     #[serde(default = "default_timeout_900")]
     pub timeout: u64,
+    /// Memory limit for reviewer agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    #[serde(default)]
+    pub memory_limit: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -304,6 +314,9 @@ pub struct ResponderAgentConfig {
     pub wait_timeout: u64,
     #[serde(default = "default_max_conversations", alias = "maxConversations")]
     pub max_conversations: u32,
+    /// Memory limit for responder agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    #[serde(default)]
+    pub memory_limit: Option<String>,
 }
 
 // Default value functions for serde
@@ -451,7 +464,7 @@ impl Config {
         set_table_comment(
             &mut doc,
             "env",
-            "\n# Environment variables passed to all spawned agents\n# Values support shell variable expansion ($HOME, ${HOME})\n",
+            "\n# Environment variables passed to all spawned agents\n# Values support shell variable expansion ($HOME, ${HOME})\n# Set OTEL_EXPORTER_OTLP_ENDPOINT to enable telemetry: \"stderr\" for JSON to stderr, \"http://host:port\" for OTLP HTTP\n",
         );
 
         Ok(doc.to_string())
@@ -474,11 +487,24 @@ impl Config {
     }
 
     /// Returns env vars with shell variables expanded (e.g. `$HOME` → `/home/user`).
+    ///
+    /// Also propagates `OTEL_EXPORTER_OTLP_ENDPOINT` from the process environment if set and
+    /// not already defined in the config, so telemetry flows through to spawned agents.
     pub fn resolved_env(&self) -> HashMap<String, String> {
-        self.env
+        let mut env: HashMap<String, String> = self
+            .env
             .iter()
             .map(|(k, v)| (k.clone(), expand_env_value(v)))
-            .collect()
+            .collect();
+
+        // Auto-propagate telemetry endpoint to child agents
+        if !env.contains_key("OTEL_EXPORTER_OTLP_ENDPOINT") {
+            if let Ok(val) = std::env::var("OTEL_EXPORTER_OTLP_ENDPOINT") {
+                env.insert("OTEL_EXPORTER_OTLP_ENDPOINT".into(), val);
+            }
+        }
+
+        env
     }
 
     /// Resolve a model string to the full pool of models for that tier.

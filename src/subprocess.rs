@@ -108,6 +108,7 @@ impl Tool {
     }
 
     /// Run the tool, capturing stdout and stderr.
+    #[tracing::instrument(skip(self), fields(tool = %self.program, workspace = ?self.maw_workspace))]
     pub fn run(&self) -> anyhow::Result<RunOutput> {
         let (program, args) = self.build_command();
 

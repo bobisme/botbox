@@ -188,7 +188,7 @@ impl InitArgs {
 
         // Generate AGENTS.md
         if agents_md_path.exists() && !self.force {
-            eprintln!(
+            tracing::warn!(
                 "AGENTS.md already exists. Use --force to overwrite, or run `botbox sync` to update."
             );
         } else {
@@ -201,7 +201,7 @@ impl InitArgs {
         if choices.init_bones && choices.tools.contains(&"bones".to_string()) {
             match run_command("bn", &["init"], Some(&project_dir)) {
                 Ok(_) => println!("Initialized bones"),
-                Err(_) => eprintln!("Warning: bn init failed (is bones installed?)"),
+                Err(_) => tracing::warn!("bn init failed (is bones installed?)"),
             }
         }
 
@@ -209,7 +209,7 @@ impl InitArgs {
         if choices.tools.contains(&"maw".to_string()) {
             match run_command("maw", &["init"], Some(&project_dir)) {
                 Ok(_) => println!("Initialized maw"),
-                Err(_) => eprintln!("Warning: maw init failed (is maw installed?)"),
+                Err(_) => tracing::warn!("maw init failed (is maw installed?)"),
             }
         }
 
@@ -217,7 +217,7 @@ impl InitArgs {
         if choices.tools.contains(&"crit".to_string()) {
             match run_command("crit", &["init"], Some(&project_dir)) {
                 Ok(_) => println!("Initialized crit"),
-                Err(_) => eprintln!("Warning: crit init failed (is crit installed?)"),
+                Err(_) => tracing::warn!("crit init failed (is crit installed?)"),
             }
 
             // Create .critignore
@@ -269,7 +269,7 @@ impl InitArgs {
                 Ok(output) if output.success() => {
                     println!("Registered project on #projects channel")
                 }
-                _ => eprintln!("Warning: Failed to register on #projects (is bus installed?)"),
+                _ => tracing::warn!("failed to register on #projects (is bus installed?)"),
             }
         }
 
@@ -284,7 +284,7 @@ impl InitArgs {
 
         // Register botbus hooks
         if choices.tools.contains(&"botbus".to_string()) {
-            register_spawn_hooks(&project_dir, &choices.name, &choices.reviewers);
+            register_spawn_hooks(&project_dir, &choices.name, &choices.reviewers, &config);
         }
 
         // Generate .gitignore
@@ -296,7 +296,7 @@ impl InitArgs {
                         fs::write(&gitignore_path, content)?;
                         println!("Generated .gitignore for: {}", choices.languages.join(", "));
                     }
-                    Err(e) => eprintln!("Warning: Failed to generate .gitignore: {e}"),
+                    Err(e) => tracing::warn!("failed to generate .gitignore: {e}"),
                 }
             } else {
                 println!(".gitignore already exists, skipping generation");
@@ -731,16 +731,19 @@ fn build_config(choices: &InitChoices) -> Config {
                     checkpoint_interval_sec: 30,
                 }),
                 multi_lead: None,
+                memory_limit: None,
             }),
             worker: Some(WorkerAgentConfig {
                 model: "fast".into(),
                 timeout: 900,
+                memory_limit: None,
             }),
             reviewer: Some(ReviewerAgentConfig {
                 model: "strong".into(),
                 max_loops: 100,
                 pause: 2,
                 timeout: 900,
+                memory_limit: None,
             }),
             responder: None,
         },
@@ -920,7 +923,7 @@ fn sync_hooks(project_dir: &Path) -> Result<()> {
 
 // --- Hook registration ---
 
-fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
+fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String], config: &Config) {
     let abs_path = project_dir
         .canonicalize()
         .unwrap_or_else(|_| project_dir.to_path_buf());
@@ -935,12 +938,22 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String]) {
     }
 
     // Register router hook
-    register_router_hook(&hook_cwd, &spawn_cwd, name, &agent);
+    let responder_memory_limit = config
+        .agents
+        .responder
+        .as_ref()
+        .and_then(|r| r.memory_limit.as_deref());
+    register_router_hook(&hook_cwd, &spawn_cwd, name, &agent, responder_memory_limit);
 
     // Register reviewer hooks
+    let reviewer_memory_limit = config
+        .agents
+        .reviewer
+        .as_ref()
+        .and_then(|r| r.memory_limit.as_deref());
     for role in reviewers {
         let reviewer_agent = format!("{name}-{role}");
-        register_reviewer_hook(&hook_cwd, &spawn_cwd, name, &agent, &reviewer_agent);
+        register_reviewer_hook(&hook_cwd, &spawn_cwd, name, &agent, &reviewer_agent, reviewer_memory_limit);
     }
 }
 
@@ -958,42 +971,53 @@ fn detect_hook_paths(abs_path: &Path) -> (String, String) {
     (abs_str.clone(), abs_str)
 }
 
-pub(super) fn register_router_hook(hook_cwd: &str, spawn_cwd: &str, name: &str, agent: &str) {
-    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
+pub(super) fn register_router_hook(
+    hook_cwd: &str,
+    spawn_cwd: &str,
+    name: &str,
+    agent: &str,
+    memory_limit: Option<&str>,
+) {
+    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
     let claim_uri = format!("agent://{name}-router");
     let spawn_name = format!("{name}-router");
     let description = format!("botbox:{name}:responder");
 
-    match crate::subprocess::ensure_bus_hook(
-        &description,
-        &[
-            "--agent",
-            agent,
-            "--channel",
-            name,
-            "--claim",
-            &claim_uri,
-            "--claim-owner",
-            agent,
-            "--cwd",
-            hook_cwd,
-            "--ttl",
-            "600",
-            "--",
-            "botty",
-            "spawn",
-            "--env-inherit",
-            env_inherit,
-            "--name",
-            &spawn_name,
-            "--cwd",
-            spawn_cwd,
-            "--",
-            "botbox",
-            "run",
-            "responder",
-        ],
-    ) {
+    let mut args: Vec<&str> = vec![
+        "--agent",
+        agent,
+        "--channel",
+        name,
+        "--claim",
+        &claim_uri,
+        "--claim-owner",
+        agent,
+        "--cwd",
+        hook_cwd,
+        "--ttl",
+        "600",
+        "--",
+        "botty",
+        "spawn",
+        "--env-inherit",
+        env_inherit,
+    ];
+    if let Some(limit) = memory_limit {
+        args.push("--memory-limit");
+        args.push(limit);
+    }
+    args.extend_from_slice(&[
+        "--name",
+        &spawn_name,
+        "--cwd",
+        spawn_cwd,
+        "--",
+        "botbox",
+        "run",
+        "responder",
+    ]);
+
+    match crate::subprocess::ensure_bus_hook(&description, &args) {
         Ok((action, _id)) => println!("Router hook {action} for #{name}"),
         Err(e) => eprintln!("Warning: Failed to register router hook: {e}"),
     }
@@ -1005,8 +1029,9 @@ pub(super) fn register_reviewer_hook(
     name: &str,
     agent: &str,
     reviewer_agent: &str,
+    memory_limit: Option<&str>,
 ) {
-    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK";
+    let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
     let claim_uri = format!("agent://{reviewer_agent}");
     // Extract role suffix from reviewer_agent (e.g., "myproject-security" → "security")
     let role = reviewer_agent
@@ -1014,42 +1039,47 @@ pub(super) fn register_reviewer_hook(
         .unwrap_or(reviewer_agent);
     let description = format!("botbox:{name}:reviewer-{role}");
 
-    match crate::subprocess::ensure_bus_hook(
-        &description,
-        &[
-            "--agent",
-            agent,
-            "--channel",
-            name,
-            "--mention",
-            reviewer_agent,
-            "--claim",
-            &claim_uri,
-            "--claim-owner",
-            reviewer_agent,
-            "--ttl",
-            "600",
-            "--priority",
-            "1",
-            "--cwd",
-            hook_cwd,
-            "--",
-            "botty",
-            "spawn",
-            "--env-inherit",
-            env_inherit,
-            "--name",
-            reviewer_agent,
-            "--cwd",
-            spawn_cwd,
-            "--",
-            "botbox",
-            "run",
-            "reviewer-loop",
-            "--agent",
-            reviewer_agent,
-        ],
-    ) {
+    let mut args: Vec<&str> = vec![
+        "--agent",
+        agent,
+        "--channel",
+        name,
+        "--mention",
+        reviewer_agent,
+        "--claim",
+        &claim_uri,
+        "--claim-owner",
+        reviewer_agent,
+        "--ttl",
+        "600",
+        "--priority",
+        "1",
+        "--cwd",
+        hook_cwd,
+        "--",
+        "botty",
+        "spawn",
+        "--env-inherit",
+        env_inherit,
+    ];
+    if let Some(limit) = memory_limit {
+        args.push("--memory-limit");
+        args.push(limit);
+    }
+    args.extend_from_slice(&[
+        "--name",
+        reviewer_agent,
+        "--cwd",
+        spawn_cwd,
+        "--",
+        "botbox",
+        "run",
+        "reviewer-loop",
+        "--agent",
+        reviewer_agent,
+    ]);
+
+    match crate::subprocess::ensure_bus_hook(&description, &args) {
         Ok((action, _id)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
         Err(e) => eprintln!("Warning: Failed to register mention hook for @{reviewer_agent}: {e}"),
     }

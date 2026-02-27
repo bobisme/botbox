@@ -1257,12 +1257,30 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     let mut spawn_args: Vec<String> = vec![
                         "spawn".into(),
                         "--env-inherit".into(),
-                        "SSH_AUTH_SOCK".into(),
+                        "SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT".into(),
+                    ];
+                    // Add memory limit for dev-loop leads if configured
+                    if let Some(limit) = self
+                        .config
+                        .as_ref()
+                        .and_then(|c| c.agents.dev.as_ref())
+                        .and_then(|d| d.memory_limit.as_deref())
+                    {
+                        spawn_args.push("--memory-limit".into());
+                        spawn_args.push(limit.to_string());
+                    }
+                    spawn_args.extend([
                         "--env".into(),
                         format!("AGENT={lead_name}"),
                         "--env".into(),
                         format!("BOTBUS_CHANNEL={}", self.channel),
-                    ];
+                    ]);
+                    // Propagate current trace context so the spawned lead
+                    // joins the same distributed trace.
+                    if let Some(tp) = crate::telemetry::current_traceparent() {
+                        spawn_args.push("--env".into());
+                        spawn_args.push(format!("TRACEPARENT={tp}"));
+                    }
                     // Inject config [env] vars
                     for (k, v) in &self.spawn_env {
                         spawn_args.push("--env".into());

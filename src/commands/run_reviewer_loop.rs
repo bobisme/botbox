@@ -443,6 +443,7 @@ pub fn run_reviewer_loop(
             max_loops: 20,
             pause: 2,
             timeout: 900,
+            memory_limit: None,
         });
 
     let model_raw = model_override.unwrap_or(reviewer_config.model);

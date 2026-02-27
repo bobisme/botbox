@@ -29,7 +29,20 @@ toml_edit = "0.22"
 sha2 = "0.10"
 termimad = "0.34"
 thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 ureq = "3"
+
+# Optional: OTLP export (sync HTTP via reqwest-blocking)
+opentelemetry = { version = "0.31", optional = true }
+opentelemetry_sdk = { version = "0.31", optional = true, features = ["trace", "logs"] }
+opentelemetry-otlp = { version = "0.31", optional = true, default-features = false, features = ["trace", "logs", "http-proto", "reqwest-blocking-client"] }
+opentelemetry-appender-tracing = { version = "0.31", optional = true }
+tracing-opentelemetry = { version = "0.32", optional = true }
+
+[features]
+default = ["otel"]
+otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:opentelemetry-appender-tracing", "dep:tracing-opentelemetry"]
 
 [dev-dependencies]
 assert_cmd = "2"
