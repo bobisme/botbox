@@ -32,16 +32,10 @@ export default function botboxHooksExtension(pi: ExtensionAPI) {
 	let pendingSessionStartContext = "";
 
 	pi.on("session_start", async () => {
-		const outputs: string[] = [];
-
-		for (const hookName of ["init-agent", "check-jj", "claim-agent"]) {
-			const stdout = await runHook(pi, hookName);
-			if (stdout) {
-				outputs.push(stdout);
-			}
+		const stdout = await runHook(pi, "session-start");
+		if (stdout) {
+			pendingSessionStartContext = stdout;
 		}
-
-		pendingSessionStartContext = outputs.join("\n\n");
 	});
 
 	pi.on("before_agent_start", async (event) => {
@@ -63,20 +57,20 @@ export default function botboxHooksExtension(pi: ExtensionAPI) {
 			return;
 		}
 
-		const stdout = await runHook(pi, "check-bus-inbox");
+		const stdout = await runHook(pi, "post-tool-call");
 		if (stdout) {
 			injectMessage(pi, stdout);
 		}
 	});
 
 	pi.on("session_before_compact", async () => {
-		const stdout = await runHook(pi, "init-agent");
+		const stdout = await runHook(pi, "session-start");
 		if (stdout) {
 			injectMessage(pi, stdout);
 		}
 	});
 
 	pi.on("session_shutdown", async () => {
-		await runHook(pi, "claim-agent", ["--release"]);
+		await runHook(pi, "session-end");
 	});
 }

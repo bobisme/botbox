@@ -16,12 +16,14 @@ pub(crate) const PI_BOTBOX_HOOKS_EXTENSION: &str =
 
 #[derive(Debug, Subcommand)]
 pub enum HooksCommand {
-    /// Install/update botbus and Claude Code hooks
+    /// Install/update global agent hooks in ~/.claude/settings.json
     Install {
-        /// Project root directory
+        /// Project root directory (for botbus hook registration only)
         #[arg(long)]
         project_root: Option<PathBuf>,
     },
+    /// Remove global agent hooks from ~/.claude/settings.json
+    Uninstall,
     /// Audit hook registrations and report issues
     Audit {
         /// Project root directory
@@ -31,14 +33,14 @@ pub enum HooksCommand {
         #[arg(long, value_enum, default_value_t = super::doctor::OutputFormat::Pretty)]
         format: super::doctor::OutputFormat,
     },
-    /// Run a hook directly (for Claude Code hooks)
+    /// Run a hook directly (called by Claude Code / Pi hooks infrastructure)
     Run {
-        /// Hook name (init-agent, check-jj, check-bus-inbox, claim-agent)
+        /// Hook name (session-start, post-tool-call, session-end)
         hook_name: String,
-        /// Project root directory
+        /// Project root directory (deprecated, ignored — hooks auto-detect context)
         #[arg(long)]
         project_root: Option<PathBuf>,
-        /// Release claim-agent resources (for Pi session shutdown)
+        /// Release claims (for Pi session shutdown)
         #[arg(long)]
         release: bool,
     },
@@ -48,115 +50,146 @@ impl HooksCommand {
     pub fn execute(&self) -> anyhow::Result<()> {
         match self {
             HooksCommand::Install { project_root } => install_hooks(project_root.as_deref()),
+            HooksCommand::Uninstall => uninstall_hooks(),
             HooksCommand::Audit {
                 project_root,
                 format,
             } => audit_hooks(project_root.as_deref(), *format),
             HooksCommand::Run {
                 hook_name,
-                project_root,
                 release,
-            } => run_hook(hook_name, project_root.as_deref(), *release),
+                ..
+            } => run_hook(hook_name, *release),
         }
     }
 }
 
+/// Install global agent hooks into ~/.claude/settings.json (and Pi extensions).
+///
+/// If project_root is provided, also registers botbus hooks (router + reviewers).
 fn install_hooks(project_root: Option<&Path>) -> Result<()> {
-    let root = resolve_project_root(project_root)?;
-    let config = load_config(&root)?;
+    // Install global Claude Code hooks
+    let home = dirs::home_dir().context("could not determine home directory")?;
+    let settings_path = home.join(".claude/settings.json");
+    install_global_claude_hooks(&settings_path)?;
+    println!("Installed global hooks in {}", settings_path.display());
 
-    // Get eligible hooks
-    let eligible = HookRegistry::eligible(&config.tools);
-    if eligible.is_empty() {
-        println!("No hooks eligible (no companion tools enabled)");
-        return Ok(());
+    // Install Pi extension globally
+    let pi_ext_path = home.join(".pi/agent/extensions/botbox-hooks.ts");
+    install_pi_extension(&pi_ext_path)?;
+    println!("Installed Pi extension at {}", pi_ext_path.display());
+
+    // If in a botbox project, also register botbus hooks (router + reviewers)
+    if let Some(root) = project_root {
+        let root = resolve_project_root(Some(root))?;
+        let config = load_config(&root)?;
+        register_botbus_hooks(&root, &config)?;
+    } else if let Ok(root) = resolve_project_root(None) {
+        if let Ok(config) = load_config(&root) {
+            register_botbus_hooks(&root, &config)?;
+        }
     }
-
-    // Generate settings.json for Claude Code hooks
-    let settings_path = root.join(".claude").join("settings.json");
-    generate_settings_json(&settings_path, &root, &eligible)?;
-    println!("Generated {}", settings_path.display());
-
-    // Register botbus hooks (router + reviewers)
-    register_botbus_hooks(&root, &config)?;
-
-    // Deploy Pi extension equivalent of Claude hooks
-    let pi_extension_path = deploy_pi_hooks_extension(&root)?;
-    println!("Generated {}", pi_extension_path.display());
 
     println!("Hooks installed successfully");
     Ok(())
 }
 
-fn audit_hooks(project_root: Option<&Path>, format: super::doctor::OutputFormat) -> Result<()> {
-    let root = resolve_project_root(project_root)?;
-    let config = load_config(&root)?;
+/// Remove global agent hooks from ~/.claude/settings.json and Pi extensions.
+fn uninstall_hooks() -> Result<()> {
+    let home = dirs::home_dir().context("could not determine home directory")?;
 
+    // Remove from ~/.claude/settings.json
+    let settings_path = home.join(".claude/settings.json");
+    if settings_path.exists() {
+        let content = fs::read_to_string(&settings_path)
+            .with_context(|| format!("reading {}", settings_path.display()))?;
+        let mut settings: serde_json::Value =
+            serde_json::from_str(&content).unwrap_or_else(|_| json!({}));
+
+        if let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) {
+            for (_event, entries) in hooks.iter_mut() {
+                if let Some(arr) = entries.as_array_mut() {
+                    arr.retain(|entry| !is_botbox_hook_entry(entry));
+                }
+            }
+            // Remove empty event arrays
+            hooks.retain(|_, v| {
+                v.as_array().map(|a| !a.is_empty()).unwrap_or(true)
+            });
+        }
+
+        // Remove hooks key entirely if empty
+        if settings
+            .get("hooks")
+            .and_then(|h| h.as_object())
+            .is_some_and(|h| h.is_empty())
+        {
+            settings.as_object_mut().unwrap().remove("hooks");
+        }
+
+        fs::write(&settings_path, serde_json::to_string_pretty(&settings)?)?;
+        println!("Removed botbox hooks from {}", settings_path.display());
+    }
+
+    // Remove Pi extension
+    let pi_ext_path = home.join(".pi/agent/extensions/botbox-hooks.ts");
+    if pi_ext_path.exists() {
+        fs::remove_file(&pi_ext_path)?;
+        println!("Removed {}", pi_ext_path.display());
+    }
+
+    println!("Hooks uninstalled successfully");
+    Ok(())
+}
+
+fn audit_hooks(project_root: Option<&Path>, format: super::doctor::OutputFormat) -> Result<()> {
+    let home = dirs::home_dir().context("could not determine home directory")?;
     let mut issues = Vec::new();
 
-    // Check settings.json
-    let settings_path = root.join(".claude").join("settings.json");
+    // Check global settings.json
+    let settings_path = home.join(".claude/settings.json");
     if !settings_path.exists() {
-        issues.push("Missing .claude/settings.json".to_string());
+        issues.push("Missing ~/.claude/settings.json".to_string());
     } else {
-        // Parse and verify hooks
         let content = fs::read_to_string(&settings_path)
             .with_context(|| format!("reading {}", settings_path.display()))?;
         let settings: serde_json::Value = serde_json::from_str(&content)
             .with_context(|| format!("parsing {}", settings_path.display()))?;
 
-        let eligible = HookRegistry::eligible(&config.tools);
-        for hook_entry in &eligible {
+        for hook_entry in &HookRegistry::all() {
             let found = hook_entry.events.iter().any(|event| {
                 settings["hooks"][event.as_str()]
                     .as_array()
-                    .map(|arr| {
+                    .is_some_and(|arr| {
                         arr.iter().any(|entry| {
-                            entry["hooks"]
-                                .as_array()
-                                .map(|hooks| {
-                                    hooks.iter().any(|h| {
-                                        // Check both string and array command formats
-                                        // String format: "botbox hooks run init-agent --project-root ..."
-                                        // Array format: ["botbox", "hooks", "run", "init-agent", "--project-root", ...]
-                                        let cmd_value = &h["command"];
-
-                                        if let Some(cmd_str) = cmd_value.as_str() {
-                                            // String format check
-                                            cmd_str.contains(&format!("run {}", hook_entry.name))
-                                        } else if let Some(cmd_arr) = cmd_value.as_array() {
-                                            // Array format check - look for ["botbox", "hooks", "run", "<hook_name>", ...]
-                                            cmd_arr.len() >= 4
-                                                && cmd_arr[0].as_str() == Some("botbox")
-                                                && cmd_arr[1].as_str() == Some("hooks")
-                                                && cmd_arr[2].as_str() == Some("run")
-                                                && cmd_arr[3].as_str() == Some(hook_entry.name)
-                                        } else {
-                                            false
-                                        }
-                                    })
-                                })
-                                .unwrap_or(false)
+                            entry["hooks"].as_array().is_some_and(|hooks| {
+                                hooks.iter().any(|h| is_botbox_hook_command(h, hook_entry.name))
+                            })
                         })
                     })
-                    .unwrap_or(false)
             });
 
             if !found {
                 issues.push(format!(
-                    "Hook '{}' not registered in settings.json",
+                    "Hook '{}' not registered in ~/.claude/settings.json",
                     hook_entry.name
                 ));
             }
         }
     }
 
-    // Check botbus hooks (if botbus enabled)
-    if config.tools.botbus {
-        check_botbus_hooks(&root, &config, &mut issues)?;
+    // Check botbus hooks (if in a botbox project)
+    if let Some(root) = project_root
+        .and_then(|p| resolve_project_root(Some(p)).ok())
+        .or_else(|| resolve_project_root(None).ok())
+    {
+        if let Ok(config) = load_config(&root) {
+            if config.tools.botbus {
+                check_botbus_hooks(&root, &config, &mut issues)?;
+            }
+        }
     }
 
-    // Output results
     match format {
         super::doctor::OutputFormat::Json => {
             let result = json!({
@@ -181,18 +214,9 @@ fn audit_hooks(project_root: Option<&Path>, format: super::doctor::OutputFormat)
     Ok(())
 }
 
-fn run_hook(hook_name: &str, project_root: Option<&Path>, release: bool) -> Result<()> {
-    // For hook run, resolve_project_root checks config — but hooks
-    // may run before init. Use a simpler resolution that just canonicalizes.
-    let root = match project_root {
-        Some(p) => p
-            .canonicalize()
-            .with_context(|| format!("resolving project root: {}", p.display()))?,
-        None => std::env::current_dir().expect("get cwd"),
-    };
-
+fn run_hook(hook_name: &str, release: bool) -> Result<()> {
     // Read stdin with a size limit (64KB) for defense-in-depth
-    let mut stdin_input = {
+    let stdin_input = {
         use std::io::Read;
         let mut buf = String::new();
         let mut handle = std::io::stdin().take(64 * 1024);
@@ -200,20 +224,26 @@ fn run_hook(hook_name: &str, project_root: Option<&Path>, release: bool) -> Resu
         if buf.is_empty() { None } else { Some(buf) }
     };
 
-    if hook_name == "claim-agent" && release {
-        stdin_input = Some(r#"{"hook_event_name":"SessionEnd"}"#.to_string());
-    }
-
     match hook_name {
-        "init-agent" => crate::hooks::run_init_agent(&root),
-        "check-jj" => crate::hooks::run_check_jj(&root),
-        "check-bus-inbox" => crate::hooks::run_check_bus_inbox(&root, stdin_input.as_deref()),
-        "claim-agent" => crate::hooks::run_claim_agent(&root, stdin_input.as_deref()),
+        "session-start" => crate::hooks::run_session_start(),
+        "post-tool-call" => crate::hooks::run_post_tool_call(stdin_input.as_deref()),
+        "session-end" => crate::hooks::run_session_end(),
+        // Backwards compat: old hook names map to new ones
+        "init-agent" | "check-jj" => crate::hooks::run_session_start(),
+        "check-bus-inbox" => crate::hooks::run_post_tool_call(stdin_input.as_deref()),
+        "claim-agent" => {
+            if release {
+                crate::hooks::run_session_end()
+            } else {
+                // claim-agent on SessionStart/PostToolUse — handled by session-start/post-tool-call
+                crate::hooks::run_session_start()
+            }
+        }
         _ => Err(ExitError::Config(format!("unknown hook: {hook_name}")).into()),
     }
 }
 
-// Helper functions
+// --- Helper functions ---
 
 fn resolve_project_root(project_root: Option<&Path>) -> Result<PathBuf> {
     let path = project_root
@@ -222,7 +252,6 @@ fn resolve_project_root(project_root: Option<&Path>) -> Result<PathBuf> {
     let canonical = path
         .canonicalize()
         .with_context(|| format!("resolving project root: {}", path.display()))?;
-    // Use canonical priority: find_config_in_project returns (config_path, config_dir)
     match crate::config::find_config_in_project(&canonical) {
         Ok((_config_path, config_dir)) => Ok(config_dir),
         Err(_) => anyhow::bail!(
@@ -238,48 +267,22 @@ fn load_config(root: &Path) -> Result<Config> {
     Config::load(&config_path)
 }
 
-fn deploy_pi_hooks_extension(root: &Path) -> Result<PathBuf> {
-    let extension_path = root.join(".pi/extensions/botbox-hooks.ts");
+/// Install global Claude Code hooks into ~/.claude/settings.json
+fn install_global_claude_hooks(settings_path: &Path) -> Result<()> {
+    let hooks = HookRegistry::all();
 
-    if let Some(parent) = extension_path.parent() {
-        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
-    }
-
-    fs::write(&extension_path, PI_BOTBOX_HOOKS_EXTENSION)
-        .with_context(|| format!("writing {}", extension_path.display()))?;
-
-    Ok(extension_path)
-}
-
-fn generate_settings_json(
-    settings_path: &Path,
-    project_root: &Path,
-    eligible_hooks: &[crate::hooks::HookEntry],
-) -> Result<()> {
-    // Build hooks config
     let mut hooks_config: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
-
-    for hook_entry in eligible_hooks {
+    for hook_entry in &hooks {
         for event in hook_entry.events.iter() {
-            let event_str = event.as_str();
-            let hook_command = format!(
-                "botbox hooks run {} --project-root {}",
-                hook_entry.name,
-                project_root.display()
-            );
-
             let entry = json!({
                 "matcher": "",
-                "hooks": [
-                    {
-                        "type": "command",
-                        "command": hook_command
-                    }
-                ]
+                "hooks": [{
+                    "type": "command",
+                    "command": format!("botbox hooks run {}", hook_entry.name)
+                }]
             });
-
             hooks_config
-                .entry(event_str.to_string())
+                .entry(event.as_str().to_string())
                 .or_default()
                 .push(entry);
         }
@@ -294,37 +297,22 @@ fn generate_settings_json(
         json!({})
     };
 
-    // Merge hooks config per-event, preserving non-botbox hooks
+    // Merge: preserve non-botbox hooks, replace botbox hooks
     let existing_hooks = settings.get("hooks").cloned().unwrap_or_else(|| json!({}));
     let mut merged_hooks = existing_hooks.as_object().cloned().unwrap_or_default();
 
     for (event, new_entries) in &hooks_config {
-        // Get existing entries for this event, filtering out botbox-managed ones
         let existing_entries: Vec<serde_json::Value> = merged_hooks
             .get(event)
             .and_then(|v| v.as_array())
             .map(|arr| {
                 arr.iter()
-                    .filter(|entry| {
-                        // Keep entries that are NOT botbox-managed
-                        !entry["hooks"]
-                            .as_array()
-                            .map(|hooks| {
-                                hooks.iter().any(|h| {
-                                    h["command"]
-                                        .as_str()
-                                        .map(|cmd| cmd.contains("botbox hooks run"))
-                                        .unwrap_or(false)
-                                })
-                            })
-                            .unwrap_or(false)
-                    })
+                    .filter(|entry| !is_botbox_hook_entry(entry))
                     .cloned()
                     .collect()
             })
             .unwrap_or_default();
 
-        // Combine: non-botbox entries + new botbox entries
         let mut combined = existing_entries;
         combined.extend(new_entries.iter().cloned());
         merged_hooks.insert(event.clone(), serde_json::Value::Array(combined));
@@ -332,16 +320,60 @@ fn generate_settings_json(
 
     settings["hooks"] = serde_json::Value::Object(merged_hooks);
 
-    // Ensure parent directory exists
     if let Some(parent) = settings_path.parent() {
         fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
     }
 
-    // Write settings.json
     fs::write(settings_path, serde_json::to_string_pretty(&settings)?)
         .with_context(|| format!("writing {}", settings_path.display()))?;
 
     Ok(())
+}
+
+fn install_pi_extension(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("creating {}", parent.display()))?;
+    }
+    fs::write(path, PI_BOTBOX_HOOKS_EXTENSION)
+        .with_context(|| format!("writing {}", path.display()))?;
+    Ok(())
+}
+
+/// Check if a hook entry is botbox-managed
+fn is_botbox_hook_entry(entry: &serde_json::Value) -> bool {
+    entry["hooks"]
+        .as_array()
+        .is_some_and(|hooks| {
+            hooks.iter().any(|h| {
+                let cmd = &h["command"];
+                if let Some(cmd_str) = cmd.as_str() {
+                    cmd_str.contains("botbox hooks run")
+                } else if let Some(cmd_arr) = cmd.as_array() {
+                    cmd_arr.len() >= 3
+                        && cmd_arr[0].as_str() == Some("botbox")
+                        && cmd_arr[1].as_str() == Some("hooks")
+                        && cmd_arr[2].as_str() == Some("run")
+                } else {
+                    false
+                }
+            })
+        })
+}
+
+/// Check if a specific hook command matches a hook name
+fn is_botbox_hook_command(h: &serde_json::Value, name: &str) -> bool {
+    let cmd = &h["command"];
+    if let Some(cmd_str) = cmd.as_str() {
+        cmd_str.contains(&format!("run {name}"))
+    } else if let Some(cmd_arr) = cmd.as_array() {
+        cmd_arr.len() >= 4
+            && cmd_arr[0].as_str() == Some("botbox")
+            && cmd_arr[1].as_str() == Some("hooks")
+            && cmd_arr[2].as_str() == Some("run")
+            && cmd_arr[3].as_str() == Some(name)
+    } else {
+        false
+    }
 }
 
 /// Validates a name against `[a-z0-9][a-z0-9-]*` to prevent shell injection.
@@ -366,7 +398,6 @@ fn register_botbus_hooks(root: &Path, config: &Config) -> Result<()> {
     let project_name = &config.project.name;
     let agent = config.default_agent();
 
-    // Validate names before using them in commands
     validate_name(project_name, "project name")?;
     validate_name(&channel, "channel name")?;
     for reviewer in &config.review.reviewers {
@@ -506,7 +537,6 @@ fn check_botbus_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) ->
     let empty_vec = vec![];
     let hooks = hooks_data["hooks"].as_array().unwrap_or(&empty_vec);
 
-    // Check router hook
     let router_claim = format!("agent://{}-router", config.project.name);
     let has_router = hooks.iter().any(|h| {
         h["condition"]["claim"]
@@ -521,7 +551,6 @@ fn check_botbus_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) ->
         ));
     }
 
-    // Check reviewer hooks
     for reviewer in &config.review.reviewers {
         let mention_name = format!("{}-{reviewer}", config.project.name);
         let has_reviewer = hooks.iter().any(|h| {
@@ -563,84 +592,38 @@ mod tests {
     }
 
     #[test]
-    fn settings_json_merge_preserves_non_botbox_hooks() {
-        let existing = json!({
-            "hooks": {
-                "SessionStart": [
-                    {
-                        "matcher": "",
-                        "hooks": [{"type": "command", "command": "my-custom-hook"}]
-                    },
-                    {
-                        "matcher": "",
-                        "hooks": [{"type": "command", "command": "botbox hooks run init-agent --project-root /tmp"}]
-                    }
-                ]
-            },
-            "other_setting": true
+    fn is_botbox_hook_entry_detects_string_command() {
+        let entry = json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "botbox hooks run session-start"}]
         });
+        assert!(is_botbox_hook_entry(&entry));
+    }
 
-        // Simulate the merge logic
-        let hooks_config: HashMap<String, Vec<serde_json::Value>> = {
-            let mut m = HashMap::new();
-            m.insert(
-                "SessionStart".to_string(),
-                vec![json!({
-                    "matcher": "",
-                    "hooks": [{"type": "command", "command": "botbox hooks run init-agent --project-root /new"}]
-                })],
-            );
-            m
-        };
+    #[test]
+    fn is_botbox_hook_entry_detects_array_command() {
+        let entry = json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": ["botbox", "hooks", "run", "session-start"]}]
+        });
+        assert!(is_botbox_hook_entry(&entry));
+    }
 
-        let existing_hooks = existing.get("hooks").cloned().unwrap_or_else(|| json!({}));
-        let mut merged_hooks = existing_hooks.as_object().cloned().unwrap_or_default();
+    #[test]
+    fn is_botbox_hook_entry_preserves_non_botbox() {
+        let entry = json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "my-custom-hook"}]
+        });
+        assert!(!is_botbox_hook_entry(&entry));
+    }
 
-        for (event, new_entries) in &hooks_config {
-            let existing_entries: Vec<serde_json::Value> = merged_hooks
-                .get(event)
-                .and_then(|v| v.as_array())
-                .map(|arr| {
-                    arr.iter()
-                        .filter(|entry| {
-                            !entry["hooks"]
-                                .as_array()
-                                .map(|hooks| {
-                                    hooks.iter().any(|h| {
-                                        h["command"]
-                                            .as_str()
-                                            .map(|cmd| cmd.contains("botbox hooks run"))
-                                            .unwrap_or(false)
-                                    })
-                                })
-                                .unwrap_or(false)
-                        })
-                        .cloned()
-                        .collect()
-                })
-                .unwrap_or_default();
-
-            let mut combined = existing_entries;
-            combined.extend(new_entries.iter().cloned());
-            merged_hooks.insert(event.clone(), serde_json::Value::Array(combined));
-        }
-
-        let result = serde_json::Value::Object(merged_hooks);
-        let session_start = result["SessionStart"].as_array().unwrap();
-
-        // Should have 2 entries: the custom one + the new botbox one
-        assert_eq!(session_start.len(), 2);
-        // First should be the custom hook (preserved)
-        assert_eq!(
-            session_start[0]["hooks"][0]["command"].as_str().unwrap(),
-            "my-custom-hook"
-        );
-        // Second should be the new botbox hook
-        assert!(
-            session_start[1]["hooks"][0]["command"]
-                .as_str()
-                .unwrap()
-                .contains("botbox hooks run")
-        );
+    #[test]
+    fn is_botbox_hook_entry_detects_old_format() {
+        let entry = json!({
+            "matcher": "",
+            "hooks": [{"type": "command", "command": "botbox hooks run init-agent --project-root /tmp"}]
+        });
+        assert!(is_botbox_hook_entry(&entry));
     }
 }

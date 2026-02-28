@@ -182,9 +182,12 @@ impl InitArgs {
         sync_design_docs(&agents_dir)?;
         println!("Copied design docs");
 
-        // Generate .claude/settings.json with hooks
-        sync_hooks(&project_dir)?;
-        println!("Generated .claude/settings.json with hooks config");
+        // Install global agent hooks (idempotent)
+        crate::commands::hooks::HooksCommand::Install {
+            project_root: Some(project_dir.clone()),
+        }
+        .execute()
+        .unwrap_or_else(|e| eprintln!("Warning: failed to install global hooks: {e}"));
 
         // Generate AGENTS.md
         if agents_md_path.exists() && !self.force {
@@ -830,96 +833,7 @@ fn sync_design_docs(agents_dir: &Path) -> Result<()> {
     Ok(())
 }
 
-fn sync_hooks(project_dir: &Path) -> Result<()> {
-    use crate::config::Config;
-    use crate::hooks::HookRegistry;
-    use std::collections::HashMap;
-
-    let claude_dir = project_dir.join(".claude");
-    fs::create_dir_all(&claude_dir)?;
-
-    let settings_path = claude_dir.join("settings.json");
-    // Canonicalize path to resolve symlinks and relative components
-    let canonical = project_dir
-        .canonicalize()
-        .unwrap_or_else(|_| project_dir.to_path_buf());
-    let project_root_str = canonical.display().to_string();
-
-    // Load config to determine eligible hooks
-    let config_path = config::find_config(project_dir).context("no config file found")?;
-    let config = Config::load(&config_path)?;
-    let eligible_hooks = HookRegistry::eligible(&config.tools);
-
-    // Group hooks by event type
-    let mut hooks_by_event: HashMap<String, Vec<serde_json::Value>> = HashMap::new();
-    for hook_entry in &eligible_hooks {
-        for event in hook_entry.events {
-            let hook_json = serde_json::json!({
-                "type": "command",
-                "command": ["botbox", "hooks", "run", hook_entry.name, "--project-root", &project_root_str]
-            });
-            hooks_by_event
-                .entry(event.as_str().to_string())
-                .or_default()
-                .push(hook_json);
-        }
-    }
-
-    // Merge with existing settings.json to preserve non-botbox hooks
-    let mut settings: serde_json::Value = if settings_path.exists() {
-        let content = fs::read_to_string(&settings_path)?;
-        serde_json::from_str(&content).unwrap_or_else(|_| serde_json::json!({}))
-    } else {
-        serde_json::json!({})
-    };
-
-    // For each event type, replace botbox entries while preserving others
-    let hooks = settings
-        .as_object_mut()
-        .context("settings.json is not an object")?
-        .entry("hooks")
-        .or_insert_with(|| serde_json::json!({}));
-
-    for (event_name, event_hooks) in &hooks_by_event {
-        let event_array = hooks
-            .as_object_mut()
-            .context("hooks is not an object")?
-            .entry(event_name)
-            .or_insert_with(|| serde_json::json!([]));
-
-        if let Some(arr) = event_array.as_array_mut() {
-            // Remove existing botbox entries (identified by command containing "botbox")
-            arr.retain(|entry| {
-                let is_botbox =
-                    entry
-                        .get("hooks")
-                        .and_then(|h| h.as_array())
-                        .is_some_and(|hooks| {
-                            hooks.iter().any(|hook| {
-                                hook.get("command")
-                                    .and_then(|c| c.as_array())
-                                    .is_some_and(|cmd| {
-                                        cmd.first().and_then(|c| c.as_str()) == Some("botbox")
-                                    })
-                            })
-                        });
-                !is_botbox
-            });
-
-            // Add botbox entry with all hooks for this event
-            let entry = serde_json::json!({
-                "matcher": "",
-                "hooks": event_hooks
-            });
-            arr.push(entry);
-        }
-    }
-
-    let pretty = serde_json::to_string_pretty(&settings)?;
-    fs::write(&settings_path, pretty)?;
-
-    Ok(())
-}
+// sync_hooks removed — hooks are now installed globally via `botbox hooks install`
 
 // --- Hook registration ---
 

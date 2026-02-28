@@ -138,11 +138,10 @@ impl SyncArgs {
         let docs_stale = self.check_docs_staleness(&agents_dir)?;
         let managed_stale = self.check_managed_section_staleness(&project_root, &config)?;
         let prompts_stale = self.check_prompts_staleness(&agents_dir)?;
-        let hooks_stale = self.check_hooks_staleness(&project_root)?;
         let design_docs_stale = self.check_design_docs_staleness(&agents_dir)?;
 
         let any_stale =
-            docs_stale || managed_stale || prompts_stale || hooks_stale || design_docs_stale;
+            docs_stale || managed_stale || prompts_stale || design_docs_stale;
 
         if self.check {
             if any_stale {
@@ -156,9 +155,6 @@ impl SyncArgs {
                 if prompts_stale {
                     parts.push("reviewer prompts");
                 }
-                if hooks_stale {
-                    parts.push("Claude Code hooks config");
-                }
                 if design_docs_stale {
                     parts.push("design docs");
                 }
@@ -169,6 +165,9 @@ impl SyncArgs {
                 return Ok(());
             }
         }
+
+        // Clean up per-repo hooks (now managed globally)
+        self.cleanup_per_repo_hooks(&project_root)?;
 
         // Perform updates
         let mut changed_files = Vec::new();
@@ -189,12 +188,6 @@ impl SyncArgs {
             self.sync_prompts(&agents_dir)?;
             changed_files.push(".agents/botbox/prompts/*.md");
             println!("Updated reviewer prompts");
-        }
-
-        if hooks_stale {
-            self.sync_hooks(&project_root, &agents_dir)?;
-            changed_files.push(".claude/settings.json");
-            println!("Updated Claude Code hooks config");
         }
 
         if design_docs_stale {
@@ -439,19 +432,96 @@ impl SyncArgs {
         Ok(installed != current)
     }
 
-    fn check_hooks_staleness(&self, project_root: &Path) -> Result<bool> {
-        // Check if Pi extension exists — if not, hooks need deploying
-        let pi_ext = project_root.join(".pi/extensions/botbox-hooks.ts");
-        if !pi_ext.exists() {
-            return Ok(true);
+    /// Clean up per-repo hooks that are now managed globally.
+    /// Removes botbox hooks from per-repo .claude/settings.json and .pi/extensions/.
+    fn cleanup_per_repo_hooks(&self, project_root: &Path) -> Result<()> {
+        if self.check {
+            return Ok(());
         }
-        // Check if content matches current template
-        if let Ok(current) = fs::read_to_string(&pi_ext) {
-            if current != super::hooks::PI_BOTBOX_HOOKS_EXTENSION {
-                return Ok(true);
+
+        // Clean up per-repo .claude/settings.json botbox hooks
+        let settings_path = project_root.join(".claude/settings.json");
+        if settings_path.exists() {
+            let content = fs::read_to_string(&settings_path)?;
+            if let Ok(mut settings) = serde_json::from_str::<serde_json::Value>(&content) {
+                let mut changed = false;
+                if let Some(hooks) = settings.get_mut("hooks").and_then(|h| h.as_object_mut()) {
+                    for (_event, entries) in hooks.iter_mut() {
+                        if let Some(arr) = entries.as_array_mut() {
+                            let before = arr.len();
+                            arr.retain(|entry| {
+                                !entry["hooks"]
+                                    .as_array()
+                                    .is_some_and(|hooks| {
+                                        hooks.iter().any(|h| {
+                                            let cmd = &h["command"];
+                                            if let Some(s) = cmd.as_str() {
+                                                s.contains("botbox hooks run")
+                                            } else if let Some(a) = cmd.as_array() {
+                                                a.len() >= 3
+                                                    && a[0].as_str() == Some("botbox")
+                                                    && a[1].as_str() == Some("hooks")
+                                                    && a[2].as_str() == Some("run")
+                                            } else {
+                                                false
+                                            }
+                                        })
+                                    })
+                            });
+                            if arr.len() != before {
+                                changed = true;
+                            }
+                        }
+                    }
+                    // Remove empty event arrays
+                    hooks.retain(|_, v| {
+                        v.as_array().map(|a| !a.is_empty()).unwrap_or(true)
+                    });
+                }
+
+                if changed {
+                    // Remove hooks key entirely if empty
+                    if settings
+                        .get("hooks")
+                        .and_then(|h| h.as_object())
+                        .is_some_and(|h| h.is_empty())
+                    {
+                        settings.as_object_mut().unwrap().remove("hooks");
+                    }
+
+                    // Only write back if there's other content; delete if empty
+                    if settings.as_object().is_some_and(|o| o.is_empty()) {
+                        fs::remove_file(&settings_path)?;
+                        // Also remove .claude dir if empty
+                        let claude_dir = project_root.join(".claude");
+                        if claude_dir.exists() && fs::read_dir(&claude_dir)?.next().is_none() {
+                            fs::remove_dir(&claude_dir)?;
+                        }
+                    } else {
+                        fs::write(&settings_path, serde_json::to_string_pretty(&settings)?)?;
+                    }
+                    println!("Cleaned up per-repo botbox hooks from .claude/settings.json (now managed globally via `botbox hooks install`)");
+                }
             }
         }
-        Ok(false)
+
+        // Clean up per-repo Pi extension
+        let pi_ext = project_root.join(".pi/extensions/botbox-hooks.ts");
+        if pi_ext.exists() {
+            fs::remove_file(&pi_ext)?;
+            // Clean up empty dirs
+            let pi_ext_dir = project_root.join(".pi/extensions");
+            if pi_ext_dir.exists() && fs::read_dir(&pi_ext_dir)?.next().is_none() {
+                fs::remove_dir(&pi_ext_dir)?;
+            }
+            let pi_dir = project_root.join(".pi");
+            if pi_dir.exists() && fs::read_dir(&pi_dir)?.next().is_none() {
+                fs::remove_dir(&pi_dir)?;
+            }
+            println!("Cleaned up per-repo Pi extension (now managed globally via `botbox hooks install`)");
+        }
+
+        Ok(())
     }
 
     fn check_design_docs_staleness(&self, agents_dir: &Path) -> Result<bool> {
@@ -509,52 +579,7 @@ impl SyncArgs {
         Ok(())
     }
 
-    fn sync_hooks(&self, project_root: &Path, _agents_dir: &Path) -> Result<()> {
-        // Generate .claude/settings.json with hook commands
-        // Merge with existing settings to preserve non-botbox hooks
-        let claude_dir = project_root.join(".claude");
-        fs::create_dir_all(&claude_dir)?;
-
-        let settings_path = claude_dir.join("settings.json");
-        let project_root_str = project_root.display().to_string();
-
-        let botbox_hooks = serde_json::json!({
-            "hooks": {
-                "SessionStart": [{
-                    "matcher": "",
-                    "hooks": [
-                        {
-                            "type": "command",
-                            "command": format!("botbox hooks run init-agent --project-root {project_root_str}")
-                        },
-                        {
-                            "type": "command",
-                            "command": format!("botbox hooks run check-jj --project-root {project_root_str}")
-                        }
-                    ]
-                }],
-                "PostToolUse": [{
-                    "matcher": "",
-                    "hooks": [{
-                        "type": "command",
-                        "command": format!("botbox hooks run check-bus-inbox --project-root {project_root_str}")
-                    }]
-                }]
-            }
-        });
-
-        let pretty = serde_json::to_string_pretty(&botbox_hooks)?;
-        fs::write(&settings_path, pretty)?;
-
-        // Deploy Pi extension (equivalent of Claude hooks)
-        let pi_ext_path = project_root.join(".pi/extensions/botbox-hooks.ts");
-        if let Some(parent) = pi_ext_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::write(&pi_ext_path, super::hooks::PI_BOTBOX_HOOKS_EXTENSION)?;
-
-        Ok(())
-    }
+    // sync_hooks removed — hooks are now installed globally via `botbox hooks install`
 
     fn sync_design_docs(&self, agents_dir: &Path) -> Result<()> {
         let design_dir = agents_dir.join("design");
@@ -583,8 +608,6 @@ impl SyncArgs {
         let managed_paths: &[&str] = &[
             ".agents/botbox/",
             "AGENTS.md",
-            ".claude/settings.json",
-            ".pi/",
             ".critignore",
             ".botbox.toml",
             ".botbox.json",
