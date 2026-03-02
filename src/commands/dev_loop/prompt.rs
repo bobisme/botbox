@@ -381,7 +381,9 @@ Process each message:
 Run: maw exec default -- bn triage
 This gives you scored top picks, blockers, quick wins, and project health in one command.
 Use `maw exec default -- bn next N` to get top N triaged bones for dispatch (e.g., `bn next 4` for 4 workers).
-If no actionable bones and inbox created none: output <promise>COMPLETE</promise> and stop.
+If no actionable bones and inbox created none:
+  bus send --agent {agent} {project} "No ready bones found — nothing to work on. Use 'bn triage' to check backlog or send a task request." -L agent-idle
+  output <promise>COMPLETE</promise> and stop.
 {mission_triage}
 GROOM each ready bone:
 - maw exec default -- bn show <id> — ensure clear title, description, acceptance criteria, priority, and risk label
