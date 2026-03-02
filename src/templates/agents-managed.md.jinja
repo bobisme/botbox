@@ -112,7 +112,7 @@ All commands support JSON output with `--format json` for parsing. If a command 
 
 - Create a bone before starting work. Update state: `open` → `doing` → `done`.
 - Post progress comments during work for crash recovery.
-- **Run checks before requesting review**: {% if check_command %}`{{ check_command }}`{% else %}`just check` (or your project's build/test command){% endif %}. Fix any failures before proceeding.
+- **Run checks before committing**: {% if check_command %}`{{ check_command }}`{% else %}`just check` (or your project's build/test command){% endif %}. Fix any failures before proceeding.
 - After finishing a bone, follow [finish.md](.agents/botbox/finish.md). **Workers: do NOT push** — the lead handles merges and pushes.
 {% if install_command %}- **Install locally** after releasing: `{{ install_command }}`
 {% endif %}
