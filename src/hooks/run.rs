@@ -250,12 +250,14 @@ fn find_ancestor_with(start: &Path, marker: &str) -> Option<std::path::PathBuf> 
     }
 }
 
-/// Walk up from `start` looking for .botbox.toml or .botbox.json.
+/// Walk up from `start` looking for an edict/botbox config file.
 /// Returns the config file path if found.
 fn find_botbox_config(start: &Path) -> Option<std::path::PathBuf> {
+    // Current name first, then legacy names in order of recency
+    const CONFIG_NAMES: &[&str] = &[".edict.toml", ".botbox.toml", ".botbox.json"];
     let mut dir = start.to_path_buf();
     loop {
-        for name in &[".botbox.toml", ".botbox.json"] {
+        for name in CONFIG_NAMES {
             let p = dir.join(name);
             if p.exists() {
                 return Some(p);
@@ -264,7 +266,7 @@ fn find_botbox_config(start: &Path) -> Option<std::path::PathBuf> {
         // Also check ws/default/
         let ws_default = dir.join("ws/default");
         if ws_default.exists() {
-            for name in &[".botbox.toml", ".botbox.json"] {
+            for name in CONFIG_NAMES {
                 let p = ws_default.join(name);
                 if p.exists() {
                     return Some(p);
@@ -364,7 +366,16 @@ mod tests {
     }
 
     #[test]
-    fn find_botbox_config_direct() {
+    fn find_botbox_config_edict_toml_preferred() {
+        let tmp = tempfile::tempdir().unwrap();
+        fs::write(tmp.path().join(".edict.toml"), "").unwrap();
+        fs::write(tmp.path().join(".botbox.toml"), "").unwrap();
+        let result = find_botbox_config(tmp.path());
+        assert_eq!(result, Some(tmp.path().join(".edict.toml")));
+    }
+
+    #[test]
+    fn find_botbox_config_legacy_toml_accepted() {
         let tmp = tempfile::tempdir().unwrap();
         fs::write(tmp.path().join(".botbox.toml"), "").unwrap();
         let result = find_botbox_config(tmp.path());
@@ -375,11 +386,11 @@ mod tests {
     fn find_botbox_config_ws_default() {
         let tmp = tempfile::tempdir().unwrap();
         fs::create_dir_all(tmp.path().join("ws/default")).unwrap();
-        fs::write(tmp.path().join("ws/default/.botbox.toml"), "").unwrap();
+        fs::write(tmp.path().join("ws/default/.edict.toml"), "").unwrap();
         let result = find_botbox_config(tmp.path());
         assert_eq!(
             result,
-            Some(tmp.path().join("ws/default/.botbox.toml"))
+            Some(tmp.path().join("ws/default/.edict.toml"))
         );
     }
 

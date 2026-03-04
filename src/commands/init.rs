@@ -895,7 +895,7 @@ pub(super) fn register_router_hook(
     let env_inherit = "BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
     let claim_uri = format!("agent://{name}-dev");
     let spawn_name = format!("{name}-responder");
-    let description = format!("botbox:{name}:responder");
+    let description = format!("edict:{name}:responder");
 
     let mut args: Vec<&str> = vec![
         "--agent",
@@ -926,7 +926,7 @@ pub(super) fn register_router_hook(
         "--cwd",
         spawn_cwd,
         "--",
-        "botbox",
+        "edict",
         "run",
         "responder",
     ]);
@@ -951,7 +951,7 @@ pub(super) fn register_reviewer_hook(
     let role = reviewer_agent
         .strip_prefix(&format!("{name}-"))
         .unwrap_or(reviewer_agent);
-    let description = format!("botbox:{name}:reviewer-{role}");
+    let description = format!("edict:{name}:reviewer-{role}");
 
     let mut args: Vec<&str> = vec![
         "--agent",
@@ -986,7 +986,7 @@ pub(super) fn register_reviewer_hook(
         "--cwd",
         spawn_cwd,
         "--",
-        "botbox",
+        "edict",
         "run",
         "reviewer-loop",
         "--agent",

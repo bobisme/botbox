@@ -102,22 +102,24 @@ impl SyncArgs {
             return self.handle_bare_repo(&project_root);
         }
 
-        let agents_dir = project_root.join(".agents/botbox");
-        if !agents_dir.exists() {
+        // Check for agents dir — accept new (.agents/edict/) or legacy (.agents/botbox/)
+        let agents_dir_edict = project_root.join(".agents/edict");
+        let agents_dir_legacy = project_root.join(".agents/botbox");
+        if !agents_dir_edict.exists() && !agents_dir_legacy.exists() {
             return Err(ExitError::Other(
-                "No .agents/botbox/ found. Run `botbox init` first.".to_string(),
+                "No .agents/edict/ found. Run `edict init` first.".to_string(),
             )
             .into());
         }
 
-        // Load config (.botbox.toml preferred, .botbox.json fallback)
+        // Load config (.edict.toml preferred, legacy names as fallback)
         let config_path = crate::config::find_config(&project_root).ok_or_else(|| {
-            ExitError::Config("No .botbox.toml or .botbox.json found".to_string())
+            ExitError::Config("No .edict.toml or .botbox.toml found".to_string())
         })?;
         let config = Config::load(&config_path)
             .with_context(|| format!("Failed to parse {}", config_path.display()))?;
 
-        // Migrate .botbox.json -> .botbox.toml if needed
+        // Migrate .botbox.json -> .edict.toml if needed (JSON is oldest legacy)
         let json_path = project_root.join(crate::config::CONFIG_JSON);
         let toml_path = project_root.join(crate::config::CONFIG_TOML);
         if json_path.exists() && !toml_path.exists() {
@@ -126,13 +128,37 @@ impl SyncArgs {
                 Ok(toml_content) => {
                     fs::write(&toml_path, &toml_content)?;
                     fs::remove_file(&json_path)?;
-                    println!("Migrated .botbox.json -> .botbox.toml");
+                    println!("Migrated .botbox.json -> .edict.toml");
                 }
                 Err(e) => {
-                    tracing::warn!("failed to migrate .botbox.json to .botbox.toml: {e}");
+                    tracing::warn!("failed to migrate .botbox.json to .edict.toml: {e}");
                 }
             }
         }
+
+        // Migrate .botbox.toml -> .edict.toml (botbox era → edict era)
+        let legacy_toml_path = project_root.join(crate::config::CONFIG_TOML_LEGACY);
+        if legacy_toml_path.exists() && !toml_path.exists() {
+            match fs::rename(&legacy_toml_path, &toml_path) {
+                Ok(()) => println!("Migrated .botbox.toml -> .edict.toml"),
+                Err(e) => tracing::warn!("failed to rename .botbox.toml to .edict.toml: {e}"),
+            }
+        }
+
+        // Migrate .agents/botbox/ -> .agents/edict/ (botbox era → edict era)
+        if agents_dir_legacy.exists() && !agents_dir_edict.exists() {
+            match fs::rename(&agents_dir_legacy, &agents_dir_edict) {
+                Ok(()) => println!("Migrated .agents/botbox/ -> .agents/edict/"),
+                Err(e) => tracing::warn!("failed to rename .agents/botbox/ to .agents/edict/: {e}"),
+            }
+        }
+
+        // Resolved agents dir (after any migration above)
+        let agents_dir = if agents_dir_edict.exists() {
+            agents_dir_edict
+        } else {
+            agents_dir_legacy
+        };
 
         // Check staleness for each component
         let docs_stale = self.check_docs_staleness(&agents_dir)?;
@@ -174,7 +200,7 @@ impl SyncArgs {
 
         if docs_stale {
             self.sync_workflow_docs(&agents_dir)?;
-            changed_files.push(".agents/botbox/*.md");
+            changed_files.push(".agents/edict/*.md");
             println!("Updated workflow docs");
         }
 
@@ -186,21 +212,24 @@ impl SyncArgs {
 
         if prompts_stale {
             self.sync_prompts(&agents_dir)?;
-            changed_files.push(".agents/botbox/prompts/*.md");
+            changed_files.push(".agents/edict/prompts/*.md");
             println!("Updated reviewer prompts");
         }
 
         if design_docs_stale {
             self.sync_design_docs(&agents_dir)?;
-            changed_files.push(".agents/botbox/design/*.md");
+            changed_files.push(".agents/edict/design/*.md");
             println!("Updated design docs");
         }
 
         // Clean up legacy JS artifacts (scripts, shell hooks)
         self.cleanup_legacy_artifacts(&agents_dir, &mut changed_files);
 
-        // Migrate bus hooks from bun .mjs to botbox run
+        // Migrate bus hooks from bun .mjs to edict run
         migrate_bus_hooks(&config);
+
+        // Migrate bus hooks from botbox: descriptions to edict: descriptions
+        migrate_botbox_bus_hooks_to_edict(&config, &project_root);
 
         // Fix hook --cwd for maw v2 (ws/default → repo root)
         migrate_hook_cwd(&config, &project_root);
@@ -228,17 +257,17 @@ impl SyncArgs {
             .canonicalize()
             .context("canonicalizing project root")?;
 
-        // Validate this is actually a botbox project
+        // Validate this is actually an edict project
         if crate::config::find_config(&project_root).is_none()
             && crate::config::find_config(&project_root.join("ws/default")).is_none()
         {
             anyhow::bail!(
-                "not a botbox project: no .botbox.toml or .botbox.json found in {}",
+                "not an edict project: no .edict.toml or .botbox.toml found in {}",
                 project_root.display()
             );
         }
 
-        let mut args = vec!["exec", "default", "--", "botbox", "sync"];
+        let mut args = vec!["exec", "default", "--", "edict", "sync"];
         if self.check {
             args.push("--check");
         }
@@ -248,32 +277,31 @@ impl SyncArgs {
 
         run_command("maw", &args, Some(&project_root))?;
 
-        // Clean up stale .botbox.json at bare repo root.
+        // Clean up stale legacy config files at bare repo root.
         //
-        // After TOML migration runs inside ws/default/, the bare root may still have an
-        // old .botbox.json (e.g., from before the project was converted to a maw v2 bare
-        // repo). Agents that resolve config from the project root would previously find
-        // this stale JSON before ws/default/.botbox.toml, loading wrong identity/channel.
+        // After migration runs inside ws/default/, the bare root may still have stale
+        // .botbox.json or .botbox.toml files. Agents resolving config from the project root
+        // would find these before the authoritative ws/default/.edict.toml.
         //
-        // We only remove the root JSON when ws/default has a config (TOML or JSON),
-        // ensuring the authoritative config is safely in place first.
-        let root_json = project_root.join(crate::config::CONFIG_JSON);
-        if root_json.exists()
-            && crate::config::find_config(&project_root.join("ws/default")).is_some()
-        {
-            if self.check {
-                tracing::warn!("stale .botbox.json at bare repo root (will be removed on sync)");
-                return Err(
-                    ExitError::new(1, "Stale .botbox.json at bare repo root".to_string()).into(),
-                );
-            } else {
-                match fs::remove_file(&root_json) {
-                    Ok(()) => println!(
-                        "Removed stale .botbox.json from bare repo root \
-                         (authoritative config lives in ws/default/)"
-                    ),
-                    Err(e) => {
-                        tracing::warn!("failed to remove stale .botbox.json at bare root: {e}")
+        // Only remove when ws/default has a config, ensuring the authoritative config is in place.
+        let ws_has_config = crate::config::find_config(&project_root.join("ws/default")).is_some();
+        for stale_name in &[crate::config::CONFIG_JSON, crate::config::CONFIG_TOML_LEGACY] {
+            let stale_path = project_root.join(stale_name);
+            if stale_path.exists() && ws_has_config {
+                if self.check {
+                    tracing::warn!("stale {stale_name} at bare repo root (will be removed on sync)");
+                    return Err(
+                        ExitError::new(1, format!("Stale {stale_name} at bare repo root")).into(),
+                    );
+                } else {
+                    match fs::remove_file(&stale_path) {
+                        Ok(()) => println!(
+                            "Removed stale {stale_name} from bare repo root \
+                             (authoritative config lives in ws/default/)"
+                        ),
+                        Err(e) => {
+                            tracing::warn!("failed to remove stale {stale_name} at bare root: {e}")
+                        }
                     }
                 }
             }
@@ -665,7 +693,103 @@ impl SyncArgs {
     }
 }
 
-/// Migrate bus hooks from legacy formats to current `botbox run` commands with descriptions.
+/// Migrate bus hooks from `botbox:` descriptions to `edict:` descriptions.
+///
+/// Finds hooks with `botbox:{name}:responder` or `botbox:{name}:reviewer-*` descriptions,
+/// removes them, and re-registers with `edict:` prefix and `edict run` commands.
+/// Called during `edict sync` on projects that were previously set up with `botbox`.
+fn migrate_botbox_bus_hooks_to_edict(config: &Config, project_root: &Path) {
+    let output = match Tool::new("bus")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(o) if o.success() => o,
+        _ => return,
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let hooks = match parsed.get("hooks").and_then(|h| h.as_array()) {
+        Some(h) => h,
+        None => return,
+    };
+
+    let name = &config.project.name;
+
+    // Resolve the correct cwd (bare root or project root)
+    let bare_root = if project_root.ends_with("ws/default") {
+        project_root
+            .parent()
+            .and_then(Path::parent)
+            .filter(|r| r.join(".manifold").exists())
+    } else if project_root.join(".manifold").exists() {
+        Some(project_root)
+    } else {
+        None
+    };
+    let root_str = bare_root
+        .map(|r| r.display().to_string())
+        .unwrap_or_else(|| project_root.display().to_string());
+
+    for hook in hooks {
+        let desc = hook
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
+
+        // Only process botbox-era hooks for this project
+        if !desc.starts_with(&format!("botbox:{name}:")) {
+            continue;
+        }
+
+        let id = match hook.get("id").and_then(|i| i.as_str()) {
+            Some(id) => id,
+            None => continue,
+        };
+
+        // Remove old botbox hook
+        if Tool::new("bus")
+            .args(&["hooks", "remove", id])
+            .run()
+            .is_err()
+        {
+            tracing::warn!(hook_id = %id, "failed to remove botbox-era hook during edict migration");
+            continue;
+        }
+
+        let agent = config.default_agent();
+        if desc.ends_with(":responder") {
+            let responder_ml = config
+                .agents
+                .responder
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
+            super::init::register_router_hook(&root_str, &root_str, name, &agent, responder_ml);
+            println!("  Migrated hook {desc} → edict:{name}:responder");
+        } else if let Some(role) = desc.strip_prefix(&format!("botbox:{name}:reviewer-")) {
+            let reviewer_agent = format!("{name}-{role}");
+            let reviewer_ml = config
+                .agents
+                .reviewer
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
+            super::init::register_reviewer_hook(
+                &root_str,
+                &root_str,
+                name,
+                &agent,
+                &reviewer_agent,
+                reviewer_ml,
+            );
+            println!("  Migrated hook {desc} → edict:{name}:reviewer-{role}");
+        }
+    }
+}
+
+/// Migrate bus hooks from legacy formats to current `edict run` commands with descriptions.
 ///
 /// Lists all hooks for this project's channel, identifies legacy hooks
 /// (bun-based, old naming, missing descriptions), removes them, and
@@ -707,12 +831,13 @@ fn migrate_bus_hooks(config: &Config) {
             continue;
         }
 
-        // Skip hooks that already have a botbox description (already migrated)
+        // Skip hooks that already have an edict: or botbox: description (already migrated by
+        // migrate_bus_hooks or migrate_botbox_bus_hooks_to_edict respectively)
         let existing_desc = hook
             .get("description")
             .and_then(|d| d.as_str())
             .unwrap_or("");
-        if existing_desc.starts_with("botbox:") {
+        if existing_desc.starts_with("edict:") || existing_desc.starts_with("botbox:") {
             continue;
         }
 
@@ -754,7 +879,7 @@ fn migrate_bus_hooks(config: &Config) {
         if is_router {
             let claim_uri = format!("agent://{name}-dev");
             let spawn_name = format!("{name}-responder");
-            let description = format!("botbox:{name}:responder");
+            let description = format!("edict:{name}:responder");
             let responder_ml = config
                 .agents
                 .responder
@@ -790,13 +915,13 @@ fn migrate_bus_hooks(config: &Config) {
                 "--cwd",
                 spawn_cwd,
                 "--",
-                "botbox",
+                "edict",
                 "run",
                 "responder",
             ]);
 
             match crate::subprocess::ensure_bus_hook(&description, &router_args) {
-                Ok(_) => println!("  Migrated router hook {id} → botbox run responder"),
+                Ok(_) => println!("  Migrated router hook {id} → edict run responder"),
                 Err(e) => tracing::warn!("failed to re-register router hook: {e}"),
             }
         } else if is_reviewer {
@@ -816,7 +941,7 @@ fn migrate_bus_hooks(config: &Config) {
                 .strip_prefix(&format!("{name}-"))
                 .unwrap_or(&reviewer_agent);
             let claim_uri = format!("agent://{reviewer_agent}");
-            let description = format!("botbox:{name}:reviewer-{role}");
+            let description = format!("edict:{name}:reviewer-{role}");
             let reviewer_ml = config
                 .agents
                 .reviewer
@@ -856,7 +981,7 @@ fn migrate_bus_hooks(config: &Config) {
                 "--cwd",
                 spawn_cwd,
                 "--",
-                "botbox",
+                "edict",
                 "run",
                 "reviewer-loop",
                 "--agent",
@@ -865,7 +990,7 @@ fn migrate_bus_hooks(config: &Config) {
 
             match crate::subprocess::ensure_bus_hook(&description, &reviewer_args) {
                 Ok(_) => println!(
-                    "  Migrated reviewer hook {id} → botbox run reviewer-loop --agent {reviewer_agent}"
+                    "  Migrated reviewer hook {id} → edict run reviewer-loop --agent {reviewer_agent}"
                 ),
                 Err(e) => tracing::warn!(agent = %reviewer_agent, "failed to re-register reviewer hook: {e}"),
             }
@@ -932,7 +1057,10 @@ fn migrate_hook_cwd(config: &Config, project_root: &Path) {
             .get("description")
             .and_then(|d| d.as_str())
             .unwrap_or("");
-        if !desc.starts_with(&format!("botbox:{name}:")) {
+        // Accept both current and legacy description prefixes
+        let is_ours = desc.starts_with(&format!("edict:{name}:"))
+            || desc.starts_with(&format!("botbox:{name}:"));
+        if !is_ours {
             continue;
         }
 
@@ -1027,7 +1155,7 @@ fn migrate_router_hook_claim(config: &Config, project_root: &Path) {
             .get("description")
             .and_then(|d| d.as_str())
             .unwrap_or("");
-        if desc != format!("botbox:{name}:responder") {
+        if desc != format!("edict:{name}:responder") && desc != format!("botbox:{name}:responder") {
             continue;
         }
 

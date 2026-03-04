@@ -9,16 +9,25 @@ use serde::{Deserialize, Serialize};
 use crate::error::ExitError;
 
 /// Config file name constants.
-pub const CONFIG_TOML: &str = ".botbox.toml";
+pub const CONFIG_TOML: &str = ".edict.toml";
+/// Legacy config name from the botbox era — accepted on read, migrated to CONFIG_TOML on sync.
+pub const CONFIG_TOML_LEGACY: &str = ".botbox.toml";
 pub const CONFIG_JSON: &str = ".botbox.json";
 
-/// Find the config file path, preferring .botbox.toml over .botbox.json.
-/// Returns None if neither exists.
+/// Find the config file path, preferring the current name over legacy names.
+/// Returns None if none exist.
 pub fn find_config(dir: &Path) -> Option<PathBuf> {
+    // Current name
     let toml_path = dir.join(CONFIG_TOML);
     if toml_path.exists() {
         return Some(toml_path);
     }
+    // Legacy TOML name (botbox era, migrated to .edict.toml on sync)
+    let legacy_toml_path = dir.join(CONFIG_TOML_LEGACY);
+    if legacy_toml_path.exists() {
+        return Some(legacy_toml_path);
+    }
+    // Oldest legacy JSON name
     let json_path = dir.join(CONFIG_JSON);
     if json_path.exists() {
         return Some(json_path);
@@ -30,10 +39,12 @@ pub fn find_config(dir: &Path) -> Option<PathBuf> {
 /// Returns (config_path, config_dir) or an error.
 ///
 /// Priority order (highest first):
-/// 1. Root `.botbox.toml` — explicit root-level TOML (non-bare repos or intentional)
-/// 2. `ws/default/.botbox.toml` — maw v2 bare repo authoritative config (beats stale root JSON)
-/// 3. Root `.botbox.json` — legacy pre-migration config
-/// 4. `ws/default/.botbox.json` — maw v2 not yet migrated to TOML
+/// 1. Root `.edict.toml` — current canonical name
+/// 2. `ws/default/.edict.toml` — maw v2 bare repo, current name
+/// 3. Root `.botbox.toml` — legacy name, migrated to .edict.toml on sync
+/// 4. `ws/default/.botbox.toml` — maw v2 bare repo, legacy name
+/// 5. Root `.botbox.json` — oldest legacy format
+/// 6. `ws/default/.botbox.json` — maw v2 oldest legacy
 ///
 /// In maw v2 bare repos, the TOML migration runs inside ws/default. This can leave a
 /// stale `.botbox.json` at the bare root (with wrong project name / agent identity) that
@@ -42,32 +53,44 @@ pub fn find_config(dir: &Path) -> Option<PathBuf> {
 pub fn find_config_in_project(root: &Path) -> anyhow::Result<(PathBuf, PathBuf)> {
     let ws_default = root.join("ws/default");
 
-    // 1. Root TOML — always authoritative when present
+    // 1. Root .edict.toml — current canonical name
     let root_toml = root.join(CONFIG_TOML);
     if root_toml.exists() {
         return Ok((root_toml, root.to_path_buf()));
     }
 
-    // 2. ws/default TOML — maw v2 bare repo (preferred over stale root JSON)
+    // 2. ws/default .edict.toml — maw v2 bare repo, current name
     let ws_toml = ws_default.join(CONFIG_TOML);
     if ws_toml.exists() {
         return Ok((ws_toml, ws_default));
     }
 
-    // 3. Root JSON — legacy single-workspace layout or pre-migration bare repo
+    // 3. Root .botbox.toml — legacy name, will be migrated on sync
+    let root_legacy_toml = root.join(CONFIG_TOML_LEGACY);
+    if root_legacy_toml.exists() {
+        return Ok((root_legacy_toml, root.to_path_buf()));
+    }
+
+    // 4. ws/default .botbox.toml — maw v2 legacy
+    let ws_legacy_toml = ws_default.join(CONFIG_TOML_LEGACY);
+    if ws_legacy_toml.exists() {
+        return Ok((ws_legacy_toml, ws_default));
+    }
+
+    // 5. Root JSON — oldest legacy format
     let root_json = root.join(CONFIG_JSON);
     if root_json.exists() {
         return Ok((root_json, root.to_path_buf()));
     }
 
-    // 4. ws/default JSON — maw v2 with JSON config not yet migrated to TOML
+    // 6. ws/default JSON — maw v2 not yet migrated
     let ws_json = ws_default.join(CONFIG_JSON);
     if ws_json.exists() {
         return Ok((ws_json, ws_default));
     }
 
     anyhow::bail!(
-        "no .botbox.toml or .botbox.json found in {} or ws/default/",
+        "no .edict.toml or .botbox.toml found in {} or ws/default/",
         root.display()
     )
 }
@@ -997,9 +1020,20 @@ botty = true
     }
 
     #[test]
-    fn find_config_prefers_toml() {
+    fn find_config_prefers_edict_toml() {
         let dir = tempfile::tempdir().unwrap();
-        // Create both files
+        // All three exist — .edict.toml wins
+        std::fs::write(dir.path().join(".edict.toml"), "").unwrap();
+        std::fs::write(dir.path().join(".botbox.toml"), "").unwrap();
+        std::fs::write(dir.path().join(".botbox.json"), "").unwrap();
+
+        let found = find_config(dir.path()).unwrap();
+        assert!(found.to_string_lossy().ends_with(".edict.toml"));
+    }
+
+    #[test]
+    fn find_config_falls_back_to_legacy_toml() {
+        let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join(".botbox.toml"), "").unwrap();
         std::fs::write(dir.path().join(".botbox.json"), "").unwrap();
 
@@ -1027,30 +1061,41 @@ botty = true
     #[test]
     fn find_config_in_project_root_toml_preferred() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join(".botbox.toml"), "").unwrap();
+        std::fs::write(dir.path().join(".edict.toml"), "").unwrap();
         std::fs::write(dir.path().join(".botbox.json"), "").unwrap();
 
         let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
-        assert!(path.to_string_lossy().ends_with(".botbox.toml"));
+        assert!(path.to_string_lossy().ends_with(".edict.toml"));
         assert_eq!(config_dir, dir.path());
     }
 
     #[test]
     fn find_config_in_project_ws_toml_beats_root_json() {
-        // maw v2 scenario: stale .botbox.json at bare root, migrated .botbox.toml in ws/default
+        // maw v2 scenario: stale .botbox.json at bare root, migrated .edict.toml in ws/default
         let dir = tempfile::tempdir().unwrap();
         let ws_default = dir.path().join("ws/default");
         std::fs::create_dir_all(&ws_default).unwrap();
 
         std::fs::write(dir.path().join(".botbox.json"), "").unwrap(); // stale root JSON
-        std::fs::write(ws_default.join(".botbox.toml"), "").unwrap(); // current ws/default TOML
+        std::fs::write(ws_default.join(".edict.toml"), "").unwrap(); // current ws/default TOML
 
         let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
         assert!(
-            path.to_string_lossy().ends_with(".botbox.toml"),
+            path.to_string_lossy().ends_with(".edict.toml"),
             "ws/default TOML should beat stale root JSON, got: {path:?}"
         );
         assert_eq!(config_dir, ws_default);
+    }
+
+    #[test]
+    fn find_config_in_project_legacy_toml_accepted() {
+        // Pre-migration: .botbox.toml still present, no .edict.toml yet
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".botbox.toml"), "").unwrap();
+
+        let (path, config_dir) = find_config_in_project(dir.path()).unwrap();
+        assert!(path.to_string_lossy().ends_with(".botbox.toml"));
+        assert_eq!(config_dir, dir.path());
     }
 
     #[test]
@@ -1086,7 +1131,7 @@ botty = true
             result
                 .unwrap_err()
                 .to_string()
-                .contains("no .botbox.toml or .botbox.json")
+                .contains("no .edict.toml or .botbox.toml")
         );
     }
 

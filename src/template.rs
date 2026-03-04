@@ -5,8 +5,11 @@ use serde::Serialize;
 
 use crate::config::{Config, ReviewConfig, ToolsConfig};
 
-const MANAGED_START: &str = "<!-- botbox:managed-start -->";
-const MANAGED_END: &str = "<!-- botbox:managed-end -->";
+const MANAGED_START: &str = "<!-- edict:managed-start -->";
+const MANAGED_END: &str = "<!-- edict:managed-end -->";
+/// Legacy markers from the botbox era — recognized on read, replaced with new markers on write.
+const MANAGED_START_LEGACY: &str = "<!-- botbox:managed-start -->";
+const MANAGED_END_LEGACY: &str = "<!-- botbox:managed-end -->";
 
 const AGENTS_MANAGED_TEMPLATE: &str = include_str!("templates/agents-managed.md.jinja");
 
@@ -197,23 +200,41 @@ pub fn render_agents_md(config: &Config) -> anyhow::Result<String> {
     ))
 }
 
-/// Update the managed section in an existing AGENTS.md
+/// Update the managed section in an existing AGENTS.md.
+///
+/// Handles both current (`edict:managed-*`) and legacy (`botbox:managed-*`) markers,
+/// always writing back with current markers. This enables automatic migration of
+/// AGENTS.md files from botbox-era projects on the next `edict sync`.
 pub fn update_managed_section(content: &str, ctx: &TemplateContext) -> anyhow::Result<String> {
     let managed = render_managed_section(ctx)?;
     let full_managed = format!("{}\n{}\n{}", MANAGED_START, managed, MANAGED_END);
 
+    // Try current markers first
     if let Some(start_idx) = content.find(MANAGED_START)
         && let Some(end_idx) = content.find(MANAGED_END)
         && end_idx > start_idx
     {
-        // Valid markers, replace content between them
         let before = &content[..start_idx];
         let after = &content[end_idx + MANAGED_END.len()..];
         return Ok(format!("{}{}{}", before, full_managed, after));
     }
 
-    // Missing or invalid markers — append a clean managed section
-    let temp = content.replace(MANAGED_START, "").replace(MANAGED_END, "");
+    // Try legacy markers (botbox era) — replace them with current markers
+    if let Some(start_idx) = content.find(MANAGED_START_LEGACY)
+        && let Some(end_idx) = content.find(MANAGED_END_LEGACY)
+        && end_idx > start_idx
+    {
+        let before = &content[..start_idx];
+        let after = &content[end_idx + MANAGED_END_LEGACY.len()..];
+        return Ok(format!("{}{}{}", before, full_managed, after));
+    }
+
+    // Missing or invalid markers — strip any stale marker fragments and append
+    let temp = content
+        .replace(MANAGED_START, "")
+        .replace(MANAGED_END, "")
+        .replace(MANAGED_START_LEGACY, "")
+        .replace(MANAGED_END_LEGACY, "");
     let cleaned = temp.trim_end();
     Ok(format!("{}\n\n{}\n", cleaned, full_managed))
 }
@@ -269,9 +290,9 @@ mod tests {
 
 Some custom content.
 
-<!-- botbox:managed-start -->
+<!-- edict:managed-start -->
 Old managed content here
-<!-- botbox:managed-end -->
+<!-- edict:managed-end -->
 
 More custom content.
 "#;
@@ -315,5 +336,60 @@ More custom content.
         assert!(result.contains(MANAGED_END));
         assert!(!result.contains("Old managed content"));
         assert!(result.contains("## Botbox Workflow"));
+    }
+
+    #[test]
+    fn test_update_managed_section_migrates_legacy_markers() {
+        // AGENTS.md still has botbox:managed-* markers — should be replaced with edict:managed-*
+        let original = r#"# My Project
+
+Custom content.
+
+<!-- botbox:managed-start -->
+Old botbox-era managed content
+<!-- botbox:managed-end -->
+"#;
+
+        let config = Config {
+            version: "1.0.0".to_string(),
+            project: crate::config::ProjectConfig {
+                name: "test".to_string(),
+                project_type: vec!["cli".to_string()],
+                default_agent: None,
+                channel: None,
+                install_command: None,
+                check_command: None,
+                languages: vec![],
+                critical_approvers: None,
+            },
+            tools: ToolsConfig {
+                bones: true,
+                maw: false,
+                crit: false,
+                botbus: false,
+                botty: false,
+            },
+            review: ReviewConfig {
+                enabled: false,
+                reviewers: vec![],
+            },
+            push_main: false,
+            agents: Default::default(),
+            models: Default::default(),
+            env: Default::default(),
+        };
+
+        let ctx = TemplateContext::from_config(&config);
+        let result = update_managed_section(original, &ctx).unwrap();
+
+        assert!(result.contains("# My Project"));
+        assert!(result.contains("Custom content."));
+        // Old markers and content gone
+        assert!(!result.contains("botbox:managed-start"));
+        assert!(!result.contains("botbox:managed-end"));
+        assert!(!result.contains("Old botbox-era managed content"));
+        // New markers present
+        assert!(result.contains(MANAGED_START));
+        assert!(result.contains(MANAGED_END));
     }
 }
