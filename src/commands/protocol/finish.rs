@@ -317,7 +317,7 @@ fn build_finish_steps(
     if !no_merge {
         // Use a conventional commit message derived from the bone title
         let merge_msg = format!("feat: {}", bead_title);
-        steps.push(shell::ws_merge_cmd(workspace, Some(&merge_msg)));
+        steps.push(shell::ws_merge_cmd(workspace, &merge_msg));
     }
 
     // 4. Mark review as merged (if review exists)

@@ -376,7 +376,7 @@ fn build_merge_steps(
     let mut steps = Vec::new();
 
     // 1. Merge workspace with the required commit message
-    steps.push(shell::ws_merge_cmd(workspace, Some(message)));
+    steps.push(shell::ws_merge_cmd(workspace, message));
 
     // 2. Mark review as merged (if review exists)
     if let Some(rid) = review_id {
@@ -416,7 +416,7 @@ fn add_conflict_recovery_guidance(
     workspace: &str,
     merge_msg: &str,
 ) {
-    let retry_cmd = shell::ws_merge_cmd(workspace, Some(merge_msg));
+    let retry_cmd = shell::ws_merge_cmd(workspace, merge_msg);
     guidance.diagnostic(format!(
         "Conflict recovery — workspace is preserved (not destroyed). Steps:\n\
          \n\
