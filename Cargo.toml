@@ -2,9 +2,7 @@
 name = "edict-cli"
 version = "0.19.0"
 edition = "2024"
-description = "Setup, sync, and runtime for multi-agent AI coding workflows"
 license = "MIT"
-repository = "https://github.com/bobisme/edict"
 
 [[bin]]
 name = "edict"
@@ -38,14 +36,30 @@ ureq = "3"
 
 # Optional: OTLP export (sync HTTP via reqwest-blocking)
 opentelemetry = { version = "0.31", optional = true }
-opentelemetry_sdk = { version = "0.31", optional = true, features = ["trace", "logs", "metrics"] }
-opentelemetry-otlp = { version = "0.31", optional = true, default-features = false, features = ["trace", "logs", "metrics", "http-proto", "reqwest-blocking-client"] }
+opentelemetry_sdk = { version = "0.31", optional = true, features = [
+  "trace",
+  "logs",
+  "metrics",
+] }
+opentelemetry-otlp = { version = "0.31", optional = true, default-features = false, features = [
+  "trace",
+  "logs",
+  "metrics",
+  "http-proto",
+  "reqwest-blocking-client",
+] }
 opentelemetry-appender-tracing = { version = "0.31", optional = true }
 tracing-opentelemetry = { version = "0.32", optional = true }
 
 [features]
 default = ["otel"]
-otel = ["dep:opentelemetry", "dep:opentelemetry_sdk", "dep:opentelemetry-otlp", "dep:opentelemetry-appender-tracing", "dep:tracing-opentelemetry"]
+otel = [
+  "dep:opentelemetry",
+  "dep:opentelemetry_sdk",
+  "dep:opentelemetry-otlp",
+  "dep:opentelemetry-appender-tracing",
+  "dep:tracing-opentelemetry",
+]
 
 [dev-dependencies]
 assert_cmd = "2"

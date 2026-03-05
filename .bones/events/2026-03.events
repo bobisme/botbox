@@ -94,3 +94,7 @@
 1772676571443883	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwnAg		item.move	bn-1d30	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:jSLiKOw73puorIz5VhftCCciZv3PQUKHVPtd41t11JY
 1772676571465205	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwnQg		item.move	bn-3i2v	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:xn06MGOC5ynqWmp3vltpget4MsN8xw-JddPyDz1vxVY
 1772676571486171	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwngg		item.move	bn-2lu6	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:DgBnuOehrhnw4FP_w3iybhzVY5oQ-HdQLcmW80L_tfw
+1772678044214651	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz4QI		item.create	bn-nz4d	{"kind":"task","title":"publish to crates.io"}	blake3:wAlULCUvQ37b3eGmbaMszD1qcGlBwvHoCigF_M3Efo0
+1772678441127770	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwnwg		item.move	bn-nz4d	{"state":"doing"}	blake3:jrhGdtvNL4voa9XsceWRd7X2SliJ8R2T_yukZUsktn0
+1772678441131678	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwoAg		item.assign	bn-nz4d	{"action":"assign","agent":"botbox-dev"}	blake3:YwrLsiNZvDVJqrwpIWhABfM5Ey1at2tlD1kwZprHR8g
+1772678581141999	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwoQg		item.move	bn-nz4d	{"state":"done"}	blake3:D6TyuYIV9XNnd9MzES7OvoOjka8uX9P0rcdIvlNeU5E
