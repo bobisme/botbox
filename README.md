@@ -1,6 +1,6 @@
 # edict
 
-![edict utopia](images/edict-utopia.webp)
+![The Engine Under The Dome](images/edict-embed.jpg)
 
 Setup, sync, and runtime for multi-agent workflows. Bootstraps projects with workflow docs and companion tool configurations, keeps them synchronized across upgrades, and provides built-in agent loop subcommands with protocol guidance.
 
@@ -8,14 +8,14 @@ Setup, sync, and runtime for multi-agent workflows. Bootstraps projects with wor
 
 32 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the edict protocol when driven autonomously through the botty-native spawn chain (hooks → botty spawn → edict run).
 
-| Eval | Model | Score | What it tests |
-|------|-------|-------|---------------|
-| **E11-L3** | Opus | 133/140 (95%) | Full lifecycle: 2 projects, 3 agents, cross-project coordination, security review cycle — all from a single task-request |
-| **E10** | Opus+Sonnet | 159/160 (99%) | 8-phase scripted lifecycle: 2 projects, 3 agents, cross-project bug discovery, review block/fix/LGTM |
-| **E11-L2** | Opus | 97/105 (92%) | Botty-native dev + reviewer: single project, review cycle through real hooks |
-| **R5** | Opus | 70/70 (100%) | Cross-project coordination: file bugs in external projects via bus channels |
-| **R4** | Sonnet | 95/95 (100%) | Integration: full triage → work → review → merge lifecycle |
-| **R8** | Opus | 49/65 (75%) | Adversarial review: multi-file security bugs requiring cross-file reasoning |
+| Eval       | Model       | Score         | What it tests                                                                                                            |
+| ---------- | ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| **E11-L3** | Opus        | 133/140 (95%) | Full lifecycle: 2 projects, 3 agents, cross-project coordination, security review cycle — all from a single task-request |
+| **E10**    | Opus+Sonnet | 159/160 (99%) | 8-phase scripted lifecycle: 2 projects, 3 agents, cross-project bug discovery, review block/fix/LGTM                     |
+| **E11-L2** | Opus        | 97/105 (92%)  | Botty-native dev + reviewer: single project, review cycle through real hooks                                             |
+| **R5**     | Opus        | 70/70 (100%)  | Cross-project coordination: file bugs in external projects via bus channels                                              |
+| **R4**     | Sonnet      | 95/95 (100%)  | Integration: full triage → work → review → merge lifecycle                                                               |
+| **R8**     | Opus        | 49/65 (75%)   | Adversarial review: multi-file security bugs requiring cross-file reasoning                                              |
 
 **Takeaway**: The full autonomous pipeline works. Agents spawn via hooks, coordinate across projects via bus channels, review each other's code via crit, and merge work through maw — all without human intervention. Friction comes from CLI typos, not protocol failures. See [evals/results/](evals/results/README.md) for all 32 runs and detailed findings.
 
@@ -134,14 +134,14 @@ No manual agent management needed — send a message to a project channel and th
 
 Edict coordinates five specialized Rust tools that work together to enable multi-agent workflows:
 
-| Tool       | Purpose                         | Key commands                                  | Repository |
-| ---------- | ------------------------------- | --------------------------------------------- | ---------- |
-| **[botbus](https://github.com/bobisme/botbus)** | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` | Pub/sub messaging, resource locking, agent registry |
-| **[maw](https://github.com/bobisme/maw)**    | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         | Concurrent work isolation with Jujutsu VCS |
-| **[beads](https://github.com/Dicklesworthstone/beads_rust)**  | Work tracking (`br`)            | `ready`, `create`, `close`, `update`          | Issue tracker optimized for agent triage |
-| **[beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)** | Triage interface (`bv`)         | `--robot-triage`, `--robot-next`              | PageRank-based prioritization, graph analysis |
-| **[crit](https://github.com/bobisme/botcrit)**   | Code review                     | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow |
-| **[botty](https://github.com/bobisme/botty)**  | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops |
+| Tool                                                                  | Purpose                         | Key commands                                  | Repository                                          |
+| --------------------------------------------------------------------- | ------------------------------- | --------------------------------------------- | --------------------------------------------------- |
+| **[botbus](https://github.com/bobisme/botbus)**                       | Communication, claims, presence | `send`, `inbox`, `claim`, `release`, `agents` | Pub/sub messaging, resource locking, agent registry |
+| **[maw](https://github.com/bobisme/maw)**                             | Isolated jj workspaces          | `ws create`, `ws merge`, `ws destroy`         | Concurrent work isolation with Jujutsu VCS          |
+| **[beads](https://github.com/Dicklesworthstone/beads_rust)**          | Work tracking (`br`)            | `ready`, `create`, `close`, `update`          | Issue tracker optimized for agent triage            |
+| **[beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)** | Triage interface (`bv`)         | `--robot-triage`, `--robot-next`              | PageRank-based prioritization, graph analysis       |
+| **[crit](https://github.com/bobisme/botcrit)**                        | Code review                     | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow                   |
+| **[botty](https://github.com/bobisme/botty)**                         | Agent runtime                   | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops               |
 
 ### Flywheel connection
 
