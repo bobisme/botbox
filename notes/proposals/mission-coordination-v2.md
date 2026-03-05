@@ -7,7 +7,7 @@
 
 ## Summary
 
-The v0.7.0 mission framework (Level 4) decomposes specs into child beads, dispatches parallel workers via botty, and monitors progress via checkpoints. E11-L4 evals validate this works (best 122/130, 94%). But the orchestrator is a **counter** — it counts done/blocked/active children. Workers are isolated — no bus communication with siblings. If worker A changes a shared interface, worker B doesn't know.
+The v0.7.0 mission framework (Level 4) decomposes specs into child beads, dispatches parallel workers via vessel, and monitors progress via checkpoints. E11-L4 evals validate this works (best 122/130, 94%). But the orchestrator is a **counter** — it counts done/blocked/active children. Workers are isolated — no bus communication with siblings. If worker A changes a shared interface, worker B doesn't know.
 
 This proposal designs the upgrade from "parallel dispatch with monitoring" to "coordinated multi-agent execution," drawing on patterns from nelson (hierarchical command framework) and mcp_agent_mail (agent-to-agent messaging system).
 
@@ -45,7 +45,7 @@ Nelson is a Claude Code skill (~30 markdown files) that provides a structured fr
 **What nelson does NOT do (limitations):**
 - No runtime tooling — it's pure prompts. Agents can't query "what did my sibling post?" — they'd need to use Claude Code's built-in tools.
 - No persistent state across sessions beyond conversation transcripts.
-- Peer coordination is limited by design — flows through hierarchy. In `agent-team` mode it uses Claude Code's experimental agent teams, which botbox explicitly avoids (no botty observability).
+- Peer coordination is limited by design — flows through hierarchy. In `agent-team` mode it uses Claude Code's experimental agent teams, which botbox explicitly avoids (no vessel observability).
 
 ### MCP Agent Mail: What It Does and What We Can Learn
 
@@ -72,7 +72,7 @@ MCP Agent Mail is a Python FastMCP server (HTTP on port 8765) providing a mail-l
 **What agent mail does NOT do (limitations):**
 - No orchestration logic — it's a communication layer, not a coordinator. Agents decide what to do with messages.
 - Requires running an HTTP server — additional infrastructure beyond our CLI tools.
-- MCP transport only — our agents use Claude Code with botty, not raw MCP.
+- MCP transport only — our agents use Claude Code with vessel, not raw MCP.
 
 ## Gap Analysis: Current State vs Desired State
 

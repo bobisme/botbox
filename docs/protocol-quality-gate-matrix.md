@@ -618,7 +618,7 @@ For each feature bead, we track:
 **Recommendation**: Proceed with full rollout:
 1. ✓ Protocol commands already enabled in dev-loop and worker-loop
 2. ✓ Fallback instructions present for all protocol transition points
-3. Continue monitoring agent behavior via botty tail
+3. Continue monitoring agent behavior via vessel tail
 4. Collect real-world usage data for E2E test scenarios
 5. Build isolated E2E test suite as enhancement (not blocker)
 
@@ -638,7 +638,7 @@ For each feature bead, we track:
 1. ✅ ~~Verify Missing Beads~~ - All beads verified and closed
 2. **Build E2E Test Suite**: Create isolated environment tests for full protocol workflows (enhancement)
 3. **Automate Prompt Regression**: Extend bd-6d20 with automated validation framework (enhancement)
-4. **Real-World Validation**: Continue monitoring agent usage via botty tail
+4. **Real-World Validation**: Continue monitoring agent usage via vessel tail
 5. **Collect Metrics**: Track protocol command success rates vs fallback rates
 
 ---
@@ -703,7 +703,7 @@ While not blocking for rollout, an isolated E2E test suite would provide additio
 
 **Real-World Integration**:
 - Protocol commands used in production dev-loop and worker-loop
-- Observed via botty tail during agent execution
+- Observed via vessel tail during agent execution
 - Informal validation through successful bead completion
 
 ### Implementation Priority

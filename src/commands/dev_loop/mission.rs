@@ -22,7 +22,7 @@ pub struct MissionCheckpoint {
     pub last_checkpoint_time: String,
 }
 
-/// Record of a dispatched worker for cross-referencing with botty list.
+/// Record of a dispatched worker for cross-referencing with vessel list.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DispatchedWorker {
     pub worker_name: String,

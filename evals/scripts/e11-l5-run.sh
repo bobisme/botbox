@@ -212,8 +212,8 @@ while true; do
   echo ""
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
-  # Check botty — which agents are running?
-  BOTTY_JSON=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+  # Check vessel — which agents are running?
+  BOTTY_JSON=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
 
   DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$FLOWLOG_DEV\") | .id" 2>/dev/null || echo "")
   RESPOND_RUNNING=$(echo "$BOTTY_JSON" | jq -r '.agents[] | select(.id | test("respond")) | .id' 2>/dev/null || echo "")
@@ -260,7 +260,7 @@ while true; do
       orig_id="${KNOWN_WORKERS[$wkey]}"
       if ! echo "$WORKER_LIST" | grep -qF "$orig_id" 2>/dev/null; then
         if [[ "${WORKER_LOG_CAPTURED[$wkey]}" -eq 0 ]]; then
-          botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
+          vessel tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
           WORKER_LOG_CAPTURED["$wkey"]=1
           echo "  worker EXITED: $orig_id (log captured)"
           LAST_ACTIVITY_TIME=$(date +%s)
@@ -322,7 +322,7 @@ while true; do
       # Grace period for agents to exit
       for WAIT_I in 1 2 3 4; do
         sleep 15
-        BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+        BOTTY_FINAL=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
         AD_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$FLOWLOG_DEV\") | .id" 2>/dev/null || echo "")
         [[ -z "$AD_RUNNING" ]] && FINAL_STATUS_DEV="completed"
         REMAINING=$(echo "$BOTTY_FINAL" | jq '.agents | length' 2>/dev/null || echo "0")
@@ -373,19 +373,19 @@ echo ""
 echo "--- Capturing artifacts ---"
 
 # Dev agent log
-botty tail "$FLOWLOG_DEV" -n 500 > "$ARTIFACTS/agent-${FLOWLOG_DEV}.log" 2>/dev/null || \
+vessel tail "$FLOWLOG_DEV" -n 500 > "$ARTIFACTS/agent-${FLOWLOG_DEV}.log" 2>/dev/null || \
   echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${FLOWLOG_DEV}.log"
 echo "  log: $ARTIFACTS/agent-${FLOWLOG_DEV}.log"
 
 # Respond agent logs
-for RESP_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("respond")) | .id' 2>/dev/null || true); do
-  botty tail "$RESP_NAME" -n 500 > "$ARTIFACTS/agent-${RESP_NAME}.log" 2>/dev/null || true
+for RESP_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("respond")) | .id' 2>/dev/null || true); do
+  vessel tail "$RESP_NAME" -n 500 > "$ARTIFACTS/agent-${RESP_NAME}.log" 2>/dev/null || true
   echo "  respond log: $ARTIFACTS/agent-${RESP_NAME}.log"
 done
 # Try common respond names that may have exited
 for RNAME in "flowlog-respond" "respond"; do
   if [[ ! -f "$ARTIFACTS/agent-${RNAME}.log" ]]; then
-    botty tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${RNAME}.log" 2>/dev/null || true
+    vessel tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${RNAME}.log" 2>/dev/null || true
   fi
 done
 
@@ -394,17 +394,17 @@ if [[ ${#KNOWN_WORKERS[@]} -gt 0 ]]; then
   for wkey in "${!KNOWN_WORKERS[@]}"; do
     orig_id="${KNOWN_WORKERS[$wkey]}"
     if [[ ! -f "$ARTIFACTS/agent-${wkey}.log" ]] || [[ "${WORKER_LOG_CAPTURED[$wkey]}" -eq 0 ]]; then
-      botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
+      vessel tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
       echo "  worker log: $ARTIFACTS/agent-${wkey}.log"
     fi
   done
 fi
 
 # Any other agents we missed
-for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+for AGENT_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   SAFE_NAME="${AGENT_NAME//\//_}"
   if [[ ! -f "$ARTIFACTS/agent-${SAFE_NAME}.log" ]]; then
-    botty tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${SAFE_NAME}.log" 2>/dev/null || true
+    vessel tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${SAFE_NAME}.log" 2>/dev/null || true
     echo "  extra log: $ARTIFACTS/agent-${SAFE_NAME}.log"
   fi
 done
@@ -474,9 +474,9 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-botty kill "$FLOWLOG_DEV" 2>/dev/null || true
-for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  botty kill "$AGENT_NAME" 2>/dev/null || true
+vessel kill "$FLOWLOG_DEV" 2>/dev/null || true
+for AGENT_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  vessel kill "$AGENT_NAME" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

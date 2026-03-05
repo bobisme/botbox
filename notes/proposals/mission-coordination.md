@@ -7,19 +7,19 @@
 
 ## Summary
 
-Botbox agents work well on independent tasks but have no framework for coordinated multi-task efforts. When a feature requires 5 related beads, each worker operates in isolation — there's no shared context, no risk-proportional review, no checkpoints, and no way for workers to coordinate with each other. This proposal adds **mission beads**, **risk labels**, **hierarchical agent spawning via botty**, and **peer coordination through bus** to unlock true team-based work without rigid script rails.
+Botbox agents work well on independent tasks but have no framework for coordinated multi-task efforts. When a feature requires 5 related beads, each worker operates in isolation — there's no shared context, no risk-proportional review, no checkpoints, and no way for workers to coordinate with each other. This proposal adds **mission beads**, **risk labels**, **hierarchical agent spawning via vessel**, and **peer coordination through bus** to unlock true team-based work without rigid script rails.
 
 ## Scope and Success Criteria
 
 ### Goals (v1)
 
 1. Coordinate related beads under a mission with explicit shared outcome and constraints.
-2. Reduce lead time for multi-bead features while preserving observability through botty/bus.
+2. Reduce lead time for multi-bead features while preserving observability through vessel/bus.
 3. Apply risk-proportional verification so low-risk work does not pay high review overhead.
 
 ### Non-Goals (v1)
 
-- Replacing beads, bus, maw, crit, or botty data models.
+- Replacing beads, bus, maw, crit, or vessel data models.
 - Building a new UI/dashboard for mission management.
 - Cross-project mission orchestration (single project/channel only).
 - Formal SLOs or telemetry infrastructure (defer until missions are proven in practice).
@@ -43,7 +43,7 @@ The current system handles "5 independent bugs" well but struggles with "1 featu
 
 4. **No peer coordination.** Workers can't talk to each other. If worker-A builds an API that worker-B needs to consume, B has no way to ask A about the interface. Everything routes through dev-loop.
 
-5. **Rigid dispatch model.** Dev-loop dispatches via `botty spawn` but the dispatch is fire-and-forget per bead. There's no parent-child relationship between the lead and its workers, and Claude Code's built-in subagent feature doesn't go through botty (losing observability via `botty tail`).
+5. **Rigid dispatch model.** Dev-loop dispatches via `vessel spawn` but the dispatch is fire-and-forget per bead. There's no parent-child relationship between the lead and its workers, and Claude Code's built-in subagent feature doesn't go through vessel (losing observability via `vessel tail`).
 
 These gaps become painful for any non-trivial feature work: refactoring efforts, new subsystems, multi-component changes.
 
@@ -52,8 +52,8 @@ These gaps become painful for any non-trivial feature work: refactoring efforts,
 ### Design Principles
 
 - **Labels over schema changes.** New bead metadata uses labels (`risk:high`, `mission:bd-xxx`) rather than new fields. Labels are already supported, searchable, and require no migration.
-- **botty spawn over Claude Code subagents.** All agent spawning goes through `botty spawn`. This gives us `botty tail` observability, `botty kill` control, `botty list` visibility, and the `--after`/`--wait-for` orchestration primitives. Claude Code's built-in Task tool spawns invisible processes we can't observe or manage.
-- **Hierarchical agent names.** When `botbox-dev` spawns a worker `amber-reef`, the worker's identity is `botbox-dev/amber-reef`. This uses botty/bus's native slash support. Claims, messages, and statuses all naturally namespace under the parent.
+- **vessel spawn over Claude Code subagents.** All agent spawning goes through `vessel spawn`. This gives us `vessel tail` observability, `vessel kill` control, `vessel list` visibility, and the `--after`/`--wait-for` orchestration primitives. Claude Code's built-in Task tool spawns invisible processes we can't observe or manage.
+- **Hierarchical agent names.** When `botbox-dev` spawns a worker `amber-reef`, the worker's identity is `botbox-dev/amber-reef`. This uses vessel/bus's native slash support. Claims, messages, and statuses all naturally namespace under the parent.
 - **Bus for coordination, not scripts.** Rather than encoding coordination logic in script prompts, agents coordinate through bus messages, claims, and labels. Scripts provide the loop structure; bus provides the communication fabric.
 
 ### 0. Execution Levels
@@ -64,7 +64,7 @@ Missions are a new level on top of existing behavior, not a replacement. The res
 |-------|------|------------|-------------------|-------------|
 | 1 | Conversation | respond.mjs | `!q`/triage → answer + follow-up loop | Nothing |
 | 2 | Sequential dev | dev-loop | 1 ready bead → lead works on it directly | Risk-aware review added |
-| 3 | Parallel dispatch | dev-loop | 2+ independent ready beads → spawn workers per bead | Hierarchical names, botty spawn |
+| 3 | Parallel dispatch | dev-loop | 2+ independent ready beads → spawn workers per bead | Hierarchical names, vessel spawn |
 | 4 | Mission | dev-loop | Large coherent task → plan, create mission bead, dispatch coordinated workers | **New** |
 
 **Level selection is a judgment call by the dev-loop agent**, not hardcoded logic. The dev-loop prompt includes guidance on when each level applies:
@@ -130,7 +130,7 @@ br list --label "mission:bd-xxx"  # all beads in this mission
 4. At most one active worker assignment per child bead (enforced by bead claims).
 
 **Crash-recovery policy for missions:**
-1. If a worker exits unexpectedly (detected via `botty list` — process gone but bead still in_progress), dev-loop records failure in a bead comment.
+1. If a worker exits unexpectedly (detected via `vessel list` — process gone but bead still in_progress), dev-loop records failure in a bead comment.
 2. Dev-loop performs one automatic reassignment: new worker name, same workspace (if it still exists) or new workspace.
 3. On second failure for the same child, the child becomes `blocked` with a comment explaining the repeated failure. Requires explicit lead intervention.
 4. Recovery actions are included in checkpoint summaries for visibility.
@@ -169,9 +169,9 @@ The reviewer must address all five questions in their review comments. This is a
 - `risk:high`: security review + completed failure-mode checklist in review comments + rollback notes.
 - `risk:critical`: all `risk:high` evidence + human approval message ID recorded on bead.
 
-### 3. Hierarchical Agent Spawning via botty
+### 3. Hierarchical Agent Spawning via vessel
 
-Replace Claude Code subagent usage with `botty spawn` throughout. Adopt hierarchical naming with slashes.
+Replace Claude Code subagent usage with `vessel spawn` throughout. Adopt hierarchical naming with slashes.
 
 **Naming convention:**
 
@@ -184,7 +184,7 @@ botbox-dev/amber-reef/review  # reviewer spawned by worker (rare)
 The parent sets `BOTBUS_AGENT` when spawning:
 
 ```bash
-botty spawn \
+vessel spawn \
   --name "botbox-dev/amber-reef" \
   --label worker \
   --label "mission:bd-xxx" \
@@ -199,9 +199,9 @@ botty spawn \
 ```
 
 **What hierarchical names enable:**
-- `botty list --label worker` — see all workers
-- `botty list --label "mission:bd-xxx"` — see all agents for a mission
-- `botty tail botbox-dev/amber-reef` — observe a specific worker
+- `vessel list --label worker` — see all workers
+- `vessel list --label "mission:bd-xxx"` — see all agents for a mission
+- `vessel tail botbox-dev/amber-reef` — observe a specific worker
 - `bus history botbox --from "botbox-dev/amber-reef"` — see a worker's messages
 - Clear parent-child relationship in logs and statuses
 
@@ -212,11 +212,11 @@ bus claims stake --agent "botbox-dev/amber-reef" "bead://botbox/bd-yyy"
 bus claims stake --agent "botbox-dev/amber-reef" "workspace://botbox/amber-reef"
 ```
 
-**Botty orchestration primitives:** botty already has `--after` (wait for agent to exit) and `--wait-for` (wait for output pattern). These enable sequencing:
+**Botty orchestration primitives:** vessel already has `--after` (wait for agent to exit) and `--wait-for` (wait for output pattern). These enable sequencing:
 
 ```bash
 # Spawn worker B after worker A's bead is ready
-botty spawn --name "lead/worker-b" --after "lead/worker-a" -- ...
+vessel spawn --name "lead/worker-b" --after "lead/worker-a" -- ...
 ```
 
 **How agents are actually spawned:**
@@ -237,9 +237,9 @@ Total mission-aware prompt: ~6-8KB. Linux `ARG_MAX` is typically 2MB+, so CLI ar
 **Full spawn chain for a mission worker:**
 
 ```
-dev-loop.mjs (lead agent, running in botty PTY)
+dev-loop.mjs (lead agent, running in vessel PTY)
   → builds prompt string with mission context
-  → calls: botty spawn --name "$AGENT/worker-name" \
+  → calls: vessel spawn --name "$AGENT/worker-name" \
       --label worker --label "mission:bd-xxx" \
       --env "BOTBUS_AGENT=$AGENT/worker-name" \
       --env "BOTBOX_MISSION=bd-xxx" \
@@ -251,7 +251,7 @@ dev-loop.mjs (lead agent, running in botty PTY)
           → agent works in workspace, uses bus/br/crit/maw
 ```
 
-Observable at every level: `botty tail $AGENT/worker-name`, `botty list --label "mission:bd-xxx"`, `bus history $PROJECT --from "$AGENT/worker-name"`.
+Observable at every level: `vessel tail $AGENT/worker-name`, `vessel list --label "mission:bd-xxx"`, `bus history $PROJECT --from "$AGENT/worker-name"`.
 
 ### 4. Peer Coordination via Bus
 
@@ -329,7 +329,7 @@ For each unblocked child bead in a mission:
 
 1. Create workspace: `maw ws create --random`
 2. Select model based on bead complexity + risk (existing logic)
-3. Spawn worker via `botty spawn` with hierarchical name, mission env vars, and labels
+3. Spawn worker via `vessel spawn` with hierarchical name, mission env vars, and labels
 4. Stake claims on behalf of the worker
 5. Comment the dispatch on the bead
 
@@ -354,7 +354,7 @@ The worker prompt includes:
 While workers are active, dev-loop runs periodic checkpoints:
 
 1. **Progress:** Count children by status (open/in-progress/blocked/closed)
-2. **Workers:** `botty list --label "mission:bd-xxx"` — who's alive, who's done?
+2. **Workers:** `vessel list --label "mission:bd-xxx"` — who's alive, who's done?
 3. **Blockers:** Any blocked children? Can the lead unblock them?
 4. **Failures:** Any workers that exited but their bead is still in_progress? Trigger crash-recovery policy.
 5. **Completion messages:** `bus history $PROJECT -L task-done -L "mission:bd-xxx" --after-id <last-seen-id>` (cursor-based to avoid rescanning)
@@ -438,13 +438,13 @@ This is a bead comment, not a separate file. Searchable via `br search`, visible
 
 ## Open Questions
 
-1. **What's the maximum practical team size?** Nelson caps at 10. With botty spawn overhead and bus message volume, what's the real limit before coordination cost exceeds parallel benefit? Default `maxMissionWorkers=4` seems conservative enough to start. Tune based on eval results.
+1. **What's the maximum practical team size?** Nelson caps at 10. With vessel spawn overhead and bus message volume, what's the real limit before coordination cost exceeds parallel benefit? Default `maxMissionWorkers=4` seems conservative enough to start. Tune based on eval results.
 
 2. **Should missions have explicit stop criteria that the lead evaluates automatically?** For example, "stop when 80% of children are done and remaining are P3+." Or should this always be a lead judgment call in the prompt? Leaning toward prompt-based judgment for v1 — structured stop-criteria evaluation can be added later if the prompt approach is too inconsistent.
 
 ## Answered Questions
 
-1. **Q:** Should we use Claude Code's agent-team feature? **A:** No. It's experimental, doesn't go through botty (losing observability), and duplicates what bus already provides. All spawning through botty, all communication through bus.
+1. **Q:** Should we use Claude Code's agent-team feature? **A:** No. It's experimental, doesn't go through vessel (losing observability), and duplicates what bus already provides. All spawning through vessel, all communication through bus.
 
 2. **Q:** Where do risk levels live — bead fields or labels? **A:** Labels. `risk:low`, `risk:medium`, `risk:high`, `risk:critical`. Labels are already supported by br, searchable, and require no schema changes.
 
@@ -456,7 +456,7 @@ This is a bead comment, not a separate file. Searchable via `br search`, visible
 
 6. **Q:** Does `br list` support `--label` filtering? **A:** Yes. `br list -l <label>` with AND logic (all labels must match). Also `--label-any` for OR logic. Both support repetition. Confirmed via `br list --help`.
 
-7. **Q:** Does `botty list` support label-based filtering? **A:** Yes. `botty list -l <label>` filters by label, with AND logic when repeated. So `botty list -l worker -l "mission:bd-xxx"` works. Confirmed via `botty list --help`.
+7. **Q:** Does `vessel list` support label-based filtering? **A:** Yes. `vessel list -l <label>` filters by label, with AND logic when repeated. So `vessel list -l worker -l "mission:bd-xxx"` works. Confirmed via `vessel list --help`.
 
 8. **Q:** Does `bus history` support label filtering? **A:** Yes. `bus history -L <label>` filters by label (OR logic when repeated). So `bus history $PROJECT -L "mission:bd-xxx"` returns only mission-scoped messages. Confirmed via `bus history --help`.
 
@@ -470,7 +470,7 @@ This is a bead comment, not a separate file. Searchable via `br search`, visible
 
 Use Claude Code's experimental `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` feature for team coordination. Rejected because:
 - Experimental and may change or break
-- Spawns invisible processes — no `botty tail`, no `botty kill`, no `botty list`
+- Spawns invisible processes — no `vessel tail`, no `vessel kill`, no `vessel list`
 - Introduces a second communication channel alongside bus (confusing)
 - Doesn't integrate with our existing claims, beads, or crit workflows
 
@@ -528,10 +528,10 @@ Require workers to use a structured first-line format (`kind=coord:interface bea
 
 ### Phase 3: Hierarchical Spawning
 
-11. **Hierarchical agent names in dev-loop dispatch** — Change worker dispatch to use `$AGENT/<worker-name>` naming. Pass mission env vars (`BOTBOX_MISSION`, `BOTBOX_BEAD`, `BOTBOX_WORKSPACE`). Spawn via `botty spawn ... -- botbox run-agent claude -p "$PROMPT"`.
+11. **Hierarchical agent names in dev-loop dispatch** — Change worker dispatch to use `$AGENT/<worker-name>` naming. Pass mission env vars (`BOTBOX_MISSION`, `BOTBOX_BEAD`, `BOTBOX_WORKSPACE`). Spawn via `vessel spawn ... -- botbox run-agent claude -p "$PROMPT"`.
 12. **Dispatched worker fast-path in agent-loop** — When env vars are set, skip triage and go directly to the assigned bead/workspace.
-13. **Worker cleanup on parent** — When dev-loop exits, clean up any lingering child agents via `botty kill`.
-14. **Crash-recovery in dev-loop** — Implement the one-retry-then-block policy. Detect dead workers via `botty list`, reassign or block.
+13. **Worker cleanup on parent** — When dev-loop exits, clean up any lingering child agents via `vessel kill`.
+14. **Crash-recovery in dev-loop** — Implement the one-retry-then-block policy. Detect dead workers via `vessel list`, reassign or block.
 
 **Gate:** Crash-recovery eval passes (M3).
 

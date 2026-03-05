@@ -24,13 +24,13 @@ This project has a behavioral evaluation framework for testing whether agents fo
 - 3 adversarial review (R8)
 - 1 crash recovery (R9)
 - 2 full lifecycle (E10)
-- 2 botty-native (E11-L2)
-- 1 botty-native full lifecycle (E11-L3)
+- 2 vessel-native (E11-L2)
+- 1 vessel-native full lifecycle (E11-L3)
 
 ### Notable Results
 
-- **E11-L3-1**: Opus 133/140 (95%) — first botty-native full lifecycle, 3 agents spawned via hooks, cross-project coordination
-- **E11-L2-2**: Opus 97/105 (92%) — botty-native review cycle, zero friction after prompt improvements
+- **E11-L3-1**: Opus 133/140 (95%) — first vessel-native full lifecycle, 3 agents spawned via hooks, cross-project coordination
+- **E11-L2-2**: Opus 97/105 (92%) — vessel-native review cycle, zero friction after prompt improvements
 - **E10-2**: Opus 159/160 (99%) — reproducible clean run, no setup workarounds needed
 - **E10-1**: Opus 158/160 (99%) — 3 agents, 8 phases, 2 projects, near-perfect full lifecycle
 - **R5-1**: Opus 70/70 (100%) — perfect cross-project coordination, followed report-issue.md to file bug in external project
@@ -59,7 +59,7 @@ E10 is the heaviest eval: 2 Rust projects, 3 agents, 8 phases, ~30 min runtime, 
 All of these must be on `$PATH`:
 
 ```
-botbox bus br bv maw crit botty jj cargo claude jq
+botbox bus br bv maw crit vessel jj cargo claude jq
 ```
 
 The setup script does a preflight check and fails fast if anything is missing.
@@ -209,7 +209,7 @@ Paste from `$EVAL_DIR/artifacts/tool-versions.env`:
 | br | ... |
 | maw | ... |
 | crit | ... |
-| botty | ... |
+| vessel | ... |
 | jj | ... |
 
 ## Phase Scores

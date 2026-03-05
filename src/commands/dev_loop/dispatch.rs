@@ -2,7 +2,7 @@
 //!
 //! The actual dispatch logic is prompt-driven (Claude decides what to dispatch).
 //! These helpers support the dispatch infrastructure: workspace creation,
-//! worker naming, claim staking, and botty spawn.
+//! worker naming, claim staking, and vessel spawn.
 
 use crate::subprocess::Tool;
 

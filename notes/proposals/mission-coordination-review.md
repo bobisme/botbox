@@ -6,7 +6,7 @@ Date: 2026-02-09
 
 ## Executive Summary
 
-This proposal is directionally strong. It uses existing primitives (labels, bus, botty, maw, crit) and avoids heavy schema changes. The phased implementation structure is also a good start.
+This proposal is directionally strong. It uses existing primitives (labels, bus, vessel, maw, crit) and avoids heavy schema changes. The phased implementation structure is also a good start.
 
 The main gaps are around execution safety and operability:
 
@@ -47,17 +47,17 @@ Insert this section immediately after `## Summary`.
 --- ws/default/notes/proposals/mission-coordination.md
 +++ ws/default/notes/proposals/mission-coordination.md
 @@ -10,6 +10,30 @@
- Botbox agents work well on independent tasks but have no framework for coordinated multi-task efforts. When a feature requires 5 related beads, each worker operates in isolation — there's no shared context, no risk-proportional review, no checkpoints, and no way for workers to coordinate with each other. This proposal adds **mission beads**, **risk labels**, **hierarchical agent spawning via botty**, and **peer coordination through bus** to unlock true team-based work without rigid script rails.
+ Botbox agents work well on independent tasks but have no framework for coordinated multi-task efforts. When a feature requires 5 related beads, each worker operates in isolation — there's no shared context, no risk-proportional review, no checkpoints, and no way for workers to coordinate with each other. This proposal adds **mission beads**, **risk labels**, **hierarchical agent spawning via vessel**, and **peer coordination through bus** to unlock true team-based work without rigid script rails.
  
 +## Scope and Success Criteria
 +
 +### Goals (v1)
 +1. Coordinate related beads under a mission with explicit shared outcome and constraints.
-+2. Reduce lead time for multi-bead features while preserving observability through botty/bus.
++2. Reduce lead time for multi-bead features while preserving observability through vessel/bus.
 +3. Apply risk-proportional verification so low-risk work does not pay high review overhead.
 +
 +### Non-Goals (v1)
-+- Replacing beads, bus, maw, crit, or botty data models.
++- Replacing beads, bus, maw, crit, or vessel data models.
 +- Building a new UI/dashboard for mission management.
 +- Cross-project mission orchestration (single project/channel only).
 +
@@ -80,7 +80,7 @@ Insert this section immediately after `## Summary`.
 ### [High Impact, Low Effort] Change #2: Add capability matrix and fallback rules before implementation
 
 **Current State:**
-The design assumes behavior for commands/flags such as `br list --label`, `bus history -L`, `botty list --label`, and `botty spawn --after/--wait-for`.
+The design assumes behavior for commands/flags such as `br list --label`, `bus history -L`, `vessel list --label`, and `vessel spawn --after/--wait-for`.
 
 **Proposed Change:**
 Add a mandatory `Capability Matrix and Fallback Rules` section as a pre-implementation gate.
@@ -104,7 +104,7 @@ Add as `### 0.` under `## Proposed Design`, after Design Principles.
 --- ws/default/notes/proposals/mission-coordination.md
 +++ ws/default/notes/proposals/mission-coordination.md
 @@ -34,6 +34,27 @@
- - **Hierarchical agent names.** When `botbox-dev` spawns a worker `amber-reef`, the worker's identity is `botbox-dev/amber-reef`. This uses botty/bus's native slash support. Claims, messages, and statuses all naturally namespace under the parent.
+ - **Hierarchical agent names.** When `botbox-dev` spawns a worker `amber-reef`, the worker's identity is `botbox-dev/amber-reef`. This uses vessel/bus's native slash support. Claims, messages, and statuses all naturally namespace under the parent.
  - **Bus for coordination, not scripts.** Rather than encoding coordination logic in script prompts, agents coordinate through bus messages, claims, and labels. Scripts provide the loop structure; bus provides the communication fabric.
  
 +### 0. Capability Matrix and Fallback Rules
@@ -115,8 +115,8 @@ Add as `### 0.` under `## Proposed Design`, after Design Principles.
 +|------------|------------|--------------------|----------|
 +| `br list --label` | sibling lookup | `maw exec default -- br list --help` | `br list --format json` + filter in script |
 +| `bus history -L` | mission-scoped messages | `bus history --help` | `bus history --format json` + label filter |
-+| `botty list --label` | worker checkpointing | `botty list --help` | `botty list --format json` + label filter |
-+| `botty spawn --after/--wait-for` | orchestration sequencing | `botty spawn --help` | dependency-driven sequencing in dev-loop |
++| `vessel list --label` | worker checkpointing | `vessel list --help` | `vessel list --format json` + label filter |
++| `vessel spawn --after/--wait-for` | orchestration sequencing | `vessel spawn --help` | dependency-driven sequencing in dev-loop |
 +
 +Rules:
 +1. Do not start implementation when both primary capability and fallback are missing.
@@ -438,7 +438,7 @@ Replace the current `## Implementation Plan` details with the gated version belo
  
 -8. **Hierarchical agent names in dev-loop dispatch** — Change worker dispatch to use `botbox-dev/<worker-name>` naming and pass mission env vars (`BOTBOX_MISSION`, `BOTBOX_BEAD`, `BOTBOX_WORKSPACE`).
 -9. **Dispatched worker fast-path in agent-loop** — When env vars are set, skip triage and go directly to the assigned bead/workspace.
--10. **Worker cleanup on parent** — When dev-loop exits, clean up any lingering child agents via `botty kill`.
+-10. **Worker cleanup on parent** — When dev-loop exits, clean up any lingering child agents via `vessel kill`.
 +**Gate B:** crash-recovery eval passes deterministically.
  
 -### Phase 4: Peer Coordination and Checkpoints
@@ -449,7 +449,7 @@ Replace the current `## Implementation Plan` details with the gated version belo
  
 -11. **Mission-scoped bus messages** — Workers post with `-L "mission:bd-xxx"`. Prompt includes instructions for interface announcements and sibling communication.
 -12. **Sibling context in worker prompt** — When dispatched as part of a mission, worker prompt includes mission outcome, sibling beads/agents, file ownership hints.
--13. **Checkpoint logic in dev-loop** — After dispatching, dev-loop enters a checkpoint loop: check botty list, bus history, bead statuses. Post checkpoint summaries to bus.
+-13. **Checkpoint logic in dev-loop** — After dispatching, dev-loop enters a checkpoint loop: check vessel list, bus history, bead statuses. Post checkpoint summaries to bus.
 -14. **Mission close and synthesis** — When all children close, dev-loop closes the mission bead with a summary comment.
 +**Gate C:** load eval meets checkpoint/queue SLO targets.
  

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # E11-L1 Verification Script
-# Post-run automated checks for the botty-native eval. Scores the agent's
+# Post-run automated checks for the vessel-native eval. Scores the agent's
 # performance across 9 criteria (50 pts total).
 #
 # Runs all tool commands via maw exec (v2 layout).
@@ -56,7 +56,7 @@ HOOK_FIRED=false
 if echo "$CHANNEL_HISTORY" | grep -qi "spawn-ack\|hook.*fired\|agent.*start\|dev-loop\|iteration"; then
   HOOK_FIRED=true
 fi
-# Check if agent log has content (agent was spawned by botty)
+# Check if agent log has content (agent was spawned by vessel)
 if [[ -f "$ARTIFACTS/agent-echo-dev.log" ]] && ! grep -q "already exited" "$ARTIFACTS/agent-echo-dev.log" 2>/dev/null; then
   AGENT_LOG_SIZE=$(wc -c < "$ARTIFACTS/agent-echo-dev.log" 2>/dev/null || echo "0")
   if [[ "$AGENT_LOG_SIZE" -gt 100 ]]; then

@@ -2,7 +2,7 @@
 
 > **Note**: This testing plan was written for the JavaScript version of botbox. The project has been rewritten in Rust. For current development, use `cargo test`. The E2E eval scripts in `evals/scripts/` have been updated for the Rust binary.
 
-End-to-end testing of `botbox` CLI against real repos using `botty` for interactive session control.
+End-to-end testing of `botbox` CLI against real repos using `vessel` for interactive session control.
 
 ## Prerequisites
 
@@ -14,7 +14,7 @@ bun link  # makes botbox available globally
 Confirm tools are available:
 ```bash
 botbox --version
-botty --version
+vessel --version
 jj --version
 ```
 
@@ -29,7 +29,7 @@ cd "$WORKDIR" && jj git init
 botbox init \
   --name test-fresh \
   --type api \
-  --tools beads,maw,crit,botbus,botty \
+  --tools beads,maw,crit,botbus,vessel \
   --reviewers security \
   --no-interactive
 
@@ -51,49 +51,49 @@ botbox sync --check
 rm -rf "$WORKDIR"
 ```
 
-## 2. Fresh repo — interactive init via botty
+## 2. Fresh repo — interactive init via vessel
 
-Test the interactive prompts by spawning botbox inside botty and sending keystrokes.
+Test the interactive prompts by spawning botbox inside vessel and sending keystrokes.
 
 ```bash
 WORKDIR=$(mktemp -d)
 cd "$WORKDIR" && jj git init
 
-botty spawn -n init-test -- bash -c "cd $WORKDIR && botbox init"
+vessel spawn -n init-test -- bash -c "cd $WORKDIR && botbox init"
 ```
 
 **Drive the prompts:**
 ```bash
 # Project name
 sleep 1  # give spawn time to start
-botty snapshot init-test
-botty send init-test "my-interactive-project"
+vessel snapshot init-test
+vessel send init-test "my-interactive-project"
 
 # Project type — select with arrow keys + enter
 sleep 0.5
-botty snapshot init-test
-botty send init-test ""  # enter selects first option (api)
+vessel snapshot init-test
+vessel send init-test ""  # enter selects first option (api)
 
 # Tools — all checked by default, just confirm
 sleep 0.5
-botty snapshot init-test
-botty send init-test ""  # enter confirms defaults
+vessel snapshot init-test
+vessel send init-test ""  # enter confirms defaults
 
 # Reviewer roles — select security
 sleep 0.5
-botty snapshot init-test
-botty send init-test " "  # space to toggle first option (now selected)
+vessel snapshot init-test
+vessel send init-test " "  # space to toggle first option (now selected)
 sleep 0.5
-botty snapshot init-test  # optional: verify selection
+vessel snapshot init-test  # optional: verify selection
 
 # Initialize beads — default yes
 sleep 0.5
-botty snapshot init-test
-botty send init-test ""   # enter for default
+vessel snapshot init-test
+vessel send init-test ""   # enter for default
 
 # Wait for completion
 sleep 1
-botty snapshot init-test  # should show "Done."
+vessel snapshot init-test  # should show "Done."
 ```
 
 **Verify (after completion):**
@@ -106,7 +106,7 @@ grep -q "Reviewer roles: security" "$WORKDIR/AGENTS.md" && echo "PASS: reviewers
 
 **Cleanup:**
 ```bash
-botty kill init-test 2>&1 || true  # may already be exited
+vessel kill init-test 2>&1 || true  # may already be exited
 rm -rf "$WORKDIR"
 ```
 
@@ -216,7 +216,7 @@ WORKDIR=$(mktemp -d)
 cd "$WORKDIR" && jj git init
 
 # Doctor before init — should fail
-botbox init --name doctor-test --type api --tools beads,maw,crit,botbus,botty --no-interactive
+botbox init --name doctor-test --type api --tools beads,maw,crit,botbus,vessel --no-interactive
 botbox doctor && echo "PASS: healthy" || echo "FAIL"
 
 # Break things
@@ -224,7 +224,7 @@ rm -rf .agents/botbox
 botbox doctor 2>&1 && echo "FAIL: should detect missing dir" || echo "PASS: detected"
 
 # Partially break — remove symlink
-botbox init --name doctor-test --type api --tools beads,maw,crit,botbus,botty --no-interactive --force
+botbox init --name doctor-test --type api --tools beads,maw,crit,botbus,vessel --no-interactive --force
 rm CLAUDE.md
 botbox doctor 2>&1  # should report missing CLAUDE.md
 ```
@@ -234,7 +234,7 @@ botbox doctor 2>&1  # should report missing CLAUDE.md
 rm -rf "$WORKDIR"
 ```
 
-## 7. Interactive init via botty — edge cases
+## 7. Interactive init via vessel — edge cases
 
 Test prompt validation and unusual inputs.
 
@@ -242,44 +242,44 @@ Test prompt validation and unusual inputs.
 WORKDIR=$(mktemp -d)
 cd "$WORKDIR" && jj git init
 
-botty spawn -n edge-test -- bash -c "cd $WORKDIR && botbox init"
+vessel spawn -n edge-test -- bash -c "cd $WORKDIR && botbox init"
 sleep 1
 
 # Project name
-botty snapshot edge-test
-botty send edge-test "test-edge"
+vessel snapshot edge-test
+vessel send edge-test "test-edge"
 
 # Navigate project type with arrow keys — select "monorepo" (4th option)
 sleep 0.5
-botty snapshot edge-test
-botty send-bytes edge-test "1b5b42"  # down arrow
+vessel snapshot edge-test
+vessel send-bytes edge-test "1b5b42"  # down arrow
 sleep 0.5
-botty send-bytes edge-test "1b5b42"  # down arrow
+vessel send-bytes edge-test "1b5b42"  # down arrow
 sleep 0.5
-botty send-bytes edge-test "1b5b42"  # down arrow
+vessel send-bytes edge-test "1b5b42"  # down arrow
 sleep 0.5
-botty snapshot edge-test  # should show monorepo selected
-botty send edge-test ""   # enter on monorepo
+vessel snapshot edge-test  # should show monorepo selected
+vessel send edge-test ""   # enter on monorepo
 
 # Deselect all tools
 sleep 0.5
-botty snapshot edge-test
-botty send edge-test "a"  # press 'a' to toggle all off
+vessel snapshot edge-test
+vessel send edge-test "a"  # press 'a' to toggle all off
 # Note: 'a' in inquirer toggles all — if all are selected, they all deselect
 # Wait briefly for the action to take effect before confirming
 
 # Skip reviewers
 sleep 0.5
-botty snapshot edge-test
-botty send edge-test ""
+vessel snapshot edge-test
+vessel send edge-test ""
 
 # No beads
 sleep 0.5
-botty snapshot edge-test
-botty send edge-test "n"
+vessel snapshot edge-test
+vessel send edge-test "n"
 
 sleep 1
-botty snapshot edge-test  # should show "Done."
+vessel snapshot edge-test  # should show "Done."
 ```
 
 **Verify:**
@@ -290,7 +290,7 @@ grep "^Tools:" "$WORKDIR/AGENTS.md"  # should show "Tools:" with no items
 
 **Cleanup:**
 ```bash
-botty kill edge-test 2>&1 || true
+vessel kill edge-test 2>&1 || true
 rm -rf "$WORKDIR"
 ```
 
@@ -326,15 +326,15 @@ All 8 tests passed as of 2026-01-29.
 
 **Non-interactive tests (1, 3, 4, 5, 6, 8):** Can be scripted and run in parallel. All passed.
 
-**Interactive tests (2, 7):** Require `botty spawn/send/snapshot`. Both passed.
+**Interactive tests (2, 7):** Require `vessel spawn/send/snapshot`. Both passed.
 
 ## Notes and Tweaks
 
 - **Use `bun link`** in packages/cli/ to make `botbox` available globally instead of PATH manipulation.
-- **`botty wait --contains`** can race if the output appears before the wait starts. Use `sleep` + `snapshot` instead for reliability.
-- **`botty send " "`** (space) toggles checkboxes in inquirer prompts. Pressing `a` toggles all items.
-- **`botty kill`** exits non-zero if the agent already exited. Use `|| true` to avoid script failure.
-- **`botty send-bytes "1b5b42"`** sends down arrow. `1b5b41` is up arrow. Useful for menu navigation.
+- **`vessel wait --contains`** can race if the output appears before the wait starts. Use `sleep` + `snapshot` instead for reliability.
+- **`vessel send " "`** (space) toggles checkboxes in inquirer prompts. Pressing `a` toggles all items.
+- **`vessel kill`** exits non-zero if the agent already exited. Use `|| true` to avoid script failure.
+- **`vessel send-bytes "1b5b42"`** sends down arrow. `1b5b41` is up arrow. Useful for menu navigation.
 - **Empty tools list** renders as `Tools:` with no items in AGENTS.md (not omitted).
 - **beads init** prints a multi-line box to stdout. Wait for "Done." before proceeding.
 

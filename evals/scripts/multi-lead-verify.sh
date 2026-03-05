@@ -108,7 +108,7 @@ check "Lead slots use numbered naming (futil-dev/N)" "$($HAS_NUMBERED_SLOTS && e
 
 # Check 3: Router spawned leads (not single-lead exec) (5 pts)
 echo ""
-echo "--- Check 3: Router spawned leads via botty ---"
+echo "--- Check 3: Router spawned leads via vessel ---"
 ROUTER_SPAWNED=false
 # Check channel history for spawn-ack messages
 if echo "$CHANNEL_HISTORY" | grep -qi "Spawned lead\|spawn-ack"; then
@@ -117,12 +117,12 @@ fi
 # Check router logs
 for rlog in "$ARTIFACTS"/agent-*router*.log; do
   [[ -f "$rlog" ]] || continue
-  if grep -qi "botty spawn\|spawnLead\|acquireLeadSlot" "$rlog" 2>/dev/null; then
+  if grep -qi "vessel spawn\|spawnLead\|acquireLeadSlot" "$rlog" 2>/dev/null; then
     ROUTER_SPAWNED=true
     break
   fi
 done
-check "Router spawned leads via botty" "$($ROUTER_SPAWNED && echo 0 || echo 1)" 5
+check "Router spawned leads via vessel" "$($ROUTER_SPAWNED && echo 0 || echo 1)" 5
 
 # ============================================================
 # Mission Decomposition (20 pts)

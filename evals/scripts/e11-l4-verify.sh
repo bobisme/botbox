@@ -204,8 +204,8 @@ WORKERS_SPAWNED=false
 if [[ "$WORKER_COUNT" -ge 1 ]]; then
   WORKERS_SPAWNED=true
 fi
-# Check dev log for botty spawn with hierarchical name pattern (agent/worker)
-if echo "$DEV_LOG" | grep -i "botty spawn" | grep -q "/"; then
+# Check dev log for vessel spawn with hierarchical name pattern (agent/worker)
+if echo "$DEV_LOG" | grep -i "vessel spawn" | grep -q "/"; then
   WORKERS_SPAWNED=true
 fi
 check "Workers spawned ($WORKER_COUNT discovered)" "$($WORKERS_SPAWNED && echo 0 || echo 1)" 5
@@ -468,7 +468,7 @@ echo ""
 # Count tool errors (friction) vs intentional test errors.
 # Agents intentionally run the project CLI with bad inputs to verify error handling.
 # Those exit code 1s are NOT friction. Real friction = tool_use_error + exit codes from
-# tool commands (bus/br/maw/botty/jj/cargo build/test/check), NOT from running the project binary.
+# tool commands (bus/br/maw/vessel/jj/cargo build/test/check), NOT from running the project binary.
 _count_tool_errors() {
   local log="$1"
   local count=0

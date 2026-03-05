@@ -6,7 +6,7 @@ Setup, sync, and runtime for multi-agent workflows. Bootstraps projects with wor
 
 ## Eval Results
 
-32 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the edict protocol when driven autonomously through the botty-native spawn chain (hooks → botty spawn → edict run).
+32 behavioral evaluations across Opus, Sonnet, and Haiku. The eval framework tests whether agents follow the edict protocol when driven autonomously through the vessel-native spawn chain (hooks → vessel spawn → edict run).
 
 | Eval       | Model       | Score         | What it tests                                                                                                            |
 | ---------- | ----------- | ------------- | ------------------------------------------------------------------------------------------------------------------------ |
@@ -29,7 +29,7 @@ Setup, sync, and runtime for multi-agent workflows. Bootstraps projects with wor
 4. **Runs agent loops** as built-in subcommands (`dev-loop`, `worker-loop`, `reviewer-loop`, `responder`)
 5. **Provides protocol commands** that guide agents through state transitions (`protocol start`, `merge`, `finish`, etc.)
 
-It glues together 5 companion tools (bus, maw, br/bv, crit, botty) into a cohesive workflow and provides the runtime that drives agent behavior.
+It glues together 5 companion tools (bus, maw, br/bv, crit, vessel) into a cohesive workflow and provides the runtime that drives agent behavior.
 
 ## Install
 
@@ -57,7 +57,7 @@ edict sync --check
 # Validate toolchain and project setup
 edict doctor
 
-# Run agent loops (typically invoked by botty spawn, not manually)
+# Run agent loops (typically invoked by vessel spawn, not manually)
 edict run dev-loop --agent myproject-dev
 edict run worker-loop --agent myproject-dev/worker-1
 edict run reviewer-loop --agent myproject-security
@@ -116,7 +116,7 @@ When edict updates, run `edict sync` to pull the latest workflow doc changes.
 Agents are spawned automatically via botbus hooks when messages arrive on project channels. The spawn chain:
 
 ```
-message → botbus hook → botty spawn → edict run responder → edict run dev-loop
+message → botbus hook → vessel spawn → edict run responder → edict run dev-loop
 ```
 
 Agent loops are built-in Rust subcommands of the `edict` binary:
@@ -140,7 +140,7 @@ Edict coordinates these specialized tools that work together to enable multi-age
 | **[maw](https://github.com/bobisme/maw)**       | Isolated jj workspaces           | `ws create`, `ws merge`, `ws destroy`         | Concurrent work isolation with Jujutsu VCS          |
 | **[bones](https://github.com/bobisme/bones)**   | Issue tracking and triage (`bn`) | `create`, `next`, `do`, `done`, `triage`      | Event-sourced issue tracker with built-in triage    |
 | **[crit](https://github.com/bobisme/botcrit)**  | Code review                      | `review`, `comment`, `lgtm`, `block`          | Asynchronous code review workflow                   |
-| **[botty](https://github.com/bobisme/botty)**   | Agent runtime                    | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops               |
+| **[vessel](https://github.com/bobisme/vessel)**   | Agent runtime                    | `spawn`, `kill`, `tail`, `snapshot`           | Process management for AI agent loops               |
 
 ### How they work together
 
@@ -148,7 +148,7 @@ Edict coordinates these specialized tools that work together to enable multi-age
 2. **bones** tracks work items and priorities, exposing a triage interface (`bn next`, `bn triage`)
 3. **maw** creates isolated workspaces so multiple agents can work concurrently without conflicts
 4. **crit** enables code review: agents request reviews, reviewers comment, and changes merge after approval
-5. **botty** spawns and manages agent processes, handling crashes and lifecycle
+5. **vessel** spawns and manages agent processes, handling crashes and lifecycle
 
 **edict** configures projects to use these tools, keeps workflow docs synchronized, and runs the agent loops (`edict run dev-loop`, `edict run worker-loop`, etc.) that drive the entire workflow.
 
@@ -169,12 +169,12 @@ The `#projects` registry on botbus tracks which tools belong to which projects:
 
 ```bash
 # Find who owns a tool
-bus history projects -n 50 | grep "tools:.*botty"
+bus history projects -n 50 | grep "tools:.*vessel"
 
 # File bugs in their repo
-cd ~/src/botty
+cd ~/src/vessel
 br create --actor $AGENT --owner $AGENT --title="Bug: ..." --type=bug --priority=2
-bus send --agent $AGENT botty "Filed bd-xyz: description @botty-dev" -L feedback
+bus send --agent $AGENT vessel "Filed bd-xyz: description @vessel-dev" -L feedback
 ```
 
 See `.agents/edict/docs/report-issue.md` for full workflow.

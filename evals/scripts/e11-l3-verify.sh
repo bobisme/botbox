@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # E11-L3 Verification Script
-# Automated scoring for the two-project, three-agent botty-native eval.
+# Automated scoring for the two-project, three-agent vessel-native eval.
 # Checks spawn chain, protocol compliance, cross-project coordination,
 # review cycle, code correctness, and friction.
 

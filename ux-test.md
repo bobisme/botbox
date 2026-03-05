@@ -12,12 +12,12 @@ Validate that AGENTS.md (and its linked workflow docs) provide sufficient, clear
    ```bash
    WORKDIR=$(mktemp -d)
    cd "$WORKDIR" && jj git init
-   botbox init --name ux-test --type api --tools beads,maw,crit,botbus,botty --no-interactive
+   botbox init --name ux-test --type api --tools beads,maw,crit,botbus,vessel --no-interactive
    ```
 
 2. **Spawn subagent** in that directory:
    ```bash
-   # Use Task tool or spawn via botty/claude CLI
+   # Use Task tool or spawn via vessel/claude CLI
    # Set working directory to $WORKDIR
    ```
 

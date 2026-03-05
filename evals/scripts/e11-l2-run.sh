@@ -106,8 +106,8 @@ while true; do
   echo ""
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
-  # Check botty — are agents running?
-  BOTTY_JSON=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+  # Check vessel — are agents running?
+  BOTTY_JSON=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
   DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
   REVIEWER_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
 
@@ -176,7 +176,7 @@ while true; do
     FINAL_STATUS_REVIEWER="completed"
     for WAIT_I in 1 2 3 4 5 6; do
       sleep 15
-      BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+      BOTTY_FINAL=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
       DEV_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$DEV_AGENT\") | .id" 2>/dev/null || echo "")
       REVIEWER_STILL_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$REVIEWER\") | .id" 2>/dev/null || echo "")
       [[ -z "$DEV_STILL_RUNNING" ]] && FINAL_STATUS_DEV="completed"
@@ -213,23 +213,23 @@ echo ""
 echo "--- Capturing artifacts ---"
 
 # Dev agent log
-botty tail "$DEV_AGENT" -n 500 > "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null || \
+vessel tail "$DEV_AGENT" -n 500 > "$ARTIFACTS/agent-${DEV_AGENT}.log" 2>/dev/null || \
   echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${DEV_AGENT}.log"
 echo "  dev log: $ARTIFACTS/agent-${DEV_AGENT}.log"
 
 # Reviewer agent log
-botty tail "$REVIEWER" -n 500 > "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || \
+vessel tail "$REVIEWER" -n 500 > "$ARTIFACTS/agent-${REVIEWER}.log" 2>/dev/null || \
   echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${REVIEWER}.log"
 echo "  reviewer log: $ARTIFACTS/agent-${REVIEWER}.log"
 
 # Respond.mjs log (if it spawned)
-botty tail "respond" -n 500 > "$ARTIFACTS/agent-respond.log" 2>/dev/null || \
+vessel tail "respond" -n 500 > "$ARTIFACTS/agent-respond.log" 2>/dev/null || \
   echo "(respond agent not found or already exited)" > "$ARTIFACTS/agent-respond.log"
 
 # Also try to capture any dev-loop worker agents
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+for agent_name in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   if [[ "$agent_name" != "$DEV_AGENT" && "$agent_name" != "$REVIEWER" && "$agent_name" != "respond" ]]; then
-    botty tail "$agent_name" -n 500 > "$ARTIFACTS/agent-${agent_name}.log" 2>/dev/null || true
+    vessel tail "$agent_name" -n 500 > "$ARTIFACTS/agent-${agent_name}.log" 2>/dev/null || true
     echo "  worker log: $ARTIFACTS/agent-${agent_name}.log"
   fi
 done
@@ -276,12 +276,12 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-botty kill "$DEV_AGENT" 2>/dev/null || true
-botty kill "$REVIEWER" 2>/dev/null || true
-botty kill "respond" 2>/dev/null || true
+vessel kill "$DEV_AGENT" 2>/dev/null || true
+vessel kill "$REVIEWER" 2>/dev/null || true
+vessel kill "respond" 2>/dev/null || true
 # Kill any worker agents that might still be running
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  botty kill "$agent_name" 2>/dev/null || true
+for agent_name in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  vessel kill "$agent_name" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

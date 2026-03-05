@@ -4,13 +4,13 @@ set -euo pipefail
 # E11-L1 Botty-Native End-to-End Eval — Setup
 # Creates a single Rust/Axum project with isolated botbus, seeds one bead,
 # and registers hooks via botbox init. Does NOT send the task-request —
-# that goes in the run script (it triggers the hook → botty spawn).
+# that goes in the run script (it triggers the hook → vessel spawn).
 #
-# This is the simplest possible botty-native eval: one project, one agent,
-# one bone. Tests the full spawn chain: message → hook → botty → loop script.
+# This is the simplest possible vessel-native eval: one project, one agent,
+# one bone. Tests the full spawn chain: message → hook → vessel → loop script.
 
 # --- Preflight: fail fast on missing dependencies ---
-REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit vessel jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -30,7 +30,7 @@ bus init
 # --- Capture tool versions for forensics ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus bn maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit vessel jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e11-l1"
@@ -86,10 +86,10 @@ jj new
 
 # botbox init handles: maw init (-> bare repo + ws/default/), bn init, crit init, hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name echo --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
+  botbox init --name echo --type api --tools bones,maw,crit,botbus,vessel --reviewers security --init-bones --no-interactive
 
 # --- Fix hooks: add BOTBUS_DATA_DIR to --env-inherit ---
-# botty starts agents with a clean env. botbox init registers hooks with
+# vessel starts agents with a clean env. botbox init registers hooks with
 # --env-inherit for BOTBUS_CHANNEL etc but NOT BOTBUS_DATA_DIR. Without it,
 # spawned agents talk to the system botbus instead of the eval's isolated one.
 #
@@ -108,7 +108,7 @@ for i in $(seq 0 $((HOOK_COUNT - 1))); do
   COND_TYPE=$(echo "$HOOK" | jq -r '.condition.type')
 
   # Build new command array: append BOTBUS_DATA_DIR to --env-inherit value
-  # The command is a JSON array like ["botty", "spawn", "--env-inherit", "BOTBUS_CHANNEL,...", ...]
+  # The command is a JSON array like ["vessel", "spawn", "--env-inherit", "BOTBUS_CHANNEL,...", ...]
   readarray -t CMD_ARRAY < <(echo "$HOOK" | jq -r '.command[] | if startswith("BOTBUS_CHANNEL") then . + ",BOTBUS_DATA_DIR" else . end')
 
   # Remove old hook

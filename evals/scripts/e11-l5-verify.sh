@@ -214,7 +214,7 @@ WORKERS_SPAWNED=false
 if [[ "$WORKER_COUNT" -ge 1 ]]; then
   WORKERS_SPAWNED=true
 fi
-if echo "$DEV_LOG" | grep -i "botty spawn" | grep -q "/"; then
+if echo "$DEV_LOG" | grep -i "vessel spawn" | grep -q "/"; then
   WORKERS_SPAWNED=true
 fi
 check "Workers spawned ($WORKER_COUNT discovered)" "$($WORKERS_SPAWNED && echo 0 || echo 1)" 5

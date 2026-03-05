@@ -7,7 +7,7 @@
 
 ## Summary
 
-A new eval type that tests the full botbox spawn chain by sending a task-request on a channel and observing what happens — no hand-crafted phase prompts, no sequential `claude -p` invocations. The eval watches as hooks fire, botty spawns agents, loop scripts drive behavior, and agents coordinate through the real tool suite.
+A new eval type that tests the full botbox spawn chain by sending a task-request on a channel and observing what happens — no hand-crafted phase prompts, no sequential `claude -p` invocations. The eval watches as hooks fire, vessel spawns agents, loop scripts drive behavior, and agents coordinate through the real tool suite.
 
 E10 tests "can agents use the tools correctly?" E11 tests "does the whole system actually work?"
 
@@ -21,7 +21,7 @@ The current eval suite has a blind spot. E10 simulates the agent workflow with c
 | Agent prompts (worker-loop.md, review-loop.md) | Approximated | Real prompts |
 | Loop scripts (dev-loop.mjs, reviewer-loop.mjs) | No | Yes |
 | Hook registration and firing | Partially (4.5) | Yes |
-| botty spawn and PTY management | No | Yes |
+| vessel spawn and PTY management | No | Yes |
 | Iteration control (max_loops, pause, timeout) | No | Yes |
 | Crash recovery within loop scripts | No | Yes |
 | Inter-iteration state (journal files, claim renewal) | No | Yes |
@@ -29,10 +29,10 @@ The current eval suite has a blind spot. E10 simulates the agent workflow with c
 Concrete things that could break without E11 catching them:
 - dev-loop.mjs's `has_work()` function returns wrong result → agent sits idle
 - reviewer-loop.mjs doesn't iterate workspaces via `maw ws list` + `crit inbox` per workspace correctly → reviews never picked up
-- Hook command format changes after a migration → botty spawn fails silently
+- Hook command format changes after a migration → vessel spawn fails silently
 - `--pass-env` doesn't forward `BOTBUS_AGENT` → spawned agent has no identity
 - Loop script exit conditions fire too early → agent quits mid-task
-- botty spawn timeout too short → agent killed before finishing
+- vessel spawn timeout too short → agent killed before finishing
 
 ## Design
 
@@ -40,17 +40,17 @@ Concrete things that could break without E11 catching them:
 
 #### E11-L1: Single project, dev agent only (no review)
 
-The simplest possible botty-native eval. Tests the core spawn chain.
+The simplest possible vessel-native eval. Tests the core spawn chain.
 
 **Setup**:
 - 1 Rust project (Axum, like E10's Alpha but simpler — no planted vulnerability)
-- Tools: beads, maw, crit, botbus, botty
+- Tools: beads, maw, crit, botbus, vessel
 - 1 bead: "Add GET /version endpoint returning `{"name":"myproject","version":"0.1.0"}`"
 - Register dev-loop hook on the project channel
 - Send task-request to channel
 
 **What happens** (expected):
-1. Hook fires → botty spawns dev agent running dev-loop.mjs
+1. Hook fires → vessel spawns dev agent running dev-loop.mjs
 2. dev-loop.mjs iteration 1: triage inbox, find bead, claim it
 3. dev-loop.mjs: create workspace, implement, describe commit
 4. dev-loop.mjs: since review is enabled and reviewer is configured, request review
@@ -61,14 +61,14 @@ The simplest possible botty-native eval. Tests the core spawn chain.
 
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
-| Hook fired and agent spawned | 5 | `botty list` showed agent during run |
+| Hook fired and agent spawned | 5 | `vessel list` showed agent during run |
 | Bead claimed (in_progress) | 5 | `br show` |
-| Workspace created | 5 | `maw ws list` during run (check botty tail) |
+| Workspace created | 5 | `maw ws list` during run (check vessel tail) |
 | Code implemented and compiles | 10 | `cargo check` on main after merge |
 | Workspace merged | 5 | No non-default workspaces remain |
 | Bead closed | 5 | `br show` status=closed |
 | Claims released | 5 | `bus claims list` (only agent:// from hooks) |
-| Agent exited cleanly | 5 | botty shows no running agents after timeout |
+| Agent exited cleanly | 5 | vessel shows no running agents after timeout |
 | Bus labels correct | 5 | `bus history` shows task-claim, task-done |
 
 **Timeout**: 10 minutes. If bead not closed by then, score what's observable.
@@ -87,7 +87,7 @@ Adds the review spawn chain. This is the key test — does the @mention hook fir
 1. Hook fires → dev agent spawns via dev-loop.mjs
 2. Dev implements endpoint (likely with the path traversal — doesn't know it's a bug)
 3. Dev creates review, sends `@alpha-security` mention on bus
-4. Reviewer hook fires → botty spawns reviewer via reviewer-loop.mjs
+4. Reviewer hook fires → vessel spawns reviewer via reviewer-loop.mjs
 5. Reviewer reads code from workspace, finds path traversal, blocks
 6. Dev reads block, fixes in workspace, re-requests review
 7. Reviewer re-reviews, LGTMs
@@ -97,12 +97,12 @@ Adds the review spawn chain. This is the key test — does the @mention hook fir
 
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
-| Dev agent spawned via hook | 5 | botty tail / botty list |
+| Dev agent spawned via hook | 5 | vessel tail / vessel list |
 | Bead triaged and claimed | 10 | br show: in_progress, bus claims |
 | Workspace created | 5 | maw ws list |
-| Code implemented | 10 | cargo check in workspace (via botty tail) |
+| Code implemented | 10 | cargo check in workspace (via vessel tail) |
 | Review created with @mention | 10 | crit reviews list, bus history |
-| Reviewer spawned via hook | 5 | botty list shows reviewer |
+| Reviewer spawned via hook | 5 | vessel list shows reviewer |
 | Reviewer found defect | 10 | crit review shows block with relevant comment |
 | Dev fixed defect | 10 | code inspection on main post-merge |
 | Reviewer LGTMd | 10 | crit review shows lgtm |
@@ -110,11 +110,11 @@ Adds the review spawn chain. This is the key test — does the @mention hook fir
 | Claims released | 5 | bus claims list |
 | Code compiles on main | 5 | cargo check |
 | Bus labels and identity correct | 5 | bus history audit |
-| Both agents exited cleanly | 5 | botty list empty |
+| Both agents exited cleanly | 5 | vessel list empty |
 
-**Timeout**: 20 minutes. The review cycle adds latency — dev must wait for reviewer, which is a separate botty spawn.
+**Timeout**: 20 minutes. The review cycle adds latency — dev must wait for reviewer, which is a separate vessel spawn.
 
-**Key risk**: The review cycle requires two separate botty agents to coordinate asynchronously. If the reviewer hook doesn't fire, or the dev agent doesn't wait for the review result, the cycle breaks. This is exactly what we want to test.
+**Key risk**: The review cycle requires two separate vessel agents to coordinate asynchronously. If the reviewer hook doesn't fire, or the dev agent doesn't wait for the review result, the cycle breaks. This is exactly what we want to test.
 
 #### E11-L3: Two projects, full lifecycle (E10-equivalent)
 
@@ -136,14 +136,14 @@ Since there are no phase boundaries, observation uses polling + event-driven che
 **During the run** (real-time monitoring):
 ```bash
 # Watch agent output
-botty tail <name> --follow
+vessel tail <name> --follow
 
 # Stream bus messages
 bus watch --channel <project>
 
 # Poll periodically
 while true; do
-  botty list --format json
+  vessel list --format json
   br show <bead> --format json
   bus claims list --format json
   sleep 30
@@ -153,7 +153,7 @@ done
 **After the run** (scoring):
 ```bash
 # Agent logs (primary scoring data)
-botty tail <name> --last 500 > artifacts/agent-<name>.log
+vessel tail <name> --last 500 > artifacts/agent-<name>.log
 
 # Channel history
 bus history <channel> -n 50 > artifacts/channel.log
@@ -168,13 +168,13 @@ cargo check
 
 The run script captures these into `$EVAL_DIR/artifacts/` for post-mortem scoring, same as E10.
 
-### Differences from botty tail output vs phase stdout logs
+### Differences from vessel tail output vs phase stdout logs
 
-E10's phase logs use `botbox run-agent` which produces clean tool-call-and-result output. botty tail output is raw PTY output with ANSI escape codes, spinner frames, and potentially interleaved stdout/stderr.
+E10's phase logs use `botbox run-agent` which produces clean tool-call-and-result output. vessel tail output is raw PTY output with ANSI escape codes, spinner frames, and potentially interleaved stdout/stderr.
 
 The friction extraction script needs to handle both formats. Options:
 1. Strip ANSI codes with `sed` before analysis
-2. Use `botbox run-agent` inside botty spawn (if the loop scripts support it)
+2. Use `botbox run-agent` inside vessel spawn (if the loop scripts support it)
 3. Parse the raw PTY output with regex patterns for tool calls
 
 Option 1 is simplest and most robust.
@@ -189,7 +189,7 @@ Option 1 is simplest and most robust.
 
 "Stuck" = no new bus messages from any agent AND no bead status changes AND no new crit events.
 
-On timeout or stuck: `botty kill` all agents, capture final state, score what's observable.
+On timeout or stuck: `vessel kill` all agents, capture final state, score what's observable.
 
 ## Risks
 
@@ -197,11 +197,11 @@ On timeout or stuck: `botty kill` all agents, capture final state, score what's 
 
 2. **Loop script bugs mask agent capability**: If dev-loop.mjs has a bug (e.g., wrong `has_work()` logic), E11 scores low even if the agent would have been fine with a correct script. This is actually desirable — we want to find these bugs — but complicates attribution.
 
-3. **botty reliability**: botty must handle PTY management correctly throughout the run. If botty drops the session or misroutes input, the eval fails for infrastructure reasons. Mitigation: start with L1 (single agent, simple task) to validate botty works.
+3. **vessel reliability**: vessel must handle PTY management correctly throughout the run. If vessel drops the session or misroutes input, the eval fails for infrastructure reasons. Mitigation: start with L1 (single agent, simple task) to validate vessel works.
 
-4. **Cost unpredictability**: Agents in loop scripts iterate until done. A stuck agent could burn API credits in a retry loop. Mitigation: `botty spawn --timeout` limits session duration. `.botbox.json` `agents.dev.timeout` controls per-agent timeout.
+4. **Cost unpredictability**: Agents in loop scripts iterate until done. A stuck agent could burn API credits in a retry loop. Mitigation: `vessel spawn --timeout` limits session duration. `.botbox.json` `agents.dev.timeout` controls per-agent timeout.
 
-5. **Scoring difficulty**: Without phase boundaries, it's harder to attribute failures to specific steps. "The bead isn't closed" could mean the agent never triaged, or triaged but got stuck implementing, or implemented but couldn't merge. Mitigation: botty tail provides the full log — scoring requires reading it, same as E10 phase logs.
+5. **Scoring difficulty**: Without phase boundaries, it's harder to attribute failures to specific steps. "The bead isn't closed" could mean the agent never triaged, or triaged but got stuck implementing, or implemented but couldn't merge. Mitigation: vessel tail provides the full log — scoring requires reading it, same as E10 phase logs.
 
 ## Open Questions
 
@@ -220,7 +220,7 @@ On timeout or stuck: `botty kill` all agents, capture final state, score what's 
 
 1. **Is E11 a replacement for E10?** No. They measure different things. E10 (controlled) tests agent tool usage. E11 (uncontrolled) tests system integration. Both are valuable. Run E10v2 for tool UX iteration, E11 for system validation.
 
-2. **Which tier to start with?** L1. It's the simplest (single agent, no review) and validates the core spawn chain. If L1 fails, we know botty/hooks/scripts have issues before attempting the complex L2/L3 scenarios.
+2. **Which tier to start with?** L1. It's the simplest (single agent, no review) and validates the core spawn chain. If L1 fails, we know vessel/hooks/scripts have issues before attempting the complex L2/L3 scenarios.
 
 3. **Where do scripts and rubrics go?** Same structure as E10: `evals/scripts/e11-*.sh` for scripts, `evals/rubrics.md` for rubrics, `evals/results/` for reports.
 
@@ -287,7 +287,7 @@ On timeout or stuck: `botty kill` all agents, capture final state, score what's 
 - `packages/cli/docs/review-loop.md` — Reviewer agent loop
 
 ### Botty (agent runtime)
-- See CLAUDE.md botty section: spawn, tail, list, kill, send
+- See CLAUDE.md vessel section: spawn, tail, list, kill, send
 
 ### Previous E10 runs (baseline comparison)
 - `evals/results/2026-02-06-e10-run1-opus.md` — E10-1: 158/160

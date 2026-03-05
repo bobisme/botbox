@@ -18,7 +18,7 @@
       "default": {
         "bones": false,
         "botbus": false,
-        "botty": false,
+        "vessel": false,
         "crit": false,
         "maw": false
       },
@@ -171,7 +171,7 @@
           "default": false,
           "type": "boolean"
         },
-        "botty": {
+        "vessel": {
           "default": false,
           "type": "boolean"
         }
@@ -299,7 +299,7 @@
           ]
         },
         "memory_limit": {
-          "description": "Memory limit for dev-loop agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "description": "Memory limit for dev-loop agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to vessel spawn.",
           "default": null,
           "type": [
             "string",
@@ -370,7 +370,7 @@
           "minimum": 0.0
         },
         "memory_limit": {
-          "description": "Memory limit for worker agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "description": "Memory limit for worker agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to vessel spawn.",
           "default": null,
           "type": [
             "string",
@@ -405,7 +405,7 @@
           "minimum": 0.0
         },
         "memory_limit": {
-          "description": "Memory limit for reviewer agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "description": "Memory limit for reviewer agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to vessel spawn.",
           "default": null,
           "type": [
             "string",
@@ -440,7 +440,7 @@
           "minimum": 0.0
         },
         "memory_limit": {
-          "description": "Memory limit for responder agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to botty spawn.",
+          "description": "Memory limit for responder agents (e.g. \"4G\", \"2G\"). Passed as --memory-limit to vessel spawn.",
           "default": null,
           "type": [
             "string",

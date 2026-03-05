@@ -27,15 +27,15 @@ Inspiration: WezTerm Automata (from the flywheel ecosystem) demonstrates termina
 
 ### Where Does This Feature Belong?
 
-**Recommendation: botty (with botbox integration hooks)**
+**Recommendation: vessel (with botbox integration hooks)**
 
-The core health monitoring should live in **botty** because:
+The core health monitoring should live in **vessel** because:
 
-1. **PTY access**: botty already manages agent PTYs via `botty spawn`. It has direct access to terminal output streams, which are the richest signal source.
+1. **PTY access**: vessel already manages agent PTYs via `vessel spawn`. It has direct access to terminal output streams, which are the richest signal source.
 
-2. **Process control**: botty can kill and respawn agents. Health monitoring needs this capability to take action.
+2. **Process control**: vessel can kill and respawn agents. Health monitoring needs this capability to take action.
 
-3. **Runtime concern**: Health monitoring is a runtime observation feature, not a project bootstrap feature. botty is the agent runtime; botbox is the project setup tool.
+3. **Runtime concern**: Health monitoring is a runtime observation feature, not a project bootstrap feature. vessel is the agent runtime; botbox is the project setup tool.
 
 **botbox's role**: Provide configuration for health policies and integrate with botbus for alerting. The `.botbox.json` config could include health thresholds, and botbox hooks could trigger alerts.
 
@@ -49,7 +49,7 @@ The core health monitoring should live in **botty** because:
 | **Token burn without progress** | Compare bead comments over time | Medium | Agent working but no `br comments add` for extended period |
 | **Completion signal timeout** | Missing `<promise>COMPLETE</promise>` | High | Claude invocation finished but no structured completion signal |
 | **No claim activity** | botbus claims API | Medium | Agent claimed work but no claim refresh or new claims for extended period |
-| **Process exit** | botty process monitoring | High | Agent process died (already partially handled) |
+| **Process exit** | vessel process monitoring | High | Agent process died (already partially handled) |
 | **Spinning on same file** | PTY output pattern | Low | Repeated read/edit on same file without change (possible infinite loop) |
 
 **Recommended initial implementation**: Start with the high-confidence signals (no output, rate limits, completion signal timeout). Add medium-confidence signals in v2.
@@ -58,7 +58,7 @@ The core health monitoring should live in **botty** because:
 
 ```
 +------------------+     +------------------+     +------------------+
-|   botty spawn    | --> |  health-monitor  | --> |  botbus alerts   |
+|   vessel spawn    | --> |  health-monitor  | --> |  botbus alerts   |
 |   (PTY output)   |     |  (pattern match) |     |  (notifications) |
 +------------------+     +------------------+     +------------------+
                                |
@@ -102,21 +102,21 @@ Proposed `.botbox.json` schema additions:
 }
 ```
 
-### API Surface (botty)
+### API Surface (vessel)
 
 ```bash
 # Start agent with health monitoring
-botty spawn --name worker-1 --health-policy default -- claude -p "..."
+vessel spawn --name worker-1 --health-policy default -- claude -p "..."
 
 # Query health status
-botty health worker-1
+vessel health worker-1
 # Output: { "agent": "worker-1", "status": "healthy", "last_output": "2026-02-05T10:30:00Z", "errors": [] }
 
 # List unhealthy agents
-botty health --filter unhealthy
+vessel health --filter unhealthy
 
 # Manually trigger recovery
-botty recover worker-1  # Kills and respawns
+vessel recover worker-1  # Kills and respawns
 ```
 
 ### Integration with Existing Loop Scripts
@@ -138,28 +138,28 @@ if (isFatalError) {
 With health monitoring, this becomes:
 
 1. **Loop scripts** continue to handle errors they can recover from (transient failures).
-2. **botty health-monitor** observes from outside and handles cases where the script itself is stuck.
-3. **Coordination**: If botty kills an agent, it posts to botbus. The next agent to pick up work sees the in_progress bead via crash recovery.
+2. **vessel health-monitor** observes from outside and handles cases where the script itself is stuck.
+3. **Coordination**: If vessel kills an agent, it posts to botbus. The next agent to pick up work sees the in_progress bead via crash recovery.
 
 ## Open Questions
 
 1. **MCP integration**: Should health status be exposed via MCP server (like WezTerm Automata does)? This would let external tools query agent health.
 
-2. **Multi-machine**: How does this work when agents run on different machines? Does each machine run its own botty health-monitor, or is there centralized monitoring?
+2. **Multi-machine**: How does this work when agents run on different machines? Does each machine run its own vessel health-monitor, or is there centralized monitoring?
 
 3. **Token tracking**: Can we get token usage per agent to implement "token burn without progress" accurately? This may require API-level integration.
 
-4. **Respawn semantics**: When botty respawns an agent, should it resume the same bead or let crash recovery handle it? Resuming requires preserving the workspace state.
+4. **Respawn semantics**: When vessel respawns an agent, should it resume the same bead or let crash recovery handle it? Resuming requires preserving the workspace state.
 
 5. **False positive handling**: What happens if health monitoring incorrectly kills a working agent? Do we need a "confirm unhealthy" timeout before action?
 
 ## Answered Questions
 
-### Q: Is this a botty feature or botbox feature?
+### Q: Is this a vessel feature or botbox feature?
 
-**A: Primarily botty, with botbox config integration.**
+**A: Primarily vessel, with botbox config integration.**
 
-- **botty** owns the runtime monitoring and action execution (PTY observation, kill, respawn).
+- **vessel** owns the runtime monitoring and action execution (PTY observation, kill, respawn).
 - **botbox** owns the configuration schema and helps set up alerting channels during `botbox init`.
 - **botbus** provides the coordination layer (alerts, claims release, reassignment signals).
 
@@ -198,23 +198,23 @@ Monitor CPU, memory, and process state. High CPU with no progress = stuck.
 
 ### 4. Centralized health service (separate binary)
 
-A new tool (`bothealth` or similar) that queries botty, botbus, and beads to compute agent health.
+A new tool (`bothealth` or similar) that queries vessel, botbus, and beads to compute agent health.
 
-**Rejected for now**: Adds another tool to maintain. Better to put health monitoring in botty where PTY access already exists. Can revisit if multi-machine becomes common.
+**Rejected for now**: Adds another tool to maintain. Better to put health monitoring in vessel where PTY access already exists. Can revisit if multi-machine becomes common.
 
 ## Implementation Plan
 
 If accepted, this proposal breaks down into the following beads:
 
-1. **botty: Add PTY output buffering and timestamps** - Store last N lines of output with timestamps for pattern matching.
+1. **vessel: Add PTY output buffering and timestamps** - Store last N lines of output with timestamps for pattern matching.
 
-2. **botty: Implement idle timeout detection** - Flag agents with no output for > configured timeout.
+2. **vessel: Implement idle timeout detection** - Flag agents with no output for > configured timeout.
 
-3. **botty: Add rate limit pattern detection** - Scan PTY output for rate limit error patterns.
+3. **vessel: Add rate limit pattern detection** - Scan PTY output for rate limit error patterns.
 
-4. **botty: Health status API** - `botty health <agent>` and `botty health --filter unhealthy`.
+4. **vessel: Health status API** - `vessel health <agent>` and `vessel health --filter unhealthy`.
 
-5. **botty: Auto-recovery actions** - Kill agent, release claims via botbus, post alert.
+5. **vessel: Auto-recovery actions** - Kill agent, release claims via botbus, post alert.
 
 6. **botbox: Health config schema** - Add `agents.health` section to `.botbox.json` schema.
 

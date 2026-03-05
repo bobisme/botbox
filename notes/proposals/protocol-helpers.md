@@ -361,7 +361,7 @@ Enhance the existing `botbox status` command using the shared `ProtocolContext`:
 
 ### What this does NOT do
 
-- **Does not execute commands** — agents read the output and run the commands themselves. This keeps every step visible in `botty tail` and lets agents adapt if something fails.
+- **Does not execute commands** — agents read the output and run the commands themselves. This keeps every step visible in `vessel tail` and lets agents adapt if something fails.
 - **Does not replace Claude's judgment** — agents still decide WHAT to work on, HOW to implement, WHETHER to request review.
 - **Does not remove agent instructions** — prompts still describe the workflow. Protocol commands are a supplement, not a replacement.
 
@@ -397,7 +397,7 @@ Decision criteria for Layer 2: if agents follow >95% of protocol commands output
    **A:** Default to `.botbox.json` `review.reviewers` mapped to `<project>-<role>`; `--reviewers` flag overrides.
 
 5. **Q:** Should `protocol dispatch` be in scope?
-   **A:** No — defer to follow-up. Dispatch is the most complex protocol sequence (workspace + name generation + 2 claims + bead comment with mission context + botty spawn with 6+ env vars). Read-only guidance would output ~15 lines of commands with variable interpolation chains — too much for copy-paste. Dispatch is the strongest candidate for a Layer 2 mutating command. Ship start/finish/review/cleanup/resume first, eval, then tackle dispatch.
+   **A:** No — defer to follow-up. Dispatch is the most complex protocol sequence (workspace + name generation + 2 claims + bead comment with mission context + vessel spawn with 6+ env vars). Read-only guidance would output ~15 lines of commands with variable interpolation chains — too much for copy-paste. Dispatch is the strongest candidate for a Layer 2 mutating command. Ship start/finish/review/cleanup/resume first, eval, then tackle dispatch.
 
 6. **Q:** How verbose should command output be?
    **A:** Keep inline comments (lines starting with `#`) by default. They help agents understand multi-step sequences (e.g., "capture workspace name from output, then:"). Cost is ~20 tokens per command, benefit is agents not misunderstanding variable capture steps. No `--terse` mode for v1 — revisit if token usage becomes a measurable problem.
@@ -509,7 +509,7 @@ The concern is valid — state can change between guidance output and execution.
 
 ### Change #2: Shell quoting — ACCEPTED (modified approach)
 
-Real bug — bead titles with quotes or special characters would produce broken shell commands. The reviewer proposed ID-only messages by default with `--include-title` opt-in. We instead adopted always-include-titles with proper shell escaping via a single renderer function. Titles in bus messages and comments are valuable for human readability and `botty tail` debugging. Added "Command rendering and shell safety" section with escaping rules.
+Real bug — bead titles with quotes or special characters would produce broken shell commands. The reviewer proposed ID-only messages by default with `--include-title` opt-in. We instead adopted always-include-titles with proper shell escaping via a single renderer function. Titles in bus messages and comments are valuable for human readability and `vessel tail` debugging. Added "Command rendering and shell safety" section with escaping rules.
 
 ### Change #3: Review approval policy — PARTIALLY ACCEPTED
 

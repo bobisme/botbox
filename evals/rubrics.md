@@ -54,7 +54,7 @@ The code should be realistic — not a contrived CTF challenge. It should look l
 ```bash
 EVAL_DIR=$(mktemp -d)
 cd "$EVAL_DIR" && jj git init
-botbox init --name review-eval --type api --tools bones,maw,crit,bus,botty --init-bones --no-interactive
+botbox init --name review-eval --type api --tools bones,maw,crit,bus,vessel --init-bones --no-interactive
 cargo init --name review-eval
 crit init
 
@@ -464,7 +464,7 @@ Test the full dev-agent architecture end-to-end: triage → start → work → r
 ```bash
 EVAL_DIR=$(mktemp -d) && cd "$EVAL_DIR"
 jj git init
-botbox init --name r4-eval --type api --tools bones,maw,crit,bus,botty --init-bones --no-interactive
+botbox init --name r4-eval --type api --tools bones,maw,crit,bus,vessel --init-bones --no-interactive
 cargo init --name r4-eval
 crit init && maw init
 
@@ -1238,7 +1238,7 @@ cargo check                                      # merged code compiles
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
 | Mention hook registered for alpha-security | 3 | `bus hooks list` output contains alpha-security mention hook |
-| Hook command is well-formed (botty spawn, --pass-env) | 2 | Hook command parses correctly |
+| Hook command is well-formed (vessel spawn, --pass-env) | 2 | Hook command parses correctly |
 
 ### Phase 5: Security Review (20 pts)
 
@@ -1353,9 +1353,9 @@ Any of the following results in overall **FAIL**, regardless of point total:
 
 ## E11-L1: Botty-Native End-to-End (Single Agent)
 
-**Type**: Integration (single project, single agent, botty-native)
+**Type**: Integration (single project, single agent, vessel-native)
 
-**What it tests**: The full botbox spawn chain end-to-end: message arrives on channel, hook fires, botty spawns dev-loop, agent triages/claims/implements/merges/closes autonomously. No hand-crafted phase prompts or sequential `claude -p` invocations -- the system runs itself.
+**What it tests**: The full botbox spawn chain end-to-end: message arrives on channel, hook fires, vessel spawns dev-loop, agent triages/claims/implements/merges/closes autonomously. No hand-crafted phase prompts or sequential `claude -p` invocations -- the system runs itself.
 
 **Setup**: `evals/scripts/e11-l1-setup.sh` creates an isolated eval environment with one Rust/Axum project ("echo"), one bone("Add GET /version endpoint"), and registered hooks. The task-request is NOT sent during setup -- it is sent by the run script to trigger the hook chain.
 
@@ -1365,21 +1365,21 @@ Any of the following results in overall **FAIL**, regardless of point total:
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Hook fired and agent spawned | 5 | bus history shows agent activity, botty tail has content |
+| Hook fired and agent spawned | 5 | bus history shows agent activity, vessel tail has content |
 | Bead claimed (in_progress at some point) | 5 | `bn show` status is in_progress or closed |
 | Workspace created | 5 | `maw ws list` showed non-default ws, or channel history mentions workspace |
 | Code implemented and compiles | 10 | `cargo check` passes AND /version endpoint exists in source |
 | Workspace merged | 5 | No non-default workspaces remain |
 | Bead closed | 5 | `bn show` status=closed |
 | Claims released | 5 | No bone:// or workspace:// claims for echo-dev |
-| Agent exited cleanly | 5 | botty list shows no running echo agents |
+| Agent exited cleanly | 5 | vessel list shows no running echo agents |
 | Bus labels correct | 5 | Channel history has task-claim and task-done labels |
 
 ### Key Differences from E10
 
 - **No phase scripts**: One message triggers the entire workflow autonomously
 - **Tests loop scripts**: dev-loop.mjs drives agent behavior, not hand-written prompts
-- **Tests hook chain**: botbus hook registration, firing, botty spawn, env forwarding
+- **Tests hook chain**: botbus hook registration, firing, vessel spawn, env forwarding
 - **Tests iteration control**: maxLoops, pause, timeout from `.botbox.json`
 - **Polling-based observation**: 30-second polling with stuck detection instead of sequential phases
 
@@ -1407,9 +1407,9 @@ cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
 
 ## E11-L2: Botty-Native Review Cycle (Dev + Reviewer)
 
-**Type**: Integration (single project, two agents, botty-native)
+**Type**: Integration (single project, two agents, vessel-native)
 
-**What it tests**: The full review spawn chain: dev agent requests review with @mention, reviewer hook fires, botty spawns reviewer, both agents coordinate asynchronously through crit + botbus. Tests whether the planted defect is found, blocked, fixed, re-reviewed, and LGTMd — all through the real hook/spawn infrastructure, not hand-crafted prompts.
+**What it tests**: The full review spawn chain: dev agent requests review with @mention, reviewer hook fires, vessel spawns reviewer, both agents coordinate asynchronously through crit + botbus. Tests whether the planted defect is found, blocked, fixed, re-reviewed, and LGTMd — all through the real hook/spawn infrastructure, not hand-crafted prompts.
 
 **Prerequisite**: E11-L1 validates the core spawn chain. L2 adds the reviewer hook and review cycle.
 
@@ -1425,9 +1425,9 @@ cd $PROJECT_DIR && maw exec default -- cargo check           # code compiles
 |-------|-----|-------------|
 | Router hook fired (respond.mjs spawned) | 4 | bus history shows spawn activity, respond log exists |
 | respond.mjs triaged as work (not chat/question) | 4 | dev-loop spawned, not conversational mode |
-| dev-loop spawned by respond.mjs | 4 | botty tail shows dev agent content, channel history shows dev start |
-| Reviewer hook fired on @mention | 4 | botty tail shows reviewer content, channel history shows reviewer spawn |
-| Both agents exited cleanly | 4 | botty list empty after timeout, final-status.txt shows "completed" for both |
+| dev-loop spawned by respond.mjs | 4 | vessel tail shows dev agent content, channel history shows dev start |
+| Reviewer hook fired on @mention | 4 | vessel tail shows reviewer content, channel history shows reviewer spawn |
+| Both agents exited cleanly | 4 | vessel list empty after timeout, final-status.txt shows "completed" for both |
 
 #### Protocol Compliance (30 pts)
 
@@ -1506,7 +1506,7 @@ Excellent: ≥89 (85%)
 - **No phase scripts**: One message triggers the entire dev + review workflow autonomously
 - **Tests loop scripts**: dev-loop.mjs AND reviewer-loop.mjs drive behavior
 - **Tests both hook types**: Router hook (claim-based) spawns dev, mention hook spawns reviewer
-- **Tests async coordination**: Dev must wait for reviewer to complete (separate botty session)
+- **Tests async coordination**: Dev must wait for reviewer to complete (separate vessel session)
 - **Polling-based observation**: 30-second polling with stuck detection instead of sequential phases
 - **Friction scoring**: Tool errors, --help lookups, and retries are scored (10 pts) to create pressure for CLI discoverability improvements
 
@@ -1544,9 +1544,9 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 ## E11-L3: Botty-Native Full Lifecycle (Two Projects, Three Agents)
 
-**Type**: Integration (multi-project, multi-agent, botty-native)
+**Type**: Integration (multi-project, multi-agent, vessel-native)
 
-**What it tests**: The complete botbox system end-to-end across two projects with three agents, all spawned via real hooks/botty/loop-scripts. Same scenario as E10 but through the real system — one task-request triggers everything autonomously.
+**What it tests**: The complete botbox system end-to-end across two projects with three agents, all spawned via real hooks/vessel/loop-scripts. Same scenario as E10 but through the real system — one task-request triggers everything autonomously.
 
 **Three agents:**
 - `alpha-dev` — Dev-loop on alpha channel (router hook)
@@ -1662,13 +1662,13 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Run | Model | Score | Key Finding |
 |-----|-------|-------|-------------|
-| L3-1 | Opus 4.6 | 133/140 (95%) EXCELLENT | First botty-native full lifecycle. All agents spawned via hooks. 9 tool errors from crit workspace confusion. |
+| L3-1 | Opus 4.6 | 133/140 (95%) EXCELLENT | First vessel-native full lifecycle. All agents spawned via hooks. 9 tool errors from crit workspace confusion. |
 
 ---
 
 ## E11-L4: Mission Eval (Parallel Worker Dispatch via Missions)
 
-**Type**: Integration (single project, multi-agent, botty-native, mission framework)
+**Type**: Integration (single project, multi-agent, vessel-native, mission framework)
 
 **What it tests**: The full mission lifecycle in dev-loop.mjs (Level 4): `!mission` handler in respond.mjs creates a mission bone, dev-loop decomposes it into child bones, dispatches parallel workers with mission context (BOTBOX_MISSION, BOTBOX_SIBLINGS, BOTBOX_FILE_HINTS), monitors via checkpoints, and synthesizes results. Review is disabled to isolate the mission framework.
 
@@ -1726,7 +1726,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Workers spawned | 5 | `botty list` discovers workers |
+| Workers spawned | 5 | `vessel list` discovers workers |
 | 2+ workers | 5 | Worker count >= 2 |
 | Workspace per worker | 5 | `maw ws create` in dev log |
 | Mission env vars set | 5 | BOTBOX_MISSION, BOTBOX_SIBLINGS in dev log |
@@ -1776,7 +1776,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 - **Mission framework**: Tests Level 4 (decomposition + parallel workers under a mission envelope), not Level 3 (independent pre-existing bones)
 - **No review cycle**: `review.enabled=false` isolates mission mechanics from review complexity
-- **Dynamic worker discovery**: Run script discovers workers via `botty list` (hierarchical names `futil-dev/<random>`)
+- **Dynamic worker discovery**: Run script discovers workers via `vessel list` (hierarchical names `futil-dev/<random>`)
 - **Single project**: No cross-project coordination — focuses purely on mission lifecycle
 - **Agent-loop.mjs fix**: Workers now read REVIEW config, enabling no-review fast path
 
@@ -1793,7 +1793,7 @@ cd $PROJECT_DIR && maw exec default -- cargo check
 
 ## E11-L5: Coordination Eval — Co-Evolving Shared Types
 
-**Type**: Integration (single project, multi-agent, botty-native, mission framework, coordination)
+**Type**: Integration (single project, multi-agent, vessel-native, mission framework, coordination)
 
 **What it tests**: Whether mission workers coordinate through bus when shared types must co-evolve across stages. E11-L4 tests missions with 3 INDEPENDENT subcommands — workers succeed in isolation. E11-L5 tests missions where shared types (Record struct, PipelineError enum) START MINIMAL and each worker ADDS fields/variants during implementation. No single worker can define the types upfront — they must emerge from parallel implementation.
 
@@ -1857,7 +1857,7 @@ Specs use DOMAIN language ("track data provenance", "verify data integrity", "re
 
 | Check | Pts | Verification |
 |-------|-----|-------------|
-| Workers spawned | 5 | `botty list` discovers workers |
+| Workers spawned | 5 | `vessel list` discovers workers |
 | 2+ workers | 5 | Worker count >= 2 |
 | Workspace per worker | 5 | `maw ws create` in dev log |
 | Mission env vars set | 5 | BOTBOX_MISSION, BOTBOX_SIBLINGS in dev log |
@@ -1948,7 +1948,7 @@ Tests concurrent lead orchestrators: two independent missions dispatched simulta
 
 ### Prerequisites
 
-- All tools: botbox, bus, bn, maw, crit, botty, jj, cargo, jq
+- All tools: botbox, bus, bn, maw, crit, vessel, jj, cargo, jq
 - Router.mjs with multi-lead support (`acquireLeadSlot`, `spawnLead`)
 - Dev-loop.mjs with multi-lead awareness (`discoverSiblingLeads`, claim checking)
 - Merge mutex in dev-loop FINISH step (`workspace://project/default` claim)
@@ -1978,9 +1978,9 @@ Two `!mission` messages sent ~5s apart:
 
 | Check | Criteria | Points | How Verified |
 |-------|----------|--------|-------------|
-| Two lead slots acquired | 2+ `futil-dev/N` agents observed in botty list | 10 | `botty list` captures in artifacts |
+| Two lead slots acquired | 2+ `futil-dev/N` agents observed in vessel list | 10 | `vessel list` captures in artifacts |
 | Numbered naming | Lead names match `futil-dev/\d+` pattern | 5 | Agent name pattern in logs |
-| Router spawned leads | Router used `botty spawn` for leads | 5 | Router log contains `botty spawn` + lead names |
+| Router spawned leads | Router used `vessel spawn` for leads | 5 | Router log contains `vessel spawn` + lead names |
 
 #### Mission Decomposition (20 pts)
 

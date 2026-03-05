@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # E11-L1 Botty-Native End-to-End Eval — Orchestrator
-# Runs setup, sends the task-request (which fires the hook → botty spawns dev-loop),
+# Runs setup, sends the task-request (which fires the hook → vessel spawns dev-loop),
 # polls for completion, captures artifacts, and runs verification.
 #
 # KEY DIFFERENCE from E10: No sequential `claude -p` phases. Instead, we send one
@@ -51,7 +51,7 @@ else
 fi
 echo ""
 
-# --- Send task-request (this triggers the hook → botty spawn) ---
+# --- Send task-request (this triggers the hook → vessel spawn) ---
 echo "--- Sending task-request ($(date +%H:%M:%S)) ---"
 BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" bus send --agent setup echo \
   "New task: Add GET /version endpoint returning JSON with name and version fields. The endpoint should return {\"name\":\"echo\",\"version\":\"0.1.0\"}. See bead $BEAD for details." \
@@ -82,8 +82,8 @@ while true; do
   echo ""
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
-  # Check botty — is an agent running?
-  BOTTY_LIST=$(botty list 2>/dev/null || echo "(botty list failed)")
+  # Check vessel — is an agent running?
+  BOTTY_LIST=$(vessel list 2>/dev/null || echo "(vessel list failed)")
   echo "  Agents: $BOTTY_LIST"
 
   # Check bone status
@@ -119,7 +119,7 @@ while true; do
   if [[ $IDLE_TIME -ge $STUCK_THRESHOLD ]]; then
     echo "  WARNING: No activity for ${IDLE_TIME}s (threshold: ${STUCK_THRESHOLD}s)"
     # Check if agent is still alive
-    if ! botty list 2>/dev/null | grep -q "echo"; then
+    if ! vessel list 2>/dev/null | grep -q "echo"; then
       echo "  Agent exited without closing bone — marking as agent-exited"
       FINAL_STATUS="agent-exited"
       break
@@ -135,14 +135,14 @@ echo ""
 echo "--- Capturing artifacts ---"
 
 # Agent log (may fail if agent already exited)
-botty tail "$ECHO_DEV" -n 500 > "$ARTIFACTS/agent-echo-dev.log" 2>/dev/null || \
+vessel tail "$ECHO_DEV" -n 500 > "$ARTIFACTS/agent-echo-dev.log" 2>/dev/null || \
   echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-echo-dev.log"
 echo "  agent log: $ARTIFACTS/agent-echo-dev.log"
 
 # Also try to capture any dev-loop worker agents
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+for agent_name in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   if [[ "$agent_name" != "$ECHO_DEV" ]]; then
-    botty tail "$agent_name" -n 500 > "$ARTIFACTS/agent-${agent_name}.log" 2>/dev/null || true
+    vessel tail "$agent_name" -n 500 > "$ARTIFACTS/agent-${agent_name}.log" 2>/dev/null || true
     echo "  worker log: $ARTIFACTS/agent-${agent_name}.log"
   fi
 done
@@ -176,10 +176,10 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-botty kill "$ECHO_DEV" 2>/dev/null || true
+vessel kill "$ECHO_DEV" 2>/dev/null || true
 # Kill any worker agents that might still be running
-for agent_name in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  botty kill "$agent_name" 2>/dev/null || true
+for agent_name in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  vessel kill "$agent_name" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

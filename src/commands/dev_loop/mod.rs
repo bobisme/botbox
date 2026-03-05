@@ -382,7 +382,7 @@ pub struct LoopContext {
     pub project_dir: String,
     /// Pre-resolved env vars from config [env] section.
     pub spawn_env: std::collections::HashMap<String, String>,
-    /// Memory limit for worker agents (e.g. "4G"). Passed as --memory-limit to botty spawn.
+    /// Memory limit for worker agents (e.g. "4G"). Passed as --memory-limit to vessel spawn.
     pub worker_memory_limit: Option<String>,
 }
 
@@ -761,7 +761,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
 
     // All subprocess spawns below use .new_process_group() so they run in their
     // own process group and survive the SIGTERM that triggered this cleanup
-    // (botty kill sends SIGTERM to the parent's process group, which would
+    // (vessel kill sends SIGTERM to the parent's process group, which would
     // otherwise kill these children before they complete).
 
     // Sign off
@@ -823,7 +823,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
 /// Check whether the systemd user session D-Bus is available.
 ///
 /// `--memory-limit` passes resource limits via systemd transient scopes, which requires
-/// D-Bus. When botty-spawned agents don't inherit the session D-Bus address (e.g. because
+/// D-Bus. When vessel-spawned agents don't inherit the session D-Bus address (e.g. because
 /// `$DBUS_SESSION_BUS_ADDRESS` / `$XDG_RUNTIME_DIR` were not forwarded), the spawn fails
 /// immediately with a "Failed to connect to user scope bus" error.
 fn is_systemd_dbus_available() -> bool {
@@ -840,7 +840,7 @@ fn is_systemd_dbus_available() -> bool {
 
 /// Kill child workers spawned by this dev-loop (hierarchical name pattern: AGENT/suffix).
 fn kill_child_workers(agent: &str) {
-    let output = Tool::new("botty").args(&["list", "--format", "json"]).run();
+    let output = Tool::new("vessel").args(&["list", "--format", "json"]).run();
 
     let output = match output {
         Ok(o) if o.success() => o,
@@ -854,7 +854,7 @@ fn kill_child_workers(agent: &str) {
     for a in &agents {
         let name = a["id"].as_str().or(a["name"].as_str()).unwrap_or("");
         if name.starts_with(&prefix) {
-            if let Err(_) = Tool::new("botty").args(&["kill", name]).run() {
+            if let Err(_) = Tool::new("vessel").args(&["kill", name]).run() {
                 // Worker may have already exited
             }
             eprintln!("Killed child worker: {name}");

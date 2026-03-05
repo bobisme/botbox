@@ -10,7 +10,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 
 # --- Init repo and botbox ---
 jj git init
-botbox init --name r4-eval --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
+botbox init --name r4-eval --type api --tools bones,maw,crit,botbus,vessel --init-bones --no-interactive
 
 # --- Init Rust project ---
 cargo init --name r4-eval

@@ -148,8 +148,8 @@ pub struct ToolsConfig {
     pub crit: bool,
     #[serde(default)]
     pub botbus: bool,
-    #[serde(default)]
-    pub botty: bool,
+    #[serde(default, alias = "botty")]
+    pub vessel: bool,
 }
 
 impl ToolsConfig {
@@ -168,8 +168,8 @@ impl ToolsConfig {
         if self.botbus {
             tools.push("botbus".to_string());
         }
-        if self.botty {
-            tools.push("botty".to_string());
+        if self.vessel {
+            tools.push("vessel".to_string());
         }
         tools
     }
@@ -257,7 +257,7 @@ pub struct DevAgentConfig {
     pub missions: Option<MissionsConfig>,
     #[serde(default = "default_multi_lead", alias = "multiLead")]
     pub multi_lead: Option<MultiLeadConfig>,
-    /// Memory limit for dev-loop agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    /// Memory limit for dev-loop agents (e.g. "4G", "2G"). Passed as --memory-limit to vessel spawn.
     #[serde(default)]
     pub memory_limit: Option<String>,
 }
@@ -307,7 +307,7 @@ pub struct WorkerAgentConfig {
     pub model: String,
     #[serde(default = "default_timeout_900")]
     pub timeout: u64,
-    /// Memory limit for worker agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    /// Memory limit for worker agents (e.g. "4G", "2G"). Passed as --memory-limit to vessel spawn.
     #[serde(default)]
     pub memory_limit: Option<String>,
 }
@@ -322,7 +322,7 @@ pub struct ReviewerAgentConfig {
     pub pause: u32,
     #[serde(default = "default_timeout_900")]
     pub timeout: u64,
-    /// Memory limit for reviewer agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    /// Memory limit for reviewer agents (e.g. "4G", "2G"). Passed as --memory-limit to vessel spawn.
     #[serde(default)]
     pub memory_limit: Option<String>,
 }
@@ -337,7 +337,7 @@ pub struct ResponderAgentConfig {
     pub wait_timeout: u64,
     #[serde(default = "default_max_conversations", alias = "maxConversations")]
     pub max_conversations: u32,
-    /// Memory limit for responder agents (e.g. "4G", "2G"). Passed as --memory-limit to botty spawn.
+    /// Memory limit for responder agents (e.g. "4G", "2G"). Passed as --memory-limit to vessel spawn.
     #[serde(default)]
     pub memory_limit: Option<String>,
 }
@@ -664,7 +664,7 @@ bones = true
 maw = true
 crit = true
 botbus = true
-botty = true
+vessel = true
 
 [review]
 enabled = true
@@ -723,7 +723,7 @@ timeout = 600
                 "checkCommand": "cargo clippy && cargo test",
                 "defaultAgent": "myapp-dev"
             },
-            "tools": { "bones": true, "maw": true, "crit": true, "botbus": true, "botty": true },
+            "tools": { "bones": true, "maw": true, "crit": true, "botbus": true, "vessel": true },
             "review": { "enabled": true, "reviewers": ["security"] },
             "pushMain": false,
             "agents": {
@@ -985,7 +985,7 @@ bones = true
 maw = true
 crit = true
 botbus = true
-botty = true
+vessel = true
 "#;
 
         let config = Config::parse_toml(toml_str).unwrap();

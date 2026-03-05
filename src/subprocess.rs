@@ -119,7 +119,7 @@ impl Tool {
 
         // Detach cleanup subprocesses into their own process group so they
         // survive a SIGTERM that kills the parent's process group (e.g. from
-        // `botty kill`).  On non-Unix targets the flag is simply ignored.
+        // `vessel kill`).  On non-Unix targets the flag is simply ignored.
         #[cfg(unix)]
         if self.new_process_group {
             cmd.process_group(0);

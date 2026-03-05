@@ -95,7 +95,7 @@ These could help but are not required:
 
 ## Open Questions
 
-1. **Is subscribing to upstream channels worth the noise?** If botbox subscribes to botbus, maw, crit, and botty channels, that's a lot of traffic. Maybe only subscribe to specific labels like `release` or `breaking-change`?
+1. **Is subscribing to upstream channels worth the noise?** If botbox subscribes to botbus, maw, crit, and vessel channels, that's a lot of traffic. Maybe only subscribe to specific labels like `release` or `breaking-change`?
 
 2. **How should agents handle breaking changes?** When an upstream project makes a breaking change, how do downstream agents discover and handle it? Current answer: they break, file a bug, and either pin the old version or adapt.
 

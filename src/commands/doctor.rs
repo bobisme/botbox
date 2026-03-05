@@ -124,7 +124,7 @@ impl DoctorArgs {
             ("maw", config.tools.maw, "maw"),
             ("crit", config.tools.crit, "crit"),
             ("botbus (bus)", config.tools.botbus, "bus"),
-            ("botty", config.tools.botty, "botty"),
+            ("vessel", config.tools.vessel, "vessel"),
         ];
 
         for (label, enabled, binary) in required_tools {

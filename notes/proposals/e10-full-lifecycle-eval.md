@@ -27,7 +27,7 @@ This eval is intentionally heavyweight. The goal is to simulate the whole world 
 Two projects running on a shared, isolated botbus instance:
 
 **Project Alpha** (`$EVAL_DIR/alpha/`) — Rust/Axum REST API
-- Tools: beads, maw, crit, botbus, botty
+- Tools: beads, maw, crit, botbus, vessel
 - Agents: `alpha-dev` (lead developer), `alpha-security` (security reviewer)
 - Cargo path dependency on Beta
 - Has a pre-existing `GET /debug` endpoint that exposes `AppState` including a hardcoded `api_secret` (planted security vulnerability for reviewer to find)
@@ -138,7 +138,7 @@ Creates the entire world from scratch.
 set -euo pipefail
 
 # --- Preflight: fail fast on missing dependencies ---
-REQUIRED_CMDS=(botbox bus br bv maw crit botty jj cargo claude jq)
+REQUIRED_CMDS=(botbox bus br bv maw crit vessel jj cargo claude jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -159,7 +159,7 @@ bus init
 # --- Capture tool versions for forensics ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus br bv maw crit botty jj cargo; do
+  for cmd in botbox bus br bv maw crit vessel jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "model_alpha=opus"
@@ -178,7 +178,7 @@ jj describe -m "beta: validation library" && jj new
 # --- Alpha ---
 cd "$ALPHA_DIR"
 jj git init
-botbox init --name alpha --type api --tools beads,maw,crit,botbus,botty --review-security --init-beads --no-interactive
+botbox init --name alpha --type api --tools beads,maw,crit,botbus,vessel --review-security --init-beads --no-interactive
 cargo init
 # Write Cargo.toml (path dep on beta), src/main.rs (/health + /debug vulnerability)
 cargo check  # verify compiles with beta dependency
@@ -297,15 +297,15 @@ Between Phase 4 and Phase 5, the eval script checks whether the review-request @
 bus hooks list | grep "alpha-security"  # mention hook exists?
 
 # Check if hook command is well-formed
-# Expected: botty spawn ... --mention alpha-security ... --pass-env ...
+# Expected: vessel spawn ... --mention alpha-security ... --pass-env ...
 
-# Optionally: check if botty actually spawned (if hooks fired)
-botty list 2>/dev/null | grep "alpha-security" || echo "Hook did not fire (expected in phased mode)"
+# Optionally: check if vessel actually spawned (if hooks fired)
+vessel list 2>/dev/null | grep "alpha-security" || echo "Hook did not fire (expected in phased mode)"
 ```
 
 This phase is scored but doesn't invoke an agent. It validates that `botbox init` set up hooks correctly.
 
-**Tools exercised**: `bus hooks list`, `botty list` (verification)
+**Tools exercised**: `bus hooks list`, `vessel list` (verification)
 
 ### Phase 5: Security Review (alpha-security, Opus)
 
@@ -408,7 +408,7 @@ This phase is scored but doesn't invoke an agent. It validates that `botbox init
 | | `lgtm` | 7 | Approval vote |
 | | `reviews mark-merged` | 8 | Post-merge bookkeeping |
 | | `inbox --all-workspaces` | 5,7 | Reviewer discovers work |
-| **botty** | `list` | 4.5 | Verify spawned agents |
+| **vessel** | `list` | 4.5 | Verify spawned agents |
 | | Hook spawning | 4.5 | Verify hook→spawn chain |
 | **jj** | `git init` | 0 | Both projects |
 | | `describe` | 0,3,8 | Commit messages |
@@ -469,7 +469,7 @@ This phase is scored but doesn't invoke an agent. It validates that `botbox init
 | Criterion | Pts | Verification |
 |-----------|-----|-------------|
 | Mention hook registered for alpha-security | 3 | `bus hooks list` output contains alpha-security mention hook |
-| Hook command is well-formed (botty spawn, --pass-env) | 2 | Hook command parses correctly |
+| Hook command is well-formed (vessel spawn, --pass-env) | 2 | Hook command parses correctly |
 
 ### Phase 5: Security Review (20 pts)
 
@@ -655,7 +655,7 @@ Phase scripts use tool output parsing (grep, jq) to extract IDs and inject them 
 
 ### Phased execution (not live hooks)
 
-Live hook firing (bus message → hook → botty spawn → agent runs) would be the ultimate test but creates problems:
+Live hook firing (bus message → hook → vessel spawn → agent runs) would be the ultimate test but creates problems:
 - **Non-deterministic timing**: agents start asynchronously, hard to score individual phases
 - **Observability**: can't easily pause between phases to inspect state
 - **Debugging**: when something fails, unclear which agent caused it
@@ -663,7 +663,7 @@ Live hook firing (bus message → hook → botty spawn → agent runs) would be 
 
 **Decision**: Use phased `claude -p` invocations for all agent turns. Verify hooks are correctly registered (Phase 4.5) but don't let them fire. This gives us full control, observability, and scoring while still testing that the hook setup is correct.
 
-**Future**: A v2 could add a "live mode" flag that lets hooks fire and uses `botty tail` to observe agents organically.
+**Future**: A v2 could add a "live mode" flag that lets hooks fire and uses `vessel tail` to observe agents organically.
 
 ### Cross-project communication style
 
@@ -713,7 +713,7 @@ Setup and verification scripts add ~2-3 min.
 
 ### Deferred to v2
 
-- Live hook-fired execution mode with `botty tail` observation.
+- Live hook-fired execution mode with `vessel tail` observation.
 - Beta reviewer loop and dual-project review threads.
 - Full `bv --robot-triage` parsing and scoring.
 - `bus generate-name` for random agent identities.

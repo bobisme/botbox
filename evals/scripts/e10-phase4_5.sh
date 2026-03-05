@@ -48,12 +48,12 @@ else
   FAIL=$((FAIL + 1))
 fi
 
-# Check hook command includes botty spawn
-if echo "$HOOK_CMD" | grep -q "botty.*spawn"; then
-  echo "PASS: botty spawn present in hook command"
+# Check hook command includes vessel spawn
+if echo "$HOOK_CMD" | grep -q "vessel.*spawn"; then
+  echo "PASS: vessel spawn present in hook command"
   PASS=$((PASS + 1))
 else
-  echo "FAIL: botty spawn missing from hook command"
+  echo "FAIL: vessel spawn missing from hook command"
   FAIL=$((FAIL + 1))
 fi
 

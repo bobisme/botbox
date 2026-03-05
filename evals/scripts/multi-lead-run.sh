@@ -187,8 +187,8 @@ while true; do
   echo ""
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
-  # Check botty — which agents are running?
-  BOTTY_JSON=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+  # Check vessel — which agents are running?
+  BOTTY_JSON=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
 
   # Discover lead slots (futil-dev/0, futil-dev/1, etc.)
   LEAD_LIST=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id | test(\"^${FUTIL_DEV}/[0-9]+$\")) | .id" 2>/dev/null || echo "")
@@ -254,7 +254,7 @@ while true; do
       orig_id="${KNOWN_WORKERS[$wkey]}"
       if ! echo "$WORKER_LIST" | grep -qF "$orig_id" 2>/dev/null; then
         if [[ "${WORKER_LOG_CAPTURED[$wkey]}" -eq 0 ]]; then
-          botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
+          vessel tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
           WORKER_LOG_CAPTURED["$wkey"]=1
           echo "  worker EXITED: $orig_id (log captured)"
           LAST_ACTIVITY_TIME=$(date +%s)
@@ -341,7 +341,7 @@ while true; do
     # Grace period for agents to exit
     for WAIT_I in 1 2 3 4; do
       sleep 15
-      REMAINING=$(botty list --format json 2>/dev/null | jq '.agents | length' 2>/dev/null || echo "0")
+      REMAINING=$(vessel list --format json 2>/dev/null | jq '.agents | length' 2>/dev/null || echo "0")
       if [[ "$REMAINING" -eq 0 ]]; then
         FINAL_STATUS="completed"
         break
@@ -386,18 +386,18 @@ echo "--- Capturing artifacts ---"
 # Lead logs
 for lkey in "${!LEAD_SLOTS[@]}"; do
   orig_id="${LEAD_SLOTS[$lkey]}"
-  botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${lkey}.log" 2>/dev/null || \
+  vessel tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${lkey}.log" 2>/dev/null || \
     echo "(already exited)" > "$ARTIFACTS/agent-${lkey}.log"
   echo "  lead log: $ARTIFACTS/agent-${lkey}.log"
 done
 
 # Non-slotted dev log (if present)
-botty tail "$FUTIL_DEV" -n 500 > "$ARTIFACTS/agent-${FUTIL_DEV}.log" 2>/dev/null || true
+vessel tail "$FUTIL_DEV" -n 500 > "$ARTIFACTS/agent-${FUTIL_DEV}.log" 2>/dev/null || true
 
 # Router logs
-for RNAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("router")) | .id' 2>/dev/null || true); do
+for RNAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("router")) | .id' 2>/dev/null || true); do
   SAFE="${RNAME//\//_}"
-  botty tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${SAFE}.log" 2>/dev/null || true
+  vessel tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${SAFE}.log" 2>/dev/null || true
   echo "  router log: $ARTIFACTS/agent-${SAFE}.log"
 done
 
@@ -406,17 +406,17 @@ if [[ ${#KNOWN_WORKERS[@]} -gt 0 ]]; then
   for wkey in "${!KNOWN_WORKERS[@]}"; do
     orig_id="${KNOWN_WORKERS[$wkey]}"
     if [[ ! -f "$ARTIFACTS/agent-${wkey}.log" ]] || [[ "${WORKER_LOG_CAPTURED[$wkey]}" -eq 0 ]]; then
-      botty tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
+      vessel tail "$orig_id" -n 500 > "$ARTIFACTS/agent-${wkey}.log" 2>/dev/null || true
       echo "  worker log: $ARTIFACTS/agent-${wkey}.log"
     fi
   done
 fi
 
 # Any other agents we missed
-for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+for AGENT_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   SAFE_NAME="${AGENT_NAME//\//_}"
   if [[ ! -f "$ARTIFACTS/agent-${SAFE_NAME}.log" ]]; then
-    botty tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${SAFE_NAME}.log" 2>/dev/null || true
+    vessel tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${SAFE_NAME}.log" 2>/dev/null || true
     echo "  extra log: $ARTIFACTS/agent-${SAFE_NAME}.log"
   fi
 done
@@ -479,8 +479,8 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  botty kill "$AGENT_NAME" 2>/dev/null || true
+for AGENT_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  vessel kill "$AGENT_NAME" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

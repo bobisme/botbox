@@ -164,7 +164,7 @@ Use when: a large coherent task needs decomposition into related bones with shar
 
 IMPORTANT: You MUST dispatch workers for independent children. Do NOT implement them yourself sequentially.
 The whole point of missions is parallel execution — doing children sequentially defeats the purpose and wastes time.
-Use `botty spawn` for mission workers — NOT the Task tool. See step 5b for why.
+Use `vessel spawn` for mission workers — NOT the Task tool. See step 5b for why.
 
 For independent children (unblocked), dispatch workers (max {max_workers} concurrent):
 - Follow the same dispatch pattern as step 5b — INCLUDING claim staking for EACH worker:
@@ -197,7 +197,7 @@ Each checkpoint:
    maw exec default -- bn list --all -l "mission:<mission-id>" --json
    Tally: N open, M doing, K done, J blocked
 2. Check alive workers:
-   botty list --format json
+   vessel list --format json
    Cross-reference with dispatched worker names ({agent}/<suffix>)
 3. Check for completions (cursor-based — track last-seen message ID to avoid rescanning):
    bus history {project} -n 20 -L task-done --since <last-checkpoint-time>
@@ -206,7 +206,7 @@ Each checkpoint:
    bus send --agent {agent} {project} "Mission <mission-id> checkpoint: K/$TOTAL done, J blocked, M active" -L feedback
    If this session crashes, the next iteration uses these messages to reconstruct mission state.
 5. Detect failures:
-   If a worker is not in botty list but its bone is still doing → crash recovery (see step 6)
+   If a worker is not in vessel list but its bone is still doing → crash recovery (see step 6)
 6. Decide:
    - All children closed → exit checkpoint loop, proceed to Mission Close (step 18)
    - Some blocked, none doing → investigate blockers or rescope
@@ -252,7 +252,7 @@ When all children are closed:
     let project_dir = &ctx.project_dir;
     let worker_timeout = ctx.worker_timeout;
 
-    // Build extra --env flags from config [env] section for botty spawn template
+    // Build extra --env flags from config [env] section for vessel spawn template
     let spawn_env_flags: String = ctx
         .spawn_env
         .iter()
@@ -494,14 +494,14 @@ The worker resolves tier names to a provider pool at runtime for cross-provider 
 
 ### Spawning Workers
 
-IMPORTANT: You MUST use `botty spawn` to create workers. Do NOT use Claude Code's built-in Task tool for worker dispatch.
-Why: botty workers are independently observable (`botty tail`, `botty list`), survive your session crashing,
+IMPORTANT: You MUST use `vessel spawn` to create workers. Do NOT use Claude Code's built-in Task tool for worker dispatch.
+Why: vessel workers are independently observable (`vessel tail`, `vessel list`), survive your session crashing,
 have independent timeouts, participate in botbus coordination (claims, messages, status), and respect maxWorkers limits.
 The Task tool creates in-process subagents that bypass all of this infrastructure — no crash recovery, no observability, no coordination.
 
-For each dispatched bone, spawn a worker via botty with hierarchical naming:
+For each dispatched bone, spawn a worker via vessel with hierarchical naming:
 
-  botty spawn --name "{agent}/<worker-suffix>" \
+  vessel spawn --name "{agent}/<worker-suffix>" \
     --label worker --label "bone:<id>" \
     --env-inherit BOTBUS_CHANNEL,BOTBUS_DATA_DIR,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT \
     --env "AGENT={agent}/<worker-suffix>" \
@@ -516,7 +516,7 @@ For each dispatched bone, spawn a worker via botty with hierarchical naming:
 
 Set --timeout to {worker_timeout} (from config agents.worker.timeout).
 
-The hierarchical name ({agent}/<suffix>) lets you find all your workers via `botty list`.
+The hierarchical name ({agent}/<suffix>) lets you find all your workers via `vessel list`.
 The EDICT_BONE and EDICT_WORKSPACE env vars tell the worker-loop to skip triage and go straight to the assigned work.
 
 COLLISION GUARD: NEVER dispatch a worker for a bone you are currently working on or have already started fixing yourself this iteration. If you took over a failed worker's bone, do NOT also dispatch a new worker for it.
@@ -528,9 +528,9 @@ After dispatching all workers, skip to step 6 (MONITOR).
 IMPORTANT: Do NOT end the iteration early just to poll again. Ending the iteration and starting a new one
 burns a full Claude API call. Instead, WAIT for workers to finish using one of these approaches:
 
-**Preferred: botty wait --exited** — blocks until any dispatched worker exits (success or crash):
+**Preferred: vessel wait --exited** — blocks until any dispatched worker exits (success or crash):
 
-  botty wait --exited <worker-1> <worker-2> <worker-3> -t 300
+  vessel wait --exited <worker-1> <worker-2> <worker-3> -t 300
 
 This detects BOTH clean exits and silent crashes. Zero tokens consumed while waiting.
 When it returns, check which workers exited and whether they succeeded or died.
@@ -550,7 +550,7 @@ and confirmed all workers are alive. Each unnecessary iteration wastes tokens.
 After waiting:
 
 Check worker results:
-- botty list — which workers are still alive vs exited
+- vessel list — which workers are still alive vs exited
 - bus inbox --agent {agent} --channels {project} -n 20 — completion messages
 - Check workspace status: maw ws list
 
@@ -560,10 +560,10 @@ For each completed worker:
 
 ### Crash Recovery (dead worker detection)
 
-Check which workers are still alive: botty list --format json
+Check which workers are still alive: vessel list --format json
 Cross-reference with your dispatched bones (check your bone:// claims).
 
-For each dispatched bone where the worker is NOT in botty list but the bone is still doing:
+For each dispatched bone where the worker is NOT in vessel list but the bone is still doing:
 1. Check bone comments for a "RETRY:1" marker (from a previous crash recovery attempt).
 2. If NO retry marker — first failure, reassign once:
    - maw exec default -- bn bone comment add <id> "Worker <worker-name> died. RETRY:1 — reassigning."

@@ -56,7 +56,7 @@ echo "  Timeout: ${OVERALL_TIMEOUT}s"
 echo "  Review: ENABLED"
 echo ""
 
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty spawn \
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel spawn \
   -n "$WORKER_NAME" \
   --cwd "$PROJECT_DIR" \
   --env-inherit BOTBUS_DATA_DIR,SSH_AUTH_SOCK \
@@ -108,7 +108,7 @@ while true; do
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
   # Check if worker is still running
-  WORKER_RUNNING=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty list --format json 2>/dev/null | \
+  WORKER_RUNNING=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel list --format json 2>/dev/null | \
     jq -r ".agents[] | select(.id == \"$WORKER_NAME\") | .id" 2>/dev/null || echo "")
 
   if [[ -n "$WORKER_RUNNING" ]]; then
@@ -172,7 +172,7 @@ while true; do
     # Grace period for worker to exit
     for WAIT_I in 1 2 3; do
       sleep 5
-      WR=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty list --format json 2>/dev/null | \
+      WR=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel list --format json 2>/dev/null | \
         jq -r ".agents[] | select(.id == \"$WORKER_NAME\") | .id" 2>/dev/null || echo "")
       if [[ -z "$WR" ]]; then
         echo "  Worker exited cleanly."
@@ -190,14 +190,14 @@ while true; do
       echo "  >>> Worker exited after review request. LGTM is applied."
       echo "  >>> Capturing iteration 1 log before re-spawning..."
 
-      # Save iteration 1 log (botty tail will be lost after re-spawn with same name)
-      BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty tail "$WORKER_NAME" -n 500 > "$ARTIFACTS/agent-worker-iter1.log" 2>/dev/null || true
+      # Save iteration 1 log (vessel tail will be lost after re-spawn with same name)
+      BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel tail "$WORKER_NAME" -n 500 > "$ARTIFACTS/agent-worker-iter1.log" 2>/dev/null || true
 
       echo "  >>> Re-spawning worker for iteration 2 (finish flow)..."
       echo ""
 
       REMAINING=$(( OVERALL_TIMEOUT - ELAPSED ))
-      BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty spawn \
+      BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel spawn \
         -n "$WORKER_NAME" \
         --cwd "$PROJECT_DIR" \
         --env-inherit BOTBUS_DATA_DIR,SSH_AUTH_SOCK \
@@ -236,7 +236,7 @@ echo ""
 echo "--- Capturing artifacts ---"
 
 # Worker agent log (concatenate iteration 1 + iteration 2 if both exist)
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty tail "$WORKER_NAME" -n 500 > "$ARTIFACTS/agent-worker-iter2.log" 2>/dev/null || \
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel tail "$WORKER_NAME" -n 500 > "$ARTIFACTS/agent-worker-iter2.log" 2>/dev/null || \
   echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-worker-iter2.log"
 if [[ -f "$ARTIFACTS/agent-worker-iter1.log" ]]; then
   {
@@ -312,9 +312,9 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty kill "$WORKER_NAME" 2>/dev/null || true
-for AGENT_ID in $(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty kill "$AGENT_ID" 2>/dev/null || true
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel kill "$WORKER_NAME" 2>/dev/null || true
+for AGENT_ID in $(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel kill "$AGENT_ID" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

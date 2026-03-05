@@ -3,7 +3,7 @@ set -euo pipefail
 
 # E11-L3 Botty-Native Full Lifecycle Eval — Orchestrator
 # Sends task-request to alpha channel, watches THREE agents (alpha-dev, alpha-security,
-# beta-dev) coordinate across TWO projects via real hooks/botty/loop-scripts.
+# beta-dev) coordinate across TWO projects via real hooks/vessel/loop-scripts.
 #
 # Expected flow:
 # 1. Router hook fires → respond.mjs → spawns alpha-dev via dev-loop
@@ -100,7 +100,7 @@ FINAL_STATUS_BETA_DEV="unknown"
 # When an agent transitions from running → not running, we capture its log
 # immediately. Without this, agents that restart (e.g., alpha-security for
 # initial review then re-review) would have their first session's log
-# overwritten by botty's new session.
+# overwritten by vessel's new session.
 PREV_ALPHA_DEV_RUNNING=""
 PREV_ALPHA_SEC_RUNNING=""
 PREV_BETA_DEV_RUNNING=""
@@ -129,8 +129,8 @@ while true; do
   echo ""
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
-  # Check botty — which agents are running?
-  BOTTY_JSON=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+  # Check vessel — which agents are running?
+  BOTTY_JSON=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
 
   ALPHA_DEV_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$ALPHA_DEV\") | .id" 2>/dev/null || echo "")
   ALPHA_SEC_RUNNING=$(echo "$BOTTY_JSON" | jq -r ".agents[] | select(.id == \"$ALPHA_SECURITY\") | .id" 2>/dev/null || echo "")
@@ -175,7 +175,7 @@ while true; do
   # Incremental log capture: when an agent stops, save its log before re-spawn overwrites it
   if [[ -n "$PREV_ALPHA_SEC_RUNNING" && -z "$ALPHA_SEC_RUNNING" ]]; then
     ALPHA_SEC_LOG_SEQ=$((ALPHA_SEC_LOG_SEQ + 1))
-    botty tail "$ALPHA_SECURITY" -n 500 > "$ARTIFACTS/agent-${ALPHA_SECURITY}-session${ALPHA_SEC_LOG_SEQ}.log" 2>/dev/null || true
+    vessel tail "$ALPHA_SECURITY" -n 500 > "$ARTIFACTS/agent-${ALPHA_SECURITY}-session${ALPHA_SEC_LOG_SEQ}.log" 2>/dev/null || true
     echo "  (captured alpha-security session $ALPHA_SEC_LOG_SEQ log)"
   fi
   PREV_ALPHA_DEV_RUNNING="$ALPHA_DEV_RUNNING"
@@ -237,7 +237,7 @@ while true; do
     # Grace period for agents to exit
     for WAIT_I in 1 2 3 4 5 6; do
       sleep 15
-      BOTTY_FINAL=$(botty list --format json 2>/dev/null || echo '{"agents":[]}')
+      BOTTY_FINAL=$(vessel list --format json 2>/dev/null || echo '{"agents":[]}')
       AD_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$ALPHA_DEV\") | .id" 2>/dev/null || echo "")
       AS_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$ALPHA_SECURITY\") | .id" 2>/dev/null || echo "")
       BD_RUNNING=$(echo "$BOTTY_FINAL" | jq -r ".agents[] | select(.id == \"$BETA_DEV\") | .id" 2>/dev/null || echo "")
@@ -276,7 +276,7 @@ echo "--- Capturing artifacts ---"
 
 # Agent logs — capture final session, then prepend any earlier session logs
 for AGENT_NAME in "$ALPHA_DEV" "$ALPHA_SECURITY" "$BETA_DEV"; do
-  botty tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${AGENT_NAME}.log" 2>/dev/null || \
+  vessel tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${AGENT_NAME}.log" 2>/dev/null || \
     echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-${AGENT_NAME}.log"
   echo "  log: $ARTIFACTS/agent-${AGENT_NAME}.log"
 done
@@ -295,22 +295,22 @@ for SESSION_LOG in "$ARTIFACTS"/agent-*-session*.log; do
 done
 
 # Respond agent logs (may be multiple — alpha-respond, beta-respond)
-for RESP_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("respond")) | .id' 2>/dev/null || true); do
-  botty tail "$RESP_NAME" -n 500 > "$ARTIFACTS/agent-${RESP_NAME}.log" 2>/dev/null || true
+for RESP_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]? | select(.id | test("respond")) | .id' 2>/dev/null || true); do
+  vessel tail "$RESP_NAME" -n 500 > "$ARTIFACTS/agent-${RESP_NAME}.log" 2>/dev/null || true
   echo "  respond log: $ARTIFACTS/agent-${RESP_NAME}.log"
 done
 
 # Also try respond names that may have already exited
 for RNAME in "alpha-respond" "beta-respond" "respond"; do
   if [[ ! -f "$ARTIFACTS/agent-${RNAME}.log" ]]; then
-    botty tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${RNAME}.log" 2>/dev/null || true
+    vessel tail "$RNAME" -n 500 > "$ARTIFACTS/agent-${RNAME}.log" 2>/dev/null || true
   fi
 done
 
 # Any other worker agents
-for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+for AGENT_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
   if [[ ! -f "$ARTIFACTS/agent-${AGENT_NAME}.log" ]]; then
-    botty tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${AGENT_NAME}.log" 2>/dev/null || true
+    vessel tail "$AGENT_NAME" -n 500 > "$ARTIFACTS/agent-${AGENT_NAME}.log" 2>/dev/null || true
     echo "  worker log: $ARTIFACTS/agent-${AGENT_NAME}.log"
   fi
 done
@@ -368,11 +368,11 @@ echo ""
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
 for AGENT_NAME in "$ALPHA_DEV" "$ALPHA_SECURITY" "$BETA_DEV"; do
-  botty kill "$AGENT_NAME" 2>/dev/null || true
+  vessel kill "$AGENT_NAME" 2>/dev/null || true
 done
 # Kill respond agents and any workers
-for AGENT_NAME in $(botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  botty kill "$AGENT_NAME" 2>/dev/null || true
+for AGENT_NAME in $(vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  vessel kill "$AGENT_NAME" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

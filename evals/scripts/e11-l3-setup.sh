@@ -4,7 +4,7 @@ set -euo pipefail
 # E11-L3 Botty-Native Full Lifecycle Eval — Setup
 # Creates two Rust projects (Alpha API + Beta library) sharing an isolated botbus.
 # Alpha has a planted /debug vulnerability; Beta has buggy validate_email (rejects +).
-# Registers hooks for BOTH projects so all three agents spawn via botty.
+# Registers hooks for BOTH projects so all three agents spawn via vessel.
 #
 # Three agents:
 #   alpha-dev     — dev-loop on alpha channel (router hook)
@@ -14,7 +14,7 @@ set -euo pipefail
 # Does NOT send the task-request — that goes in the run script.
 
 # --- Preflight ---
-REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit vessel jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -39,7 +39,7 @@ bus init
 # --- Tool versions ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus bn maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit vessel jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e11-l3"
@@ -255,11 +255,11 @@ jj new
 # to ws/default/ and creates the bare repo structure.
 cd "$BETA_DIR"
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name beta --type library --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
+  botbox init --name beta --type library --tools bones,maw,crit,botbus,vessel --init-bones --no-interactive
 
 cd "$ALPHA_DIR"
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name alpha --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
+  botbox init --name alpha --type api --tools bones,maw,crit,botbus,vessel --reviewers security --init-bones --no-interactive
 
 # ============================================================
 # Fix workspace path dependency
@@ -271,7 +271,7 @@ ln -s "../../beta/ws/default" "$ALPHA_DIR/ws/beta"
 # ============================================================
 # Fix hooks: add BOTBUS_DATA_DIR to --env-inherit
 # ============================================================
-# botty starts agents with a clean env. botbox init registers hooks with
+# vessel starts agents with a clean env. botbox init registers hooks with
 # --env-inherit for BOTBUS_CHANNEL etc but NOT BOTBUS_DATA_DIR. Without it,
 # spawned agents talk to the system botbus instead of the eval's isolated one.
 _fix_hooks() {

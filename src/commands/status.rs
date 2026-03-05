@@ -225,7 +225,7 @@ impl StatusArgs {
         }
 
         // 4. Running agents
-        if let Ok(output) = Tool::new("botty")
+        if let Ok(output) = Tool::new("vessel")
             .arg("list")
             .arg("--format")
             .arg("json")

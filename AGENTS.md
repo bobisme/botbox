@@ -13,7 +13,7 @@ Edict orchestrates these companion projects (all ours):
 | **botbus** | `bus` | Channel-based messaging, claims (advisory locks), agent coordination |
 | **maw** | `maw` | Multi-agent workspaces — isolated Git worktrees for concurrent edits |
 | **botcrit** | `crit` | Distributed code review — threads, votes, LGTM/block workflow |
-| **botty** | `botty` | PTY-based agent runtime — spawn, manage, and communicate with agents |
+| **vessel** | `vessel` | PTY-based agent runtime — spawn, manage, and communicate with agents |
 
 External (not ours, but used heavily):
 - **bones** (`bn`) — Unified issue tracker (replaces beads, beads-view, beads-tui)
@@ -27,8 +27,8 @@ Understanding the full chain from "message arrives" to "agent does work" is crit
 ```
 1. Message lands on a botbus channel (e.g., `bus send myproject "New task" -L task-request`)
 2. botbus checks registered hooks (`bus hooks list`) for matching conditions
-3. Matching hook fires → runs its command (typically `botty spawn ...`)
-4. botty spawn creates a PTY session, runs `edict run <subcommand>`
+3. Matching hook fires → runs its command (typically `vessel spawn ...`)
+4. vessel spawn creates a PTY session, runs `edict run <subcommand>`
 5. The agent loop iterates: triage → start → work → review → finish
 6. Agent communicates back via `bus send`, updates bones via `bn`, manages workspace via `maw`
 ```
@@ -53,16 +53,16 @@ The router hook spawns `edict run responder` which routes messages based on `!` 
 
 Also accepts old-style `q:` / `qq:` / `big q:` / `q(model):` prefixes for backwards compatibility.
 
-Hook commands use `botty spawn` with `--env-inherit` to forward environment variables (BOTBUS_CHANNEL, BOTBUS_MESSAGE_ID, BOTBUS_AGENT) to the spawned agent.
+Hook commands use `vessel spawn` with `--env-inherit` to forward environment variables (BOTBUS_CHANNEL, BOTBUS_MESSAGE_ID, BOTBUS_AGENT) to the spawned agent.
 
 ### Observing Agents in Action
 
 ```bash
-botty list                    # See running agents
-botty tail <name>             # Stream real-time agent output (primary debugging tool)
-botty tail <name> --last 100  # See last 100 lines
-botty kill <name>             # Stop a misbehaving agent
-botty send <name> "message"   # Send input to agent's PTY
+vessel list                    # See running agents
+vessel tail <name>             # Stream real-time agent output (primary debugging tool)
+vessel tail <name> --last 100  # See last 100 lines
+vessel kill <name>             # Stop a misbehaving agent
+vessel send <name> "message"   # Send input to agent's PTY
 
 bus history <channel> -n 20   # See recent channel messages
 bus statuses list             # See agent presence/status
@@ -70,7 +70,7 @@ bus claims list               # See all active claims
 bus inbox --all               # See unread messages across all channels
 ```
 
-`botty tail` is the primary way to see what an agent is doing, whether it's stuck, and what tools it's calling. This is how you evaluate the effectiveness of the entire tool suite.
+`vessel tail` is the primary way to see what an agent is doing, whether it's stuck, and what tools it's calling. This is how you evaluate the effectiveness of the entire tool suite.
 
 ## Companion Tools Deep Dive
 
@@ -150,16 +150,16 @@ maw exec $WS -- crit inbox --agent $AGENT                        # Show reviews/
 - Agent identity via `--agent` flag or `CRIT_AGENT`/`BOTBUS_AGENT` env vars
 - `--user` flag switches to human identity ($USER) for manual reviews
 
-### botty — Agent Runtime
+### vessel — Agent Runtime
 
 PTY-based agent spawner and manager. Runs Claude Code sessions in managed PTY processes.
 
 **Core commands:**
-- `botty spawn [--pass-env] [--model model] [--timeout secs] <name> <command...>` — Spawn agent. `--pass-env` forwards BOTBUS_* env vars to the spawned process.
-- `botty list [--format json]` — List running agents with PIDs and uptime
-- `botty tail <name> [--last n] [--follow]` — Stream agent output. **Primary debugging tool.**
-- `botty kill <name>` — Terminate agent
-- `botty send <name> "message"` — Send text to agent's PTY stdin
+- `vessel spawn [--pass-env] [--model model] [--timeout secs] <name> <command...>` — Spawn agent. `--pass-env` forwards BOTBUS_* env vars to the spawned process.
+- `vessel list [--format json]` — List running agents with PIDs and uptime
+- `vessel tail <name> [--last n] [--follow]` — Stream agent output. **Primary debugging tool.**
+- `vessel kill <name>` — Terminate agent
+- `vessel send <name> "message"` — Send text to agent's PTY stdin
 
 ### bones (`bn`) — Issue Tracking
 
@@ -182,7 +182,7 @@ Identity resolved from `$AGENT`/`$BOTBUS_AGENT` env. No `--actor`/`--author` fla
 
 ## Agent Subcommands
 
-All agent loops are built into the `edict` binary as subcommands under `edict run`. They are invoked by botbus hooks via `botty spawn`.
+All agent loops are built into the `edict` binary as subcommands under `edict run`. They are invoked by botbus hooks via `vessel spawn`.
 
 ### `edict run dev-loop` — Lead Dev Agent
 
@@ -193,12 +193,12 @@ Triages work, dispatches parallel workers, monitors progress, merges completed w
 **Per iteration:**
 1. Read inbox, create bones from task requests
 2. Check next bones and in-progress work
-3. For N >= 2 ready bones: dispatch Haiku workers in parallel via `botty spawn`
+3. For N >= 2 ready bones: dispatch Haiku workers in parallel via `vessel spawn`
 4. For single bone or when solo: work directly
 5. Monitor worker progress, merge completed workspaces
 6. Check for releases (feat/fix commits → version bump + tag)
 
-**Dispatch pattern:** Creates workspace per worker, generates random worker name via `bus generate-name`, stakes claims, comments bone with worker/workspace info, spawns via `botty spawn`.
+**Dispatch pattern:** Creates workspace per worker, generates random worker name via `bus generate-name`, stakes claims, comments bone with worker/workspace info, spawns via `vessel spawn`.
 
 ### `edict run worker-loop` — Worker Agent
 
@@ -313,7 +313,7 @@ Migrations run automatically during `edict sync` when the config version is behi
     "channel": "myproject",
     "installCommand": "just install"
   },
-  "tools": { "bones": true, "maw": true, "crit": true, "botbus": true, "botty": true },
+  "tools": { "bones": true, "maw": true, "crit": true, "botbus": true, "vessel": true },
   "review": { "enabled": true, "reviewers": ["security"] },
   "pushMain": false,
   "agents": {
@@ -387,7 +387,7 @@ BOTBUS_DATA_DIR=/tmp/test-botbus bus hooks list
 rm -rf /tmp/test-botbus
 ```
 
-**Applies to**: Any manual testing with bus, botty, crit, maw, or bn commands during development.
+**Applies to**: Any manual testing with bus, vessel, crit, maw, or bn commands during development.
 
 ## Conventions
 
@@ -402,9 +402,9 @@ rm -rf /tmp/test-botbus
 
 ## Debugging and Troubleshooting
 
-### "Look at the botty session for X"
+### "Look at the vessel session for X"
 
-When asked to look at a botty session, immediately run `botty tail <name> --last 200` to see recent output from that agent. This is the primary workflow for:
+When asked to look at a vessel session, immediately run `vessel tail <name> --last 200` to see recent output from that agent. This is the primary workflow for:
 - Checking if an agent is stuck or making progress
 - Identifying tool failures or protocol violations
 - Finding improvement opportunities in the tool suite
@@ -415,11 +415,11 @@ Drop whatever you're doing and run the tail command. Analyze the output and repo
 ### Agent not spawning
 1. Check hook registration: `bus hooks list` — is the router hook there? Does the channel match? It should point to `edict run responder`.
 2. Check claim availability: `bus claims list` — is the `agent://X-dev` claim already taken? (router hook won't fire if claimed)
-3. Check botty: `botty list` — is the agent already running?
-4. Verify hook command: the hook should run `botty spawn` with correct script path and `--env-inherit`
+3. Check vessel: `vessel list` — is the agent already running?
+4. Verify hook command: the hook should run `vessel spawn` with correct script path and `--env-inherit`
 
 ### Agent stuck or looping
-1. `botty tail <name>` — what is the agent doing right now?
+1. `vessel tail <name>` — what is the agent doing right now?
 2. Check claims: `bus claims list --mine --agent <name>` — stuck claim?
 3. Check bone state: `bn show <id>` — is the bone in expected state?
 4. Check workspace: `maw ws list` — is workspace still alive?
@@ -630,7 +630,7 @@ Agents communicate via bus channels. You don't need to be expert on everything �
 
 **Conversations**: After sending a question, use `bus wait -c <channel> --mention -t <seconds>` to block until the other agent replies. This enables back-and-forth conversations across channels.
 
-**Project experts**: Each `<project>-dev` is the expert on their project. When stuck on a companion tool (bus, maw, crit, botty, bn), post a question to its project channel instead of guessing.
+**Project experts**: Each `<project>-dev` is the expert on their project. When stuck on a companion tool (bus, maw, crit, vessel, bn), post a question to its project channel instead of guessing.
 
 ### Cross-Project Communication
 

@@ -4,12 +4,12 @@ Source plan: `ws/default/notes/proposals/multi-lead.md`
 
 ## Executive Summary
 
-The proposal is strong on motivation, ecosystem fit, and incremental rollout. It correctly identifies the single-lead bottleneck and reuses existing primitives (`bus` claims, `maw`, `botty`) rather than introducing new coordination systems.
+The proposal is strong on motivation, ecosystem fit, and incremental rollout. It correctly identifies the single-lead bottleneck and reuses existing primitives (`bus` claims, `maw`, `vessel`) rather than introducing new coordination systems.
 
 The main gaps are in production-hardening details:
 
 - Router architecture is still ambiguous (two intake patterns are documented as near-peers).
-- Lead admission control uses a race-prone capacity check (`botty list` counting).
+- Lead admission control uses a race-prone capacity check (`vessel list` counting).
 - Merge lock semantics need a strict lease protocol (TTL + refresh + backoff).
 - Security/abuse controls for work-spawning paths are not explicit.
 - SLOs/telemetry and chaos test coverage are under-specified.
@@ -79,7 +79,7 @@ Concurrency proposals fail when intake behavior is not singular. A single intake
    --cwd "$PROJECT" \
 -  --ttl 600 \
 +  --ttl 60 \
-   -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT \
+   -- vessel spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT \
 -     --name "botbox-dev/router-$(bus generate-name)" \
 +     --name "botbox-dev/router" \
       --cwd "$PROJECT" \
@@ -88,7 +88,7 @@ Concurrency proposals fail when intake behavior is not singular. A single intake
 
  Key changes:
 - **No `--claim` on the hook.** The hook fires for every message, not just when the agent claim is free.
-- **Unique botty name per invocation.** Each router instance gets a unique name to prevent botty name collisions (e.g., `botbox-dev/router-amber-reef`).
+- **Unique vessel name per invocation.** Each router instance gets a unique name to prevent vessel name collisions (e.g., `botbox-dev/router-amber-reef`).
 - **respond.mjs handles concurrency.** The router script decides whether to spawn a new lead or route to an existing one.
 +- **Claim is `respond://...` (not `agent://...`).** Intake is serialized, execution is parallel.
 +- **Short TTL bounds intake stalls.**
@@ -106,11 +106,11 @@ Concurrency proposals fail when intake behavior is not singular. A single intake
 
 ---
 
-### [High Impact, High Effort] Change #2: Replace `botty list` admission with atomic lead-slot claims and durable queueing
+### [High Impact, High Effort] Change #2: Replace `vessel list` admission with atomic lead-slot claims and durable queueing
 
 **Current State:**
 
-`maxLeads` is enforced by counting processes (`botty list`) and at-capacity behavior says "queue message" without durable queue protocol.
+`maxLeads` is enforced by counting processes (`vessel list`) and at-capacity behavior says "queue message" without durable queue protocol.
 
 **Proposed Change:**
 
@@ -154,8 +154,8 @@ Process counting is race-prone and not a distributed admission mechanism. Claim-
        }
 @@ -361,7 +365,10 @@
  - `multiLead.enabled` (default: false) - Feature flag. When false, behavior is identical to today (respond.mjs execs into dev-loop).
-- `multiLead.maxLeads` (default: 3) - Maximum concurrent dev-loop instances. Router checks `botty list` before spawning.
-+- `multiLead.maxLeads` (default: 3) - Maximum concurrent dev-loop instances. Enforced via atomic `lead-slot://<project>/<n>` claims (not `botty list`).
+- `multiLead.maxLeads` (default: 3) - Maximum concurrent dev-loop instances. Router checks `vessel list` before spawning.
++- `multiLead.maxLeads` (default: 3) - Maximum concurrent dev-loop instances. Enforced via atomic `lead-slot://<project>/<n>` claims (not `vessel list`).
 +- `multiLead.queueAtCapacity` (default: true) - Persist overflow work when all lead slots are occupied.
 +- `multiLead.queueMaxDepth` (default: 200) - Backpressure threshold for intake.
 +- `multiLead.queueRetrySec` (default: 30) - Queue drain cadence.
@@ -163,13 +163,13 @@ Process counting is race-prone and not a distributed admission mechanism. Claim-
 @@ -381,9 +388,17 @@
    -> routeMessage() classifies it
    -> !dev / !mission / triage-escalate:
--      -> Check maxLeads: botty list | count botbox-dev/lead-* processes
+-      -> Check maxLeads: vessel list | count botbox-dev/lead-* processes
 -      -> If at capacity: queue message (post acknowledgment, don't spawn)
 -      -> If under capacity:
 +      -> Acquire one `lead-slot://botbox/<1..maxLeads>` claim
 +      -> If slot acquired:
             -> Generate lead name: botbox-dev/lead-$(bus generate-name)
-            -> botty spawn lead
+            -> vessel spawn lead
             -> Release respond:// claim, exit
 +      -> If no slot available:
 +           -> Persist queue entry keyed by `BOTBUS_MESSAGE_ID`
@@ -474,7 +474,7 @@ Most failures happen during rollout and incident handling, not initial implement
 +++ ws/default/notes/proposals/multi-lead.md
 @@ -423,9 +423,9 @@
  Changes:
- - `packages/cli/scripts/respond.mjs`: Change `handleDev()` and `handleMission()` from `exec` to `botty spawn`. Add maxLeads check before spawning. Generate unique lead names.
+ - `packages/cli/scripts/respond.mjs`: Change `handleDev()` and `handleMission()` from `exec` to `vessel spawn`. Add maxLeads check before spawning. Generate unique lead names.
  - `packages/cli/src/commands/init.mjs`: Change router hook from `--claim "agent://project-dev"` to `--claim "respond://project-dev"` with short TTL. Change `--name` from fixed to unique.
 - `src/migrations/index.mjs`: Add migration to update existing router hooks from `agent://` claim to `respond://` claim.
 - `packages/cli/src/lib/config.mjs`: Add `multiLead` config schema.

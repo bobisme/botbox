@@ -8,7 +8,7 @@ The target architecture for a project-level dev agent (e.g., `terseid-dev`). Thi
 |-------|------|-------|-----------|
 | `<project>-dev` | Lead developer. Triages, grooms, dispatches, reviews, merges. | Opus or Sonnet | Long-running loop |
 | `<random-name>` | Worker. Claims one bead, implements, finishes. | Haiku (routine), Sonnet (moderate), Opus (complex) | Spawned per-task, exits when done |
-| `security-reviewer` | Reviews code for security issues via crit. | Opus | Spawned on demand via botty |
+| `security-reviewer` | Reviews code for security issues via crit. | Opus | Spawned on demand via vessel |
 
 ### Model Selection
 
@@ -53,7 +53,7 @@ Decide between sequential and parallel execution:
 
 ```bash
 # For each independent bead:
-botty spawn --name <random-name> -- \
+vessel spawn --name <random-name> -- \
   claude -p "You are worker <name> for <project>. Complete bead <id>. ..." \
   --dangerously-skip-permissions --allow-dangerously-skip-permissions
 ```
@@ -77,7 +77,7 @@ After work is complete (either by the dev agent or a worker), if review is enabl
 
 **Ensure reviewer is running:**
 1. Check if reviewer is active: `bus claims check --agent $AGENT "agent://security-reviewer"`
-2. If not running, spawn it: `botty spawn --name security-reviewer -- <reviewer-script>`
+2. If not running, spawn it: `vessel spawn --name security-reviewer -- <reviewer-script>`
 
 **Wait for review:**
 The dev agent doesn't block. It continues its loop. Options:

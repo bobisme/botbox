@@ -386,7 +386,7 @@ fn cleanup(agent: &str, project: &str, already_signed_off: bool) -> Result<()> {
 
     // All subprocess spawns below use .new_process_group() so they run in their
     // own process group and survive the SIGTERM that triggered this cleanup
-    // (botty kill sends SIGTERM to the parent's process group, which would
+    // (vessel kill sends SIGTERM to the parent's process group, which would
     // otherwise kill these children before they complete).
 
     if !already_signed_off {

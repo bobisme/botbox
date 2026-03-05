@@ -1116,7 +1116,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     ]);
                     let spawn_arg_refs: Vec<&str> =
                         spawn_args.iter().map(|s| s.as_str()).collect();
-                    let spawn_result = Tool::new("botty")
+                    let spawn_result = Tool::new("vessel")
                         .args(&spawn_arg_refs)
                         .run();
 

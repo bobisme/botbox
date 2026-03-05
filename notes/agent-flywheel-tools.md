@@ -2,7 +2,7 @@
 
 Catalog of tools found on [agent-flywheel.com](https://agent-flywheel.com), with assessment of fit for the botbox ecosystem.
 
-**Botbox ecosystem context**: beads (issue tracking), maw (jj workspaces), botbus (messaging), crit (code review), botty (agent runtime)
+**Botbox ecosystem context**: beads (issue tracking), maw (jj workspaces), botbus (messaging), crit (code review), vessel (agent runtime)
 
 ---
 
@@ -108,7 +108,7 @@ Catalog of tools found on [agent-flywheel.com](https://agent-flywheel.com), with
   - Configurable allowlists
   - Command audit logging
 
-**Botbox fit**: **INTERESTING FOR SAFETY**. Our scripts already have some safety checks, but this is more comprehensive. Could be useful for botty (agent runtime). **Worth exploring** for agent safety.
+**Botbox fit**: **INTERESTING FOR SAFETY**. Our scripts already have some safety checks, but this is more comprehensive. Could be useful for vessel (agent runtime). **Worth exploring** for agent safety.
 
 ---
 
@@ -153,7 +153,7 @@ Catalog of tools found on [agent-flywheel.com](https://agent-flywheel.com), with
   - Session persistence across reboots
   - Dashboard view of active agents
 
-**Botbox fit**: **SIMILAR TO BOTTY**. This is agent orchestration like botty. Different approach - NTM uses tmux panes, botty uses PTY management. **Worth studying** their UX for agent management.
+**Botbox fit**: **SIMILAR TO BOTTY**. This is agent orchestration like vessel. Different approach - NTM uses tmux panes, vessel uses PTY management. **Worth studying** their UX for agent management.
 
 ---
 
@@ -213,7 +213,7 @@ Catalog of tools found on [agent-flywheel.com](https://agent-flywheel.com), with
   - Robot Mode JSON API
   - Event-driven automation
 
-**Botbox fit**: **INTERESTING FOR BOTTY**. Terminal observation for agents. Could complement botty for detecting stuck agents, rate limits, etc. **Worth exploring** for agent health monitoring.
+**Botbox fit**: **INTERESTING FOR BOTTY**. Terminal observation for agents. Could complement vessel for detecting stuck agents, rate limits, etc. **Worth exploring** for agent health monitoring.
 
 ---
 
@@ -306,7 +306,7 @@ Catalog of tools found on [agent-flywheel.com](https://agent-flywheel.com), with
 
 1. **Shared Foundation**: They use the same `beads` (BR) issue tracker we do - this is the same ecosystem.
 
-2. **MCP Integration**: Many tools expose MCP servers. We could consider MCP integration for botbus/botty.
+2. **MCP Integration**: Many tools expose MCP servers. We could consider MCP integration for botbus/vessel.
 
 3. **Safety Focus**: Multiple tools (DCG, SLB) address agent safety - a real concern for autonomous agents.
 

@@ -77,7 +77,7 @@ INIT_RC=0
 INIT_OUTPUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" "$RUST_BINARY" init \
   --name testproj \
   --type cli \
-  --tools bones,maw,crit,botbus,botty \
+  --tools bones,maw,crit,botbus,vessel \
   --no-interactive \
   --no-seed-work \
   --language rust \
@@ -265,7 +265,7 @@ REINIT_RC=0
 REINIT_OUTPUT=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" "$RUST_BINARY" init \
   --name testproj \
   --type cli \
-  --tools bones,maw,crit,botbus,botty \
+  --tools bones,maw,crit,botbus,vessel \
   --no-interactive \
   --no-seed-work \
   --force \

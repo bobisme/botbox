@@ -9,7 +9,7 @@ set -euo pipefail
 # Both projects use maw v2 layout (bare repo + ws/default/).
 
 # --- Preflight: fail fast on missing dependencies ---
-REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo claude jq)
+REQUIRED_CMDS=(botbox bus bn maw crit vessel jj cargo claude jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -33,7 +33,7 @@ bus init
 # --- Capture tool versions for forensics ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus bn maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit vessel jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "model_alpha=opus"
@@ -220,7 +220,7 @@ jj new
 
 # botbox init handles: maw init (→ bare repo + ws/default/), bn init, crit init, hooks
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name alpha --type api --tools bones,maw,crit,botbus,botty --reviewers security --init-bones --no-interactive
+  botbox init --name alpha --type api --tools bones,maw,crit,botbus,vessel --reviewers security --init-bones --no-interactive
 
 # --- Hooks (verify they were registered by botbox init) ---
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" bus hooks list > "$EVAL_DIR/artifacts/hooks-after-init.txt" 2>&1

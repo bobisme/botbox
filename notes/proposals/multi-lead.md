@@ -54,7 +54,7 @@ This means:
 1. **Serialized missions.** A 20-minute mission blocks a 2-minute bug fix.
 2. **Wasted parallelism.** The project has capacity for many concurrent workspaces, but only one orchestrator.
 3. **Human frustration.** `!dev fix the typo` while a mission runs gets no response until it completes.
-4. **Underutilized infrastructure.** Bus, maw, botty, and beads all support concurrent access. Only the dev-loop is a singleton.
+4. **Underutilized infrastructure.** Bus, maw, vessel, and beads all support concurrent access. Only the dev-loop is a singleton.
 
 ## Proposed Design
 
@@ -112,7 +112,7 @@ bus hooks add --agent botbox-dev \
   --claim-owner botbox-dev \
   --cwd "$PROJECT" \
   --ttl 60 \
-  -- botty spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT \
+  -- vessel spawn --env-inherit BOTBUS_CHANNEL,BOTBUS_MESSAGE_ID,BOTBUS_AGENT \
      --name "botbox-dev/router" \
      --cwd "$PROJECT" \
      -- bun .agents/botbox/scripts/router.mjs botbox botbox-dev
@@ -120,7 +120,7 @@ bus hooks add --agent botbox-dev \
 
 - **Claim is `agent://project-router`** (not `agent://project-dev`). Intake is serialized, execution is parallel.
 - **Short TTL (60s)** bounds intake stalls. If router.mjs hangs, the claim expires.
-- **router.mjs spawns leads** via `botty spawn` and exits quickly.
+- **router.mjs spawns leads** via `vessel spawn` and exits quickly.
 
 ### 3. Router.mjs (renamed from respond.mjs)
 
@@ -157,7 +157,7 @@ async function acquireLeadSlot() {
 
 ```javascript
 async function spawnLead(leadName, { mission } = {}) {
-  await runCommand("botty", [
+  await runCommand("vessel", [
     "spawn",
     "--name", leadName,
     "--env-inherit", "BOTBUS_CHANNEL,BOTBUS_DATA_DIR",
@@ -322,7 +322,7 @@ Gate: E11-L4 eval shows no regression. Merge mutex claim/release works correctly
 
 ### Phase 2: Router Rename + Multi-Lead Spawning
 
-Rename respond.mjs → router.mjs. Change `exec` to `botty spawn` for `!dev`/`!mission`. Add `!leads N` route. Add numbered slot acquisition. Add message idempotency. Update SCRIPT_REGISTRY. Migration: update hook command path and claim URI.
+Rename respond.mjs → router.mjs. Change `exec` to `vessel spawn` for `!dev`/`!mission`. Add `!leads N` route. Add numbered slot acquisition. Add message idempotency. Update SCRIPT_REGISTRY. Migration: update hook command path and claim URI.
 
 Files: `packages/cli/scripts/router.mjs`, `packages/cli/src/commands/init.mjs`, `packages/cli/src/migrations/index.mjs`, `packages/cli/src/lib/scripts.mjs`, `packages/cli/src/lib/config.mjs`
 
@@ -425,7 +425,7 @@ Keep one dev-loop but make it check inbox at every checkpoint and start new work
 
 Use `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` for multiple leaders.
 
-**Rejected because:** Single fixed leader by design. No workspace isolation. Invisible to botty. Bypasses bus/claims infrastructure.
+**Rejected because:** Single fixed leader by design. No workspace isolation. Invisible to vessel. Bypasses bus/claims infrastructure.
 
 ---
 
@@ -439,11 +439,11 @@ Review: `notes/proposals/multi-lead.review.1.md`
 
 The `agent://project-router` claim is now the canonical intake model (formerly proposed as `respond://`, simplified to reuse the `agent://` prefix). The always-fire hook is a rejected alternative. Message idempotency via `message://<project>/<message-id>` claim is included.
 
-### Change #2: Replace `botty list` admission with atomic lead-slot claims and durable queueing
+### Change #2: Replace `vessel list` admission with atomic lead-slot claims and durable queueing
 
 **Verdict: Partially accepted (slots yes, queue no).**
 
-Numbered slot claims (`agent://<project>-dev/<n>`) replace `botty list` counting — atomic and race-free. The slot number doubles as the lead's identity, eliminating a separate naming layer.
+Numbered slot claims (`agent://<project>-dev/<n>`) replace `vessel list` counting — atomic and race-free. The slot number doubles as the lead's identity, eliminating a separate naming layer.
 
 **Rejected: durable queue.** The bus channel is already the queue. When a lead finishes and releases its slot, the next message triggers the hook naturally. No second queue layer needed.
 
@@ -465,7 +465,7 @@ Release checks are fast (10-15s). A separate `release://` lock doubles protocol 
 
 **Verdict: Rejected.**
 
-Botbox has no metrics backend or alerting system. Eval scripts capture phase timing. `botty tail` and `bus history` provide observability.
+Botbox has no metrics backend or alerting system. Eval scripts capture phase timing. `vessel tail` and `bus history` provide observability.
 
 ### Change #6: Add security and abuse controls for lead-spawning paths
 

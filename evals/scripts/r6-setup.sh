@@ -15,7 +15,7 @@ echo "EVAL_DIR=$EVAL_DIR"
 
 # --- Init repo and botbox ---
 jj git init
-botbox init --name r6-eval --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
+botbox init --name r6-eval --type api --tools bones,maw,crit,botbus,vessel --init-bones --no-interactive
 
 # --- Copy latest local workflow docs (installed package may be stale) ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/

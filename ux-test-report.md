@@ -44,7 +44,7 @@ No significant confusion or gaps were identified.
 ---
 
 ### 3. Cross-Project Bug Reporting
-**Question**: If you encounter a bug in "botty" while working, what should you do?
+**Question**: If you encounter a bug in "vessel" while working, what should you do?
 
 **Response**: ✅ Correct
 - Correctly identified report-issue.md workflow

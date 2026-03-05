@@ -14,7 +14,7 @@ use crate::subprocess::{Tool, run_command};
 use crate::template::render_agents_md;
 
 const PROJECT_TYPES: &[&str] = &["api", "cli", "frontend", "library", "monorepo", "tui"];
-const AVAILABLE_TOOLS: &[&str] = &["bones", "maw", "crit", "botbus", "botty"];
+const AVAILABLE_TOOLS: &[&str] = &["bones", "maw", "crit", "botbus", "vessel"];
 const REVIEWER_ROLES: &[&str] = &["security"];
 const LANGUAGES: &[&str] = &["rust", "python", "node", "go", "typescript", "java"];
 const CONFIG_VERSION: &str = "1.0.16";
@@ -73,7 +73,7 @@ pub struct InitArgs {
     /// Project types (comma-separated: api, cli, frontend, library, monorepo, tui)
     #[arg(long, value_delimiter = ',')]
     pub r#type: Vec<String>,
-    /// Tools to enable (comma-separated: bones, maw, crit, botbus, botty)
+    /// Tools to enable (comma-separated: bones, maw, crit, botbus, vessel)
     #[arg(long, value_delimiter = ',')]
     pub tools: Vec<String>,
     /// Reviewer roles (comma-separated: security)
@@ -714,7 +714,7 @@ fn build_config(choices: &InitChoices) -> Config {
             maw: choices.tools.contains(&"maw".to_string()),
             crit: choices.tools.contains(&"crit".to_string()),
             botbus: choices.tools.contains(&"botbus".to_string()),
-            botty: choices.tools.contains(&"botty".to_string()),
+            vessel: choices.tools.contains(&"vessel".to_string()),
         },
         review: ReviewConfig {
             enabled: !choices.reviewers.is_empty(),
@@ -911,7 +911,7 @@ pub(super) fn register_router_hook(
         "--ttl",
         "600",
         "--",
-        "botty",
+        "vessel",
         "spawn",
         "--env-inherit",
         env_inherit,
@@ -971,7 +971,7 @@ pub(super) fn register_reviewer_hook(
         "--cwd",
         hook_cwd,
         "--",
-        "botty",
+        "vessel",
         "spawn",
         "--env-inherit",
         env_inherit,

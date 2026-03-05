@@ -545,11 +545,11 @@ fn emit_build_env_diagnostic(config_env: &std::collections::HashMap<String, Stri
             }
             (Some(val), Some(cfg_val)) => {
                 // Value exists but differs from config — inherited from parent process
-                // or overridden by botty spawn --env flag
+                // or overridden by vessel spawn --env flag
                 eprintln!("  {var}={val} (effective; config has {cfg_val})");
             }
             (Some(val), None) => {
-                // Not in config but set in environment (from botty spawn --env or parent)
+                // Not in config but set in environment (from vessel spawn --env or parent)
                 eprintln!("  {var}={val} (from environment, not in config)");
             }
             (None, Some(cfg_val)) => {
@@ -670,7 +670,7 @@ fn is_rate_limit_error(err: &str) -> bool {
 /// Run an agent via `edict run agent` (Pi by default).
 ///
 /// Supports `provider/model:thinking` syntax for thinking levels.
-/// Echoes output to stderr for visibility in botty while capturing stdout for parsing.
+/// Echoes output to stderr for visibility in vessel while capturing stdout for parsing.
 fn try_run_agent(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<String> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
@@ -698,7 +698,7 @@ fn try_run_agent(prompt: &str, model: &str, timeout: u64) -> anyhow::Result<Stri
     let mut output = String::new();
     for line in reader.lines() {
         let line = line.context("reading line from edict run agent")?;
-        // Echo to stderr for visibility in botty
+        // Echo to stderr for visibility in vessel
         eprintln!("{}", line);
         output.push_str(&line);
         output.push('\n');
@@ -743,7 +743,7 @@ fn cleanup(agent: &str, project: &str) -> anyhow::Result<()> {
 
     // All subprocess spawns below use .new_process_group() so they run in their
     // own process group and survive the SIGTERM that triggered this cleanup
-    // (botty kill sends SIGTERM to the parent's process group, which would
+    // (vessel kill sends SIGTERM to the parent's process group, which would
     // otherwise kill these children before they complete).
 
     // Reset orphaned doing bones
@@ -827,7 +827,7 @@ pub fn run_worker_loop(
 ) -> anyhow::Result<()> {
     let worker = WorkerLoop::new(project_root, agent, model)?;
 
-    // Announce startup on bus (survives botty log eviction)
+    // Announce startup on bus (survives vessel log eviction)
     let bone_info = worker
         .dispatched_bone
         .as_deref()

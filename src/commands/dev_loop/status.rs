@@ -257,7 +257,7 @@ fn gather_ready_bones() -> Option<String> {
 }
 
 fn gather_active_workers(agent: &str) -> Option<String> {
-    let output = Tool::new("botty")
+    let output = Tool::new("vessel")
         .args(&["list", "--format", "json"])
         .run()
         .ok()?;

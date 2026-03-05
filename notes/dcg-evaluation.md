@@ -1,6 +1,6 @@
 # DCG (Destructive Command Guard) Evaluation
 
-Evaluation of [DCG](https://github.com/Dicklesworthstone/destructive_command_guard) for potential integration with botbox/botty.
+Evaluation of [DCG](https://github.com/Dicklesworthstone/destructive_command_guard) for potential integration with botbox/vessel.
 
 ## What It Does
 
@@ -170,7 +170,7 @@ dcg packs --verbose         # List available packs
 
 1. **Git-focused, not jj-focused**: DCG's core patterns are Git-specific. Botbox uses jj (Jujutsu). While jj has some interop with git commands, the protection patterns don't match jj's native commands (`jj abandon`, `jj op undo`, etc.).
 
-2. **PreToolUse hook dependency**: DCG integrates via Claude Code's PreToolUse hooks. This is a different layer than botty's PTY-based runtime. Integration paths:
+2. **PreToolUse hook dependency**: DCG integrates via Claude Code's PreToolUse hooks. This is a different layer than vessel's PTY-based runtime. Integration paths:
    - **Botty**: Could potentially wrap commands through DCG, but would require custom integration.
    - **Claude Code hooks**: Already supported, but botbox already manages Claude Code hooks in `.agents/botbox/hooks/`.
 
@@ -195,7 +195,7 @@ dcg packs --verbose         # List available packs
 **Do not integrate DCG into botbox at this time.** Revisit when:
 
 1. **jj support exists**: If DCG adds jj-specific patterns, it becomes more relevant.
-2. **Botty integration path is clearer**: If we want command-level safety in botty, DCG could be wrapped as a guard.
+2. **Botty integration path is clearer**: If we want command-level safety in vessel, DCG could be wrapped as a guard.
 3. **User demand**: If users request it, we can add a migration that installs DCG.
 
 ### Why Not Skip Entirely?
@@ -216,14 +216,14 @@ For botbox projects:
 
 ### Future Consideration
 
-If we want command-level safety in botty:
+If we want command-level safety in vessel:
 
 ```bash
-# Hypothetical botty integration
-botty spawn --guard dcg claude -- "work on feature"
+# Hypothetical vessel integration
+vessel spawn --guard dcg claude -- "work on feature"
 ```
 
-This would pipe all commands through DCG before execution. But this requires botty changes and DCG's permission model would need to work with our jj-based workflow.
+This would pipe all commands through DCG before execution. But this requires vessel changes and DCG's permission model would need to work with our jj-based workflow.
 
 ---
 

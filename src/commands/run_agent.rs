@@ -37,7 +37,7 @@ impl OutputFormat {
         }
 
         // TTY detection: check stdout.is_terminal() OR presence of TERM env var
-        // The TERM check handles cases where we're in a PTY (like botty spawn)
+        // The TERM check handles cases where we're in a PTY (like vessel spawn)
         // but stdout appears as a pipe due to stream processing
         if std::io::stdout().is_terminal() {
             OutputFormat::Pretty

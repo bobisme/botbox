@@ -55,7 +55,7 @@ echo "  Timeout: ${OVERALL_TIMEOUT}s"
 echo "  Scenario: merge pre-completed workspace $WORKER_WS"
 echo ""
 
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty spawn \
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel spawn \
   -n "$LEAD_NAME" \
   --cwd "$PROJECT_DIR" \
   --env-inherit BOTBUS_DATA_DIR,SSH_AUTH_SOCK \
@@ -84,7 +84,7 @@ while true; do
   echo "--- Poll (${ELAPSED}s / ${OVERALL_TIMEOUT}s) ---"
 
   # Check if lead is still running
-  LEAD_RUNNING=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty list --format json 2>/dev/null | \
+  LEAD_RUNNING=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel list --format json 2>/dev/null | \
     jq -r ".agents[] | select(.id == \"$LEAD_NAME\") | .id" 2>/dev/null || echo "")
 
   if [[ -n "$LEAD_RUNNING" ]]; then
@@ -122,7 +122,7 @@ while true; do
     # Give lead time to finish cleanup
     for WAIT_I in 1 2 3 4; do
       sleep 5
-      LR=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty list --format json 2>/dev/null | \
+      LR=$(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel list --format json 2>/dev/null | \
         jq -r ".agents[] | select(.id == \"$LEAD_NAME\") | .id" 2>/dev/null || echo "")
       if [[ -z "$LR" ]]; then
         echo "  Lead exited."
@@ -148,7 +148,7 @@ echo ""
 echo "--- Capturing artifacts ---"
 
 # Lead agent log
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty tail "$LEAD_NAME" -n 500 > "$ARTIFACTS/agent-lead.log" 2>/dev/null || \
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel tail "$LEAD_NAME" -n 500 > "$ARTIFACTS/agent-lead.log" 2>/dev/null || \
   echo "(agent already exited, no tail available)" > "$ARTIFACTS/agent-lead.log"
 echo "  log: $ARTIFACTS/agent-lead.log"
 
@@ -193,9 +193,9 @@ echo ""
 
 # --- Kill remaining agents ---
 echo "--- Cleaning up agents ---"
-BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty kill "$LEAD_NAME" 2>/dev/null || true
-for AGENT_ID in $(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
-  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" botty kill "$AGENT_ID" 2>/dev/null || true
+BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel kill "$LEAD_NAME" 2>/dev/null || true
+for AGENT_ID in $(BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel list --format json 2>/dev/null | jq -r '.agents[]?.id // empty' 2>/dev/null || true); do
+  BOTBUS_DATA_DIR="$BOTBUS_DATA_DIR" vessel kill "$AGENT_ID" 2>/dev/null || true
 done
 echo "  All agents stopped."
 echo ""

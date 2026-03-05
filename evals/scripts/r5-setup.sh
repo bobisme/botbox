@@ -151,7 +151,7 @@ echo "r5-utils initialized at $UTILS_DIR"
 # ==============================
 cd "$APP_DIR"
 jj git init
-botbox init --name r5-app --type api --tools bones,maw,crit,botbus,botty --init-bones --no-interactive
+botbox init --name r5-app --type api --tools bones,maw,crit,botbus,vessel --init-bones --no-interactive
 
 # --- Copy latest workflow docs ---
 cp "$REPO_DIR/packages/cli/docs/"*.md .agents/botbox/

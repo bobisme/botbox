@@ -13,7 +13,7 @@ Agents currently struggle to know what tools are available without relying on MC
 
 **Pain points:**
 
-1. **Incomplete quick reference tables** - The current managed section only covers `br` (beads) and `maw` (workspaces). Missing: `bus` (messaging/claims), `crit` (code review), `jj` (version control), `botty` (agent runtime), `bv` (bead viewer), and `cass` (session search).
+1. **Incomplete quick reference tables** - The current managed section only covers `br` (beads) and `maw` (workspaces). Missing: `bus` (messaging/claims), `crit` (code review), `jj` (version control), `vessel` (agent runtime), `bv` (bead viewer), and `cass` (session search).
 
 2. **Scattered documentation** - Tool usage is spread across 15+ workflow docs. Agents must read multiple files to understand the complete toolset. Example: claims are in the managed section but `bus inbox` is only in workflow docs.
 
@@ -76,14 +76,14 @@ Add tables for all ecosystem tools in the managed section. Each table covers the
 | Restore from main | `jj restore --from main <path>` |
 | Abandon change | `jj abandon <change-id>` |
 
-**Botty Quick Reference (NEW)** - only if `botty` is in tools
+**Botty Quick Reference (NEW)** - only if `vessel` is in tools
 
 | Operation | Command |
 |-----------|---------|
-| Spawn agent | `botty spawn --name <name> -- <command>` |
-| List agents | `botty list` |
-| Send to agent | `botty send <name> "<message>"` |
-| Kill agent | `botty kill <name>` |
+| Spawn agent | `vessel spawn --name <name> -- <command>` |
+| List agents | `vessel list` |
+| Send to agent | `vessel send <name> "<message>"` |
+| Kill agent | `vessel kill <name>` |
 
 **Additional Beads Commands** - expand existing table
 
@@ -191,7 +191,7 @@ function renderManagedSection(config = {}) {
     renderBusQuickRef(),             // NEW
     renderCritQuickRef(),            // NEW (if 'crit' in tools)
     renderJjQuickRef(),              // NEW
-    renderBottyQuickRef(tools),      // NEW (if 'botty' in tools)
+    renderBottyQuickRef(tools),      // NEW (if 'vessel' in tools)
     renderDecisionTree(),            // NEW
     renderCommonPatterns(),          // NEW
     renderIdentitySection(),         // Existing
@@ -211,7 +211,7 @@ function renderManagedSection(config = {}) {
 The expanded managed section will be larger. Mitigations:
 
 - **Group by frequency** - Most-used commands first
-- **Collapse optional tools** - Only show botty section if enabled
+- **Collapse optional tools** - Only show vessel section if enabled
 - **Keep tables scannable** - No prose in tables, just command + description
 - **Link to details** - Decision tree points to workflow docs for full context
 
@@ -283,7 +283,7 @@ These would become child beads if the proposal is accepted:
 2. **Add crit quick reference table** - `renderCritQuickRef()` function, conditional on 'crit' tool
 3. **Add jj quick reference table** - `renderJjQuickRef()` function
 4. **Expand beads table** - Add `br list`, `br dep tree`, `br label`, `bv`
-5. **Add botty quick reference** - `renderBottyQuickRef()` function, conditional on 'botty' tool
+5. **Add vessel quick reference** - `renderBottyQuickRef()` function, conditional on 'vessel' tool
 6. **Add decision tree section** - `renderDecisionTree()` function
 7. **Add common patterns section** - `renderCommonPatterns()` function
 8. **Pass tools config to renderManagedSection** - Update call sites

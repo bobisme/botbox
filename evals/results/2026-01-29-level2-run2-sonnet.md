@@ -10,7 +10,7 @@
 ## Setup
 
 Created fresh botbox-initialized repo with:
-- Tools: beads, maw, crit, botbus, botty
+- Tools: beads, maw, crit, botbus, vessel
 - Seeded task: "Create HTTP server with /ping endpoint returning {\"status\": \"ok\", \"timestamp\": <current-time>}"
 - Agent prompt: "Read AGENTS.md to understand the workflow, then complete the available work."
 - **Model**: Sonnet (claude-sonnet-4-5-20250929)

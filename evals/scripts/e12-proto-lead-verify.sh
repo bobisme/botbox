@@ -222,7 +222,7 @@ if echo "$AGENT_LOG" | grep -qi "ws merge default\|ws destroy default"; then
 fi
 
 # Friction: dispatched unnecessary workers
-if echo "$AGENT_LOG" | grep -qi "botty spawn.*worker"; then
+if echo "$AGENT_LOG" | grep -qi "vessel spawn.*worker"; then
   echo "FRICTION (-5): Lead dispatched workers (nothing to work on)"
   FRICTION_PENALTY=$((FRICTION_PENALTY + 5))
 fi

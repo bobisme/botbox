@@ -7,7 +7,7 @@ set -euo pipefail
 # Tests the full protocol review → finish review gate flow.
 
 # --- Preflight ---
-REQUIRED_CMDS=(botbox bus bn maw crit botty jj cargo jq)
+REQUIRED_CMDS=(botbox bus bn maw crit vessel jj cargo jq)
 for cmd in "${REQUIRED_CMDS[@]}"; do
   command -v "$cmd" >/dev/null || { echo "Missing required command: $cmd" >&2; exit 1; }
 done
@@ -28,7 +28,7 @@ bus init
 # --- Tool versions ---
 {
   echo "timestamp=$(date -Iseconds)"
-  for cmd in botbox bus bn maw crit botty jj cargo; do
+  for cmd in botbox bus bn maw crit vessel jj cargo; do
     echo "$cmd=$($cmd --version 2>/dev/null || echo unknown)"
   done
   echo "eval=e12-proto-review"
@@ -122,7 +122,7 @@ jj new
 # Initialize with botbox
 # ============================================================
 BOTBUS_DATA_DIR="$EVAL_DIR/.botbus" \
-  botbox init --name greeter --type cli --tools bones,maw,crit,botbus,botty \
+  botbox init --name greeter --type cli --tools bones,maw,crit,botbus,vessel \
     --language rust --no-seed-work --no-interactive
 
 # Safety net: ensure bones is initialized (botbox init may skip it in bare repo mode)
