@@ -34,9 +34,9 @@ It glues together 5 companion tools (bus, maw, br/bv, crit, botty) into a cohesi
 ## Install
 
 ```bash
+cargo install edict-cli
+# or from source:
 cargo install --path .
-# or from a release:
-cargo install edict
 ```
 
 ## Usage
@@ -132,7 +132,7 @@ No manual agent management needed — send a message to a project channel and th
 
 ## Ecosystem
 
-Botbox coordinates five specialized Rust tools that work together to enable multi-agent workflows:
+Edict coordinates five specialized Rust tools that work together to enable multi-agent workflows:
 
 | Tool       | Purpose                         | Key commands                                  | Repository |
 | ---------- | ------------------------------- | --------------------------------------------- | ---------- |
@@ -145,7 +145,7 @@ Botbox coordinates five specialized Rust tools that work together to enable mult
 
 ### Flywheel connection
 
-Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. The built-in `edict run triage` command wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
+Edict is inspired by and shares tools with the [Agentic Coding Flywheel](https://agent-flywheel.com) ecosystem. We use the same `br` ([beads_rust](https://github.com/Dicklesworthstone/beads_rust)) for issue tracking and `bv` ([beads_viewer](https://github.com/Dicklesworthstone/beads_viewer)) for triage. The built-in `edict run triage` command wraps `bv --robot-triage` to provide token-efficient work prioritization using PageRank-based analysis.
 
 ### How they work together
 
@@ -159,7 +159,7 @@ Botbox is inspired by and shares tools with the [Agentic Coding Flywheel](https:
 
 ## Architecture
 
-Botbox is a Rust project (edition 2024) with:
+Edict is a Rust project (edition 2024) with:
 
 - **Zero build step** beyond `cargo build` — workflow docs are embedded at compile time via `include_str!` and rendered with `minijinja`
 - **Agent loops as subcommands** — `dev-loop`, `worker-loop`, `reviewer-loop`, `responder` are built into the binary
