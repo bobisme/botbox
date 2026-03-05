@@ -71,3 +71,26 @@
 1772643031221746	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwlgg		item.link	bn-2lu6	{"link_type":"blocks","target":"bn-3jgn"}	blake3:m7jieFt-WtzUoQro8o4J2gkOsB4KwZ5GWk1sVBLlpco
 1772643031243442	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwlwg		item.update	bn-3jgn	{"field":"labels","value":{"action":"add","label":"rename"}}	blake3:vhJ-VfYx16r_msocvDrN5Kpe3SC-VWk_BEfXvcjVIts
 1772665320671891	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz0AI		item.link	bn-qten	{"link_type":"blocks","target":"bn-3jgn"}	blake3:AkhcymRS2r5TrpWufEnERduxe6ps6iwLVBEkV_fQJVo
+1772673680045822	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz0QI		item.unlink	bn-qten	{"link_type":"blocks","target":"bn-3jgn"}	blake3:YhA_J5_wNO9l2wMgyz3nMRFgbIq9ql1ngfD3lGjb6rc
+1772673680067005	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz0gI		item.link	bn-3jgn	{"link_type":"blocks","target":"bn-qten"}	blake3:btFTDXIKAlmhL2ziBQ4k7uXDlr1hamydrpoaPWeZ9kM
+1772673697390898	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz0wI		item.unlink	bn-3jgn	{"link_type":"blocks","target":"bn-qten"}	blake3:jybU9WMe8NKt-fNJgpoj5J_liTDkITQagPy3wZoCfzI
+1772673697416841	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz1AI		item.link	bn-qten	{"link_type":"related_to","target":"bn-3jgn"}	blake3:Kj2gvI_iV2oSlIskWYr7lB8CXJDJ3y0wVoiHatXLe3E
+1772673709462845	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz1QI		item.unlink	bn-qten	{"link_type":"related_to","target":"bn-3jgn"}	blake3:4GCCMuJw0IRGFAcxUjxdd0A0Es5ZfTwB64qr2V4gZ6o
+1772673709490917	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz1gI		item.link	bn-3jgn	{"link_type":"blocks","target":"bn-qten"}	blake3:idwg9wGX5KBzAteb6eAMiB6EuXQCCPjiXkfu6W-uquU
+1772674590608097	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz1wI		item.unlink	bn-3jgn	{"link_type":"blocks","target":"bn-qten"}	blake3:6cxEsZw2dqxLQcjD7JQFJHHPFv1Yr0yLIZQiuNgsPAY
+1772674609509184	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz2AI		item.update	bn-3jgn	{"field":"parent","value":"bn-qten"}	blake3:fCceMmDhmDgeN3fA0zA0XKTlQMA8hMYAJffZdoE3L2M
+1772674658039989	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz2QI		item.comment	bn-bh1p	{"body":"this got re-opened in recovery. was done a while ago"}	blake3:swBuP9w9hRJw4JxgeaZPkhkuzXJ2jF9RBQVFziHwUnk
+1772674658068021	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz2gI		item.move	bn-bh1p	{"reason":"this got re-opened in recovery. was done a while ago","state":"done"}	blake3:y_HD0QqxLXLwbDyqHmn1nXCWevatNhw5quXVGZhqHYM
+1772674668512541	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz2wI		item.update	bd-29hq	{"field":"title","value":"make claude/pi hooks work for opencode too"}	blake3:QDEXtl4OrEQcS025TJx0vOs4FkkXzleA1rZDrAUCuCU
+1772674668531119	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz3AI		item.update	bd-29hq	{"field":"description","value":"see https://opencode.ai/docs/plugins/\n\nImported beads fields:\ncompaction_level:\n0\n\ncontent_hash:\nc911f21e912425e47ac582aefe16515ffffaf52ff34e398b21a469487bc5e877\n\nephemeral:\n0\n\nis_template:\n0\n\noriginal_size:\n0\n\npinned:\n0\n\nsource_repo:\n."}	blake3:xafxQgTtzTQcR9EFqDzHE1Z1vjuVT9hHGnpoFl1EYr4
+1772674668539543	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz3QI		item.update	bd-29hq	{"field":"kind","value":"task"}	blake3:1ro3AlKX8Iezy8H8SbtqWbrqj-VeB_VSFFpA_uhKVs4
+1772674668548158	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz3gI		item.update	bd-29hq	{"field":"size","value":null}	blake3:YhcM-CHfSbezdUeV5yz2oP6bYNsfXF6avZNxikydSlY
+1772674668556959	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz3wI		item.update	bd-29hq	{"field":"urgency","value":"punt"}	blake3:GVFxoTYroxd6xzujXcWhMlBPA0rgBTENUPVOvOfPxGE
+1772674668565918	bob	itc:v3:AWKSc8kyZJPJk5EAAAAAQau9WtV610AAAAEz4AI		item.update	bd-29hq	{"field":"labels","value":[]}	blake3:5IMH9Fgttbd2ne28ZH1C-W5z3LEdoa0ftMDZb87iHf0
+1772676571366656	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwmAg		item.move	bn-3jgn	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:e6p_aaEvZsTMQzBW_WhAGKkTHqloipetxxwKTuzpMWc
+1772676571380880	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwmQg		item.move	bn-qten	{"reason":"auto-completed: all children of bn-qten are done","state":"done"}	blake3:ac43_Ds2elvx1lB4FWA6RHEPF0o8kp2M4KtaQq6Mzrg
+1772676571404114	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwmgg		item.move	bn-2exa	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:k7atx3aiIY8sz7MLspIDY2PgrgzDsDNyi-800-bymCc
+1772676571424330	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwmwg		item.move	bn-2nxp	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:MHVv1FVm4Las4bP9IqO8MTR18KDewZnv14AK5sUC69M
+1772676571443883	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwnAg		item.move	bn-1d30	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:jSLiKOw73puorIz5VhftCCciZv3PQUKHVPtd41t11JY
+1772676571465205	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwnQg		item.move	bn-3i2v	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:xn06MGOC5ynqWmp3vltpget4MsN8xw-JddPyDz1vxVY
+1772676571486171	botbox-dev	itc:v3:AWLJPJJM5nmSc0AAAAAAQdXqrdvauwAAAAEwngg		item.move	bn-2lu6	{"reason":"Completed in rename-mop merge (7e8057a9)","state":"done"}	blake3:DgBnuOehrhnw4FP_w3iybhzVY5oQ-HdQLcmW80L_tfw
