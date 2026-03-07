@@ -588,7 +588,13 @@ All commands support JSON output with `--format json` for parsing. If a command 
 - Post progress comments during work for crash recovery.
 - **Run checks before committing**: `just check` (or your project's build/test command). Fix any failures before proceeding.
 - After finishing a bone, follow [finish.md](.agents/edict/finish.md). **Workers: do NOT push** — the lead handles merges and pushes.
-- **Install locally** after releasing: `maw exec default -- just install`
+
+### Release Instructions
+
+1. Commit and push to main
+2. Tag and push: `maw release vX.Y.Z`
+3. Install locally: `maw exec default -- just install`
+4. Run `edict sync` in all downstream projects
 
 ### Identity
 

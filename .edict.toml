@@ -4,12 +4,17 @@ version = "1.0.15"
 push_main = false
 
 [project]
-name = "botbox"
+name = "edict"
 type = ["cli"]
 languages = ["rust"]
-default_agent = "botbox-dev"
+default_agent = "edict-dev"
 channel = "botbox"
-install_command = "maw exec default -- just install"
+release_instructions = """
+1. Commit and push to main
+2. Tag and push: `maw release vX.Y.Z`
+3. Install locally: `maw exec default -- just install`
+4. Run `edict sync` in all downstream projects
+"""
 
 # Companion tools to enable
 [tools]
