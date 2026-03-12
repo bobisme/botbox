@@ -399,7 +399,7 @@ impl ProtocolCommand {
         ));
 
         // 2. Create workspace
-        steps.push(shell::ws_create_cmd());
+        steps.push(shell::ws_create_cmd(shell::WorkspaceSource::Main));
 
         // 3. Capture workspace name (comment for human)
         steps.push(

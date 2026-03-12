@@ -90,6 +90,9 @@ pub fn execute(
         }
     };
     guidance.workspace = Some(workspace.clone());
+    let mut merge_target = ctx
+        .find_workspace(&workspace)
+        .and_then(|ws| ws.change_id.clone());
 
     // Build required reviewers list from config: "{project}-{role}"
     let required_reviewers: Vec<String> = config
@@ -108,6 +111,9 @@ pub fn execute(
             Some((review_id, review_detail)) => {
                 let decision =
                     review_gate::evaluate_review_gate(&review_detail, &required_reviewers);
+                if merge_target.is_none() {
+                    merge_target = review_detail.change_id.clone();
+                }
                 guidance.review = Some(ReviewRef {
                     review_id: review_id.clone(),
                     status: decision.status_str().to_string(),
@@ -123,6 +129,7 @@ pub fn execute(
                             &bone_info.title,
                             project,
                             &workspace,
+                            merge_target.as_deref(),
                             Some(&review_id),
                             no_merge,
                         );
@@ -261,6 +268,7 @@ pub fn execute(
             &bone_info.title,
             project,
             &workspace,
+            merge_target.as_deref(),
             None,
             no_merge,
         );
@@ -295,6 +303,7 @@ fn build_finish_steps(
     bead_title: &str,
     project: &str,
     workspace: &str,
+    merge_target: Option<&str>,
     review_id: Option<&str>,
     no_merge: bool,
 ) {
@@ -317,7 +326,10 @@ fn build_finish_steps(
     if !no_merge {
         // Use a conventional commit message derived from the bone title
         let merge_msg = format!("feat: {}", bead_title);
-        steps.push(shell::ws_merge_cmd(workspace, &merge_msg));
+        let target = merge_target
+            .map(shell::MergeTarget::Change)
+            .unwrap_or(shell::MergeTarget::Default);
+        steps.push(shell::ws_merge_cmd(workspace, target, &merge_msg));
     }
 
     // 4. Mark review as merged (if review exists)
@@ -438,6 +450,7 @@ mod tests {
             "test feature",
             "myproject",
             "frost-castle",
+            None,
             Some("cr-123"),
             false,
         );
@@ -451,7 +464,7 @@ mod tests {
             guidance
                 .steps
                 .iter()
-                .any(|s| s.contains("maw ws merge frost-castle --destroy"))
+                .any(|s| s.contains("maw ws merge frost-castle --into default --destroy"))
         );
         assert!(
             guidance
@@ -485,6 +498,7 @@ mod tests {
             "myproject",
             "frost-castle",
             None,
+            None,
             true, // no_merge
         );
 
@@ -509,6 +523,7 @@ mod tests {
             "it's a test; rm -rf /",
             "myproject",
             "frost-castle",
+            None,
             None,
             false,
         );

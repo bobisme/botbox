@@ -21,7 +21,7 @@ All steps below are required — they clean up resources, prevent workspace leak
    - **risk:medium** (default, no label): Standard path — review should already be LGTM before reaching finish.
    - **risk:high**: Verify the security reviewer completed the failure-mode checklist (5 questions answered in review comments) before merge. Check: `maw exec $WS -- crit review <review-id>` and confirm comments address failure modes, edge cases, rollback, monitoring, and validation.
    - **risk:critical**: Verify human approval exists. Check rite history for an approval message referencing the bead/review from a listed approver (`.botbox.json` → `project.criticalApprovers`): `rite history $BOTBOX_PROJECT -n 50`. If found, record the approval message ID in a bead comment: `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Human approval received: rite message <msg-id>"`. If no approval found, do NOT merge — instead post: `rite send --agent $AGENT $BOTBOX_PROJECT "risk:critical bead <bead-id> awaiting human approval before merge" -L review-request` and STOP.
-6. **Merge and destroy the workspace**: `maw ws merge $WS --destroy` (where `$WS` is the workspace name from the start step — **never `default`**)
+6. **Merge and destroy the workspace**: `maw ws merge $WS --into default --destroy --message "feat: <bone-title>"` (where `$WS` is the workspace name from the start step — **never `default`**; replace `default` with a change id for change-bound work)
    - The `--destroy` flag is required — it cleans up the workspace after merging
    - **Never merge or destroy the default workspace.** Default is where other workspaces merge into.
    - `maw ws merge` now produces linear history: workspace commits are rebased onto main and squashed into a single commit (as of v0.22.0)
@@ -66,9 +66,9 @@ If `maw ws merge` detects conflicts:
 maw exec $WS -- git restore --source refs/heads/main -- .beads/ .agents/ .claude/
 ```
 
-Then retry `maw ws merge $WS --destroy`.
+Then retry `maw ws merge $WS --into default --destroy --message "feat: <bone-title>"`.
 
-Then retry `maw ws merge $WS --destroy`.
+Then retry `maw ws merge $WS --into default --destroy --message "feat: <bone-title>"`.
 
 ### Full recovery when conflicts are messy
 
@@ -89,7 +89,7 @@ maw exec $WS -- git status
 maw exec $WS -- git add <resolved-file>
 
 # 5. Retry merge
-maw ws merge $WS --destroy
+maw ws merge $WS --into default --destroy --message "feat: <bone-title>"
 ```
 
 ### When to escalate
@@ -101,9 +101,9 @@ maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Me
 rite send --agent $AGENT $BOTBOX_PROJECT "Merge conflict in $WS for <bead-id>. Manual help needed." -L tool-issue
 ```
 
-If the workspace was accidentally removed, recreate it with `maw ws restore $WS`.
+If the workspace was accidentally removed, recreate it with `maw ws recover $WS --to <new-name>`.
 
 ## Assumptions
 
 - `BOTBOX_PROJECT` env var contains the project channel name.
-- The workspace was created with `maw ws create --random` during [start](start.md). `$WS` is the workspace name from that step.
+- The workspace was created with `maw ws create --random --from main` during [start](start.md). `$WS` is the workspace name from that step (or `--change <change-id>` for change-bound work).

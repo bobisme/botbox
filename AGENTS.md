@@ -108,9 +108,9 @@ SQLite-backed channel messaging system. Default output is `text` format (concise
 Creates isolated Git worktrees so multiple agents can edit files concurrently without conflicts.
 
 **Core commands:**
-- `maw ws create <name> [--random]` — Create workspace. Returns workspace name. Workspace files live at `ws/<name>/`. `--random` generates a random name.
+- `maw ws create <name> --from main` — Create a trunk-based workspace. Use `--random` for generated names or `--change <change-id>` for change-bound work. Workspace files live at `ws/<name>/`.
 - `maw ws list [--format json]` — List all workspaces with their status
-- `maw ws merge <name> --destroy` — Squash-merge workspace into main and delete it. `--destroy` is required. **Never use on `default`.**
+- `maw ws merge <name> --into default --destroy` — Merge a workspace into `default` and delete it. `--destroy` is required. Swap `default` for a change id when merging tracked change work. **Never use on `default` as the source workspace.**
 - `maw ws destroy <name>` — Delete workspace without merging. **Never use on `default`.**
 - `maw exec <name> -- <command>` — Run any command inside a workspace (e.g., `maw exec myws -- cargo test`)
 - `maw ws status` — Comprehensive view of all workspaces, conflicts, and unmerged work
@@ -213,7 +213,7 @@ Sequential: one bone per iteration. Triage → start → work → review → fin
 4. Work: implement in workspace using absolute paths
 5. Stuck check: 2 failed attempts = post and move on
 6. Review: `seal reviews create`, request reviewer, STOP and wait
-7. Finish: close bone, merge workspace (`maw ws merge --destroy`), release claims
+7. Finish: close bone, merge workspace (`maw ws merge --into default --destroy`), release claims
 8. Release check: unreleased feat/fix → bump version
 
 ### `edict run reviewer-loop` — Reviewer Agent
@@ -391,7 +391,7 @@ rm -rf /tmp/test-rite
 
 ## Conventions
 
-- **Version control: Git + maw.** Create workspaces with `maw ws create`, commit with `git add` + `git commit` inside the workspace, merge with `maw ws merge --destroy`. Do not create branches manually.
+- **Version control: Git + maw.** Create workspaces with `maw ws create <name> --from main` (or `--change <change-id>`), commit with `git add` + `git commit` inside the workspace, merge with `maw ws merge <name> --into default --destroy`. Do not create branches manually.
 - Rust stable edition 2024
 - Error handling via `anyhow::Result` with `thiserror` for custom error types
 - CLI parsing via `clap` derive macros
@@ -477,9 +477,9 @@ Labels on rite messages categorize intent: `task-request`, `task-claim`, `task-b
 ### How to Make Changes
 
 1. **Create a bone** to track your work: `maw exec default -- bn create --title "..." --description "..."`
-2. **Create a workspace** for your changes: `maw ws create --random` — this gives you `ws/<name>/`
+2. **Create a workspace** for your changes: `maw ws create <name> --from main` — or use `--change <change-id>` for change-bound work; this gives you `ws/<name>/`
 3. **Edit files in your workspace** (`ws/<name>/`), never in `ws/default/`
-4. **Merge when done**: `maw ws merge <name> --destroy --message "feat: <bone-title>"` (use conventional commit prefix: `feat:`, `fix:`, `chore:`, etc.)
+4. **Merge when done**: `maw ws merge <name> --into default --destroy --message "feat: <bone-title>"` (use conventional commit prefix: `feat:`, `fix:`, `chore:`, etc.; swap `default` for a change id when merging back into a tracked change)
 5. **Close the bone**: `maw exec default -- bn done <id>`
 
 Do not create git branches manually — `maw ws create` handles branching for you. See [worker-loop.md](.agents/edict/worker-loop.md) for the full triage → start → work → finish cycle.
@@ -532,10 +532,10 @@ Identity resolved from `$AGENT` env. No flags needed in agent loops.
 
 | Operation | Command |
 |-----------|---------|
-| Create workspace | `maw ws create <name>` |
+| Create workspace | `maw ws create <name> --from main` |
 | List workspaces | `maw ws list` |
-| Check merge readiness | `maw ws merge <name> --check` |
-| Merge to main | `maw ws merge <name> --destroy --message "feat: <bone-title>"` |
+| Check merge readiness | `maw ws merge <name> --into default --check` |
+| Merge to main | `maw ws merge <name> --into default --destroy --message "feat: <bone-title>"` |
 | Destroy (no merge) | `maw ws destroy <name>` |
 | Run command in workspace | `maw exec <name> -- <command>` |
 | Diff workspace vs epoch | `maw ws diff <name>` |
@@ -558,12 +558,12 @@ maw ws diff <name>                        # diff vs epoch (maw-native)
 
 **Lead agent merge workflow** — after a worker finishes a bone:
 1. `maw ws list` — look for `active (+N to merge)` entries
-2. `maw ws merge <name> --check` — verify no conflicts
-3. `maw ws merge <name> --destroy --message "feat: <bone-title>"` — merge and clean up (use conventional commit prefix)
+2. `maw ws merge <name> --into default --check` — verify no conflicts
+3. `maw ws merge <name> --into default --destroy --message "feat: <bone-title>"` — merge and clean up (use conventional commit prefix)
 
 **Workspace safety:**
 - Never merge or destroy `default`.
-- Always `maw ws merge <name> --check` before `--destroy`.
+- Always `maw ws merge <name> --into default --check` before `--destroy`.
 - Commit workspace changes with `maw exec <name> -- git add -A && maw exec <name> -- git commit -m "..."`.
 - **No work is ever lost in maw.** Recovery snapshots are created automatically on every destroy. If a workspace was destroyed and you suspect code is missing, ALWAYS run `maw ws recover` before concluding work was lost. Never reopen a bone or start over without checking recovery first.
 

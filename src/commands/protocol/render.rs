@@ -172,7 +172,7 @@ pub fn validate_guidance(guidance: &ProtocolGuidance) -> Result<(), ValidationEr
 ///
 /// Steps:
 /// 1. rite send --agent $AGENT edict 'Working...' -L task-claim
-/// 2. maw ws create --random
+/// 2. maw ws create --random --from main
 ///
 /// Advice: Create workspace and stake claims before starting implementation.
 /// ```
@@ -576,7 +576,7 @@ mod tests {
             "maw exec default -- bn do bd-3t1d".to_string(),
             "rite claims stake --agent crimson-storm 'bone://edict/bd-3t1d' -m 'bd-3t1d'"
                 .to_string(),
-            "maw ws create --random".to_string(),
+            "maw ws create --random --from main".to_string(),
             "rite claims stake --agent crimson-storm 'workspace://edict/brave-tiger' -m 'bd-3t1d'"
                 .to_string(),
         ]);
@@ -585,7 +585,7 @@ mod tests {
         let text = render_text(&g);
         assert!(text.contains("Command: start"));
         assert!(text.contains("brave-tiger"));
-        assert!(text.contains("3. maw ws create --random"));
+        assert!(text.contains("3. maw ws create --random --from main"));
         assert!(text.contains("Advice:"));
     }
 
@@ -856,7 +856,7 @@ mod tests {
         });
         g.workspace = Some("work-1".to_string());
         g.set_freshness(300, Some("edict protocol start".to_string()));
-        g.step("maw ws create work-1".to_string());
+        g.step("maw ws create work-1 --from main".to_string());
         g.advise("Start implementation".to_string());
 
         let text = render_text(&g);
@@ -1051,7 +1051,7 @@ mod tests {
         g.executed = true;
         g.execution_report = Some(ExecutionReport {
             results: vec![StepResult {
-                command: "maw ws merge --destroy".to_string(),
+                command: "maw ws merge frost-castle --into default --destroy".to_string(),
                 success: false,
                 stdout: String::new(),
                 stderr: "error: workspace not found".to_string(),

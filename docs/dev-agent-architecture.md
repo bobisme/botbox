@@ -61,7 +61,7 @@ vessel spawn --name <random-name> -- \
 Each worker:
 - Claims the bead and workspace via rite
 - Implements the task in its workspace
-- Runs `br close`, `maw ws merge --destroy`, releases claims
+- Runs `br close`, `maw ws merge --into default --destroy`, releases claims
 - Announces completion on `#<project>`
 
 The dev agent doesn't wait — it continues its loop. On subsequent iterations it sees worker completions in rite and bead closures in `br ready`.
@@ -98,7 +98,7 @@ On the next iteration where a review response is visible:
 
 **Merge:**
 1. Verify approval: `seal review <review-id>` — confirm LGTM, no blocks
-2. Merge workspace: `maw ws merge $WS --destroy`
+2. Merge workspace: `maw ws merge $WS --into default --destroy`
 3. Close bead, release claims, sync, announce
 
 ### 5. Cleanup

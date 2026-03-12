@@ -422,7 +422,7 @@ Read the output carefully. If status is Ready, run the suggested commands.
 If it fails (exit 1 = command unavailable), fall back to manual start:
   1. maw exec default -- bn do <id>
   2. rite claims stake --agent {agent} "bone://{project}/<id>" -m "<id>"
-  3. maw ws create --random — note workspace NAME and absolute PATH
+  3. maw ws create --random --from main — note workspace NAME and absolute PATH
   4. rite claims stake --agent {agent} "workspace://{project}/$WS" -m "<id>"
   5. maw exec default -- bn bone comment add <id> "Started in workspace $WS ($WS_PATH)"
   6. rite statuses set --agent {agent} "Working: <id>" --ttl 30m
@@ -461,7 +461,7 @@ RISK:CRITICAL — Security review + human approval:
   STOP.
 
 If REVIEW is false:
-  Merge: maw ws merge $WS --destroy --message "feat: <bone-title>" (use conventional commit prefix; produces linear squashed history and auto-moves main)
+  Merge: maw ws merge $WS --into default --destroy --message "feat: <bone-title>" (use conventional commit prefix; produces linear squashed history and auto-moves main)
   maw exec default -- bn done <id> --reason="Completed"
   rite send --agent {agent} {project} "Completed <id>: <title>" -L task-done
   rite claims release --agent {agent} --all
@@ -483,7 +483,7 @@ IMPORTANT: Always pass the tier name (fast, balanced, strong) as `--model`, NOT 
 The worker resolves tier names to a provider pool at runtime for cross-provider load balancing.
 
 ### For each bone being dispatched:
-1. maw ws create --random — note NAME and PATH
+1. maw ws create --random --from main — note NAME and PATH
 2. rite generate-name — get a worker identity
 3. maw exec default -- bn do <id>
 4. rite claims stake --agent {agent} "bone://{project}/<id>" -m "dispatched to <worker-name>"
@@ -606,7 +606,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
       If you skip this step, maw ws merge may miss uncommitted worker changes.
 
   a. PREFLIGHT CHECK (outside mutex — early conflict detection):
-     maw ws merge $WS --check
+     maw ws merge $WS --into default --check
      If conflicts are detected, resolve them before acquiring the mutex.
 
   b. ACQUIRE MERGE MUTEX:
@@ -618,7 +618,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
      If still held after {merge_timeout}s total: post to rite and skip this merge for now.
 
   c. CONFLICT CHECK (under mutex — catches merges that landed during wait):
-     maw ws merge $WS --check
+     maw ws merge $WS --into default --check
      If conflicts: resolve them before proceeding. Use this workflow:
        1. Identify the bone: maw exec default -- bn show <id> — read what the worker was trying to do
        2. See what changed in main recently: maw exec default -- git log --oneline -10
@@ -628,7 +628,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
        5. After resolving: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: <summary> (conflict resolved)"
 
   d. MERGE:
-     maw ws merge $WS --destroy --message "feat: <bone-title>"
+     maw ws merge $WS --into default --destroy --message "feat: <bone-title>"
      (Use a conventional commit prefix: feat: for features, fix: for bugs, chore: for maintenance, etc.
       Replace <bone-title> with the actual bone title from `bn show <id>`.)
 

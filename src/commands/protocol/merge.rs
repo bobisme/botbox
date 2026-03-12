@@ -39,8 +39,7 @@ pub fn resolve_message(provided: Option<&str>) -> anyhow::Result<String> {
         .or_else(|_| std::env::var("VISUAL"))
         .unwrap_or_else(|_| "vi".to_string());
 
-    let tmp_path =
-        std::env::temp_dir().join(format!("edict-merge-msg-{}.txt", std::process::id()));
+    let tmp_path = std::env::temp_dir().join(format!("edict-merge-msg-{}.txt", std::process::id()));
     std::fs::write(
         &tmp_path,
         "# Enter commit message for merge (lines starting with '#' are ignored).\n\
@@ -59,8 +58,8 @@ pub fn resolve_message(provided: Option<&str>) -> anyhow::Result<String> {
         anyhow::bail!("editor '{}' exited with non-zero status — aborting", editor);
     }
 
-    let content = std::fs::read_to_string(&tmp_path)
-        .context("failed to read message from editor")?;
+    let content =
+        std::fs::read_to_string(&tmp_path).context("failed to read message from editor")?;
     let _ = std::fs::remove_file(&tmp_path);
 
     let msg: String = content
@@ -81,11 +80,54 @@ pub fn resolve_message(provided: Option<&str>) -> anyhow::Result<String> {
 /// Parsed output from `maw ws merge <ws> --check --format json`.
 #[derive(Debug, Clone, Deserialize)]
 struct MergeCheckResult {
-    ready: bool,
     #[serde(default)]
-    conflicts: Vec<String>,
+    ready: Option<bool>,
+    #[serde(default)]
+    status: Option<String>,
+    #[serde(default)]
+    conflicts: Vec<serde_json::Value>,
+    #[serde(default)]
+    has_conflicts: bool,
     #[serde(default)]
     stale: bool,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+impl MergeCheckResult {
+    fn is_ready(&self) -> bool {
+        if let Some(ready) = self.ready {
+            ready
+        } else if let Some(status) = &self.status {
+            matches!(status.as_str(), "clean" | "ready" | "ok") && !self.has_conflicts
+        } else {
+            !self.has_conflicts && self.conflicts.is_empty() && !self.stale
+        }
+    }
+
+    fn conflict_labels(&self) -> Vec<String> {
+        self.conflicts
+            .iter()
+            .map(|conflict| {
+                conflict
+                    .as_str()
+                    .map(str::to_string)
+                    .or_else(|| {
+                        conflict
+                            .get("path")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .or_else(|| {
+                        conflict
+                            .get("file")
+                            .and_then(serde_json::Value::as_str)
+                            .map(str::to_string)
+                    })
+                    .unwrap_or_else(|| conflict.to_string())
+            })
+            .collect()
+    }
 }
 
 /// Execute the merge protocol command.
@@ -125,6 +167,9 @@ pub fn execute(
     let mut guidance = ProtocolGuidance::new("merge");
     guidance.workspace = Some(workspace.to_string());
     guidance.set_freshness(120, Some(format!("edict protocol merge {}", workspace)));
+    let mut merge_target = ctx
+        .find_workspace(workspace)
+        .and_then(|ws| ws.change_id.clone());
 
     // Check workspace exists
     let ws_exists = ctx.workspaces().iter().any(|ws| ws.name == workspace);
@@ -201,6 +246,9 @@ pub fn execute(
             Some((review_id, review_detail)) => {
                 let decision =
                     review_gate::evaluate_review_gate(&review_detail, &required_reviewers);
+                if merge_target.is_none() {
+                    merge_target = review_detail.change_id.clone();
+                }
                 guidance.review = Some(render::ReviewRef {
                     review_id: review_id.clone(),
                     status: decision.status_str().to_string(),
@@ -279,23 +327,32 @@ pub fn execute(
         }
     }
 
-    // Pre-flight conflict check via `maw ws merge --check`
-    match run_merge_check(workspace) {
+    // Pre-flight conflict check via `maw ws merge --into <target> --check`
+    match run_merge_check(workspace, merge_target.as_deref()) {
         Ok(check) => {
-            if !check.ready {
+            if !check.is_ready() {
                 guidance.status = ProtocolStatus::Blocked;
-                if !check.conflicts.is_empty() {
+                let conflict_labels = check.conflict_labels();
+                if !conflict_labels.is_empty() {
                     guidance.diagnostic(format!(
                         "Merge would produce conflicts in {} file(s): {}",
-                        check.conflicts.len(),
-                        check.conflicts.join(", ")
+                        conflict_labels.len(),
+                        conflict_labels.join(", ")
                     ));
                 }
                 if check.stale {
                     guidance
                         .diagnostic("Workspace is stale — run `maw ws sync` first.".to_string());
                 }
-                add_conflict_recovery_guidance(&mut guidance, workspace, message);
+                if let Some(message) = check.message.as_deref() {
+                    guidance.diagnostic(message.to_string());
+                }
+                add_conflict_recovery_guidance(
+                    &mut guidance,
+                    workspace,
+                    merge_target.as_deref(),
+                    message,
+                );
                 print_guidance(&guidance, format)?;
                 return Ok(());
             }
@@ -322,6 +379,7 @@ pub fn execute(
         workspace,
         project,
         message,
+        merge_target.as_deref(),
         bone_id.as_deref(),
         review_id.as_deref(),
         config.push_main,
@@ -349,10 +407,16 @@ pub fn execute(
     Ok(())
 }
 
-/// Run `maw ws merge <ws> --check --format json` to detect conflicts before merging.
-fn run_merge_check(workspace: &str) -> Result<MergeCheckResult, String> {
+/// Run `maw ws merge <ws> --into <target> --check --format json` before merging.
+fn run_merge_check(
+    workspace: &str,
+    merge_target: Option<&str>,
+) -> Result<MergeCheckResult, String> {
+    let target = merge_target.unwrap_or("default");
     let output = std::process::Command::new("maw")
-        .args(["ws", "merge", workspace, "--check", "--format", "json"])
+        .args([
+            "ws", "merge", workspace, "--into", target, "--check", "--format", "json",
+        ])
         .output()
         .map_err(|e| format!("failed to run maw ws merge --check: {}", e))?;
 
@@ -369,6 +433,7 @@ fn build_merge_steps(
     workspace: &str,
     project: &str,
     message: &str,
+    merge_target: Option<&str>,
     bone_id: Option<&str>,
     review_id: Option<&str>,
     push_main: bool,
@@ -376,7 +441,10 @@ fn build_merge_steps(
     let mut steps = Vec::new();
 
     // 1. Merge workspace with the required commit message
-    steps.push(shell::ws_merge_cmd(workspace, message));
+    let target = merge_target
+        .map(shell::MergeTarget::Change)
+        .unwrap_or(shell::MergeTarget::Default);
+    steps.push(shell::ws_merge_cmd(workspace, target, message));
 
     // 2. Mark review as merged (if review exists)
     if let Some(rid) = review_id {
@@ -407,22 +475,28 @@ fn build_merge_steps(
     guidance.steps(steps);
 
     // Add conflict recovery guidance
-    add_conflict_recovery_guidance(guidance, workspace, message);
+    add_conflict_recovery_guidance(guidance, workspace, merge_target, message);
 }
 
 /// Append comprehensive maw/git conflict recovery guidance as diagnostics.
 fn add_conflict_recovery_guidance(
     guidance: &mut ProtocolGuidance,
     workspace: &str,
+    merge_target: Option<&str>,
     merge_msg: &str,
 ) {
-    let retry_cmd = shell::ws_merge_cmd(workspace, merge_msg);
+    let target = merge_target
+        .map(shell::MergeTarget::Change)
+        .unwrap_or(shell::MergeTarget::Default);
+    let retry_cmd = shell::ws_merge_cmd(workspace, target, merge_msg);
+    let check_cmd = shell::ws_merge_check_cmd(workspace, target);
     guidance.diagnostic(format!(
         "Conflict recovery — workspace is preserved (not destroyed). Steps:\n\
          \n\
          1. Inspect conflicts and stale state:\n\
          \n\
          maw ws conflicts {} --format json\n\
+         {}\n\
          maw ws sync {}\n\
          \n\
          2. For auto-resolvable files (.bones/, .claude/, .agents/):\n\
@@ -445,8 +519,9 @@ fn add_conflict_recovery_guidance(
          \n\
          6. To recover a destroyed workspace:\n\
          \n\
-         maw ws restore {}                      # recreate workspace at current epoch",
+         maw ws recover {} --to {}-recovered    # recreate it under a new name",
         workspace,
+        check_cmd,
         workspace,
         workspace,
         workspace,
@@ -454,6 +529,7 @@ fn add_conflict_recovery_guidance(
         workspace,
         workspace,
         retry_cmd,
+        workspace,
         workspace,
         workspace,
     ));
@@ -548,7 +624,7 @@ fn execute_and_render(
             "Merge completed with CONFLICTS. Workspace {} is preserved (not destroyed).",
             workspace
         ));
-        add_conflict_recovery_guidance(&mut conflict_guidance, workspace, merge_msg);
+        add_conflict_recovery_guidance(&mut conflict_guidance, workspace, None, merge_msg);
 
         let output = render::render(&conflict_guidance, format)
             .map_err(|e| anyhow::anyhow!("render error: {}", e))?;
@@ -588,6 +664,7 @@ mod tests {
             "frost-castle",
             "myproject",
             "feat: add login flow",
+            None,
             Some("bd-abc"),
             Some("cr-123"),
             true,
@@ -599,7 +676,7 @@ mod tests {
             guidance
                 .steps
                 .iter()
-                .any(|s| s.contains("maw ws merge frost-castle --destroy"))
+                .any(|s| s.contains("maw ws merge frost-castle --into default --destroy"))
         );
         // Should include the required --message
         assert!(
@@ -635,7 +712,7 @@ mod tests {
             guidance
                 .diagnostics
                 .iter()
-                .any(|d| d.contains("maw ws restore"))
+                .any(|d| d.contains("maw ws recover"))
         );
         assert!(
             guidance
@@ -656,6 +733,7 @@ mod tests {
             "chore: update deps",
             None,
             None,
+            None,
             false, // push_main = false
         );
 
@@ -670,36 +748,36 @@ mod tests {
 
     #[test]
     fn test_merge_check_result_parsing_ready() {
-        let json = r#"{"ready": true, "conflicts": [], "stale": false, "workspace": {"name": "frost-castle", "change_id": "abc"}, "description": "feat: ..."}"#;
+        let json = r#"{"status": "clean", "workspaces": ["frost-castle"], "has_conflicts": false, "conflicts": [], "message": "safe to merge"}"#;
         let result: MergeCheckResult = serde_json::from_str(json).unwrap();
-        assert!(result.ready);
+        assert!(result.is_ready());
         assert!(result.conflicts.is_empty());
         assert!(!result.stale);
     }
 
     #[test]
     fn test_merge_check_result_parsing_conflicts() {
-        let json =
-            r#"{"ready": false, "conflicts": ["src/main.rs", "src/lib.rs"], "stale": false}"#;
+        let json = r#"{"status": "blocked", "has_conflicts": true, "conflicts": ["src/main.rs", "src/lib.rs"], "message": "conflicts detected"}"#;
         let result: MergeCheckResult = serde_json::from_str(json).unwrap();
-        assert!(!result.ready);
+        assert!(!result.is_ready());
         assert_eq!(result.conflicts.len(), 2);
-        assert_eq!(result.conflicts[0], "src/main.rs");
+        assert_eq!(result.conflict_labels()[0], "src/main.rs");
     }
 
     #[test]
     fn test_merge_check_result_parsing_stale() {
-        let json = r#"{"ready": false, "conflicts": [], "stale": true}"#;
+        let json = r#"{"status": "blocked", "has_conflicts": false, "conflicts": [], "stale": true, "message": "workspace is stale"}"#;
         let result: MergeCheckResult = serde_json::from_str(json).unwrap();
-        assert!(!result.ready);
+        assert!(!result.is_ready());
         assert!(result.stale);
     }
 
     #[test]
     fn test_merge_check_result_extra_fields_tolerated() {
-        let json = r#"{"ready": true, "conflicts": [], "stale": false, "new_field": 42}"#;
+        let json =
+            r#"{"status": "clean", "has_conflicts": false, "conflicts": [], "new_field": 42}"#;
         let result: MergeCheckResult = serde_json::from_str(json).unwrap();
-        assert!(result.ready);
+        assert!(result.is_ready());
     }
 
     #[test]
@@ -711,6 +789,7 @@ mod tests {
             "frost-castle",
             "myproject",
             "feat: announce test",
+            Some("ch-123"),
             Some("bd-abc"),
             None,
             false,
@@ -722,5 +801,6 @@ mod tests {
             .find(|s| s.contains("rite send"))
             .unwrap();
         assert!(announce.contains("bd-abc"));
+        assert!(guidance.steps.iter().any(|s| s.contains("--into ch-123")));
     }
 }

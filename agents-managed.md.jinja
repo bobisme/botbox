@@ -51,9 +51,9 @@ project-root/          ← bare repo (no source files here)
 
 | Operation | Command |
 |-----------|---------|
-| Create workspace | `maw ws create <name>` |
+| Create workspace | `maw ws create <name> --from main` |
 | List workspaces | `maw ws list` |
-| Merge to main | `maw ws merge <name> --destroy` |
+| Merge to main | `maw ws merge <name> --into default --destroy` |
 | Destroy (no merge) | `maw ws destroy <name>` |
 | Run command in workspace | `maw exec <name> -- <command>` |
 | View workspace history | `maw ws history <name>` |
@@ -63,7 +63,7 @@ project-root/          ← bare repo (no source files here)
 
 **Workspace safety:**
 - Never merge or destroy `default`.
-- Prefer `maw ws merge <name> --check` before `maw ws merge <name> --destroy`.
+- Prefer `maw ws merge <name> --into default --check` before `maw ws merge <name> --into default --destroy`.
 - Commit workspace changes with `maw exec <name> -- git add -A` and `maw exec <name> -- git commit -m "..."`.
 
 ### Beads Conventions

@@ -447,7 +447,8 @@ At the end of your work, output exactly one of these completion signals:
    If it fails (exit 1 = command unavailable), fall back to manual start:
      maw exec default -- bn do <id>.
      rite claims stake --agent {agent} "bone://{project}/<id>" -m "<id>".
-     Create workspace: run maw ws create --random. Note the workspace name AND absolute path
+     Create workspace: run maw ws create --random --from main. If this work is bound to an
+     existing change, use maw ws create --random --change <change-id> instead. Note the workspace name AND absolute path
      from the output (e.g., name "frost-castle", path "/abs/path/ws/frost-castle").
      Store the name as WS and the absolute path as WS_PATH.
      IMPORTANT: All file operations (Read, Write, Edit) must use the absolute WS_PATH.
@@ -566,12 +567,8 @@ fn emit_build_env_diagnostic(config_env: &std::collections::HashMap<String, Stri
     }
 
     if any_missing {
-        eprintln!(
-            "  ⚠ Some build env vars are unset. Consider adding them to .edict.toml [env]"
-        );
-        eprintln!(
-            "    to prevent OOM from unthrottled parallel builds in multi-agent setups."
-        );
+        eprintln!("  ⚠ Some build env vars are unset. Consider adding them to .edict.toml [env]");
+        eprintln!("    to prevent OOM from unthrottled parallel builds in multi-agent setups.");
     }
 
     eprintln!("--- end build env diagnostic ---");
@@ -828,14 +825,8 @@ pub fn run_worker_loop(
     let worker = WorkerLoop::new(project_root, agent, model)?;
 
     // Announce startup on rite (survives vessel log eviction)
-    let bone_info = worker
-        .dispatched_bone
-        .as_deref()
-        .unwrap_or("(triage)");
-    let ws_info = worker
-        .dispatched_workspace
-        .as_deref()
-        .unwrap_or("(none)");
+    let bone_info = worker.dispatched_bone.as_deref().unwrap_or("(triage)");
+    let ws_info = worker.dispatched_workspace.as_deref().unwrap_or("(none)");
     let _ = Tool::new("rite")
         .args(&[
             "send",

@@ -199,6 +199,40 @@ fn safe_ident(value: &str) -> std::borrow::Cow<'_, str> {
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceSource<'a> {
+    Main,
+    Change(&'a str),
+}
+
+impl WorkspaceSource<'_> {
+    fn write_shell_args(self, cmd: &mut String) {
+        match self {
+            Self::Main => cmd.push_str(" --from main"),
+            Self::Change(change_id) => {
+                cmd.push_str(" --change ");
+                cmd.push_str(&safe_ident(change_id));
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MergeTarget<'a> {
+    Default,
+    Change(&'a str),
+}
+
+impl MergeTarget<'_> {
+    fn shell_value(self) -> std::borrow::Cow<'static, str> {
+        match self {
+            Self::Default => std::borrow::Cow::Borrowed("default"),
+            Self::Change(change_id) => std::borrow::Cow::Owned(safe_ident(change_id).into_owned()),
+        }
+    }
+}
+
 // --- Command builders ---
 // These produce shell-safe command strings. All dynamic values are validated
 // or escaped before inclusion. Structural identifiers pass through safe_ident()
@@ -330,16 +364,47 @@ pub fn bn_done_cmd(bone_id: &str, reason: &str) -> String {
     cmd
 }
 
-/// Build: `maw ws create --random`
-pub fn ws_create_cmd() -> String {
-    "maw ws create --random".to_string()
+/// Build: `maw ws create --random --from main`
+pub fn ws_create_cmd(source: WorkspaceSource<'_>) -> String {
+    let mut cmd = "maw ws create --random".to_string();
+    source.write_shell_args(&mut cmd);
+    cmd
 }
 
-/// Build: `maw ws merge <ws> --destroy --message <msg>`
+/// Build: `maw ws create <name> --from main`
+#[allow(dead_code)]
+pub fn ws_create_named_cmd(name: &str, source: WorkspaceSource<'_>) -> String {
+    let workspace_safe = if validate_workspace_name(name).is_ok() {
+        safe_ident(name)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(name))
+    };
+
+    let mut cmd = format!("maw ws create {}", workspace_safe);
+    source.write_shell_args(&mut cmd);
+    cmd
+}
+
+/// Build: `maw ws merge <ws> --into <target> --check --format json`
+pub fn ws_merge_check_cmd(workspace: &str, target: MergeTarget<'_>) -> String {
+    let workspace_safe = if validate_workspace_name(workspace).is_ok() {
+        safe_ident(workspace)
+    } else {
+        std::borrow::Cow::Owned(shell_escape(workspace))
+    };
+
+    let target_safe = target.shell_value();
+    format!(
+        "maw ws merge {} --into {} --check --format json",
+        workspace_safe, target_safe
+    )
+}
+
+/// Build: `maw ws merge <ws> --into <target> --destroy --message <msg>`
 ///
 /// `message` is required — maw enforces explicit commit messages.
 /// Use conventional commit prefix: `feat:`, `fix:`, `chore:`, etc.
-pub fn ws_merge_cmd(workspace: &str, message: &str) -> String {
+pub fn ws_merge_cmd(workspace: &str, target: MergeTarget<'_>, message: &str) -> String {
     // Validate workspace name before use
     let workspace_safe = if validate_workspace_name(workspace).is_ok() {
         safe_ident(workspace)
@@ -347,9 +412,12 @@ pub fn ws_merge_cmd(workspace: &str, message: &str) -> String {
         std::borrow::Cow::Owned(shell_escape(workspace))
     };
 
+    let target_safe = target.shell_value();
+
     format!(
-        "maw ws merge {} --destroy --message {}",
+        "maw ws merge {} --into {} --destroy --message {}",
         workspace_safe,
+        target_safe,
         shell_escape(message)
     )
 }
@@ -742,11 +810,45 @@ mod tests {
     }
 
     #[test]
-    fn ws_merge_with_message() {
-        let cmd = ws_merge_cmd("frost-castle", "feat: add login flow");
+    fn ws_create_random_from_main() {
+        let cmd = ws_create_cmd(WorkspaceSource::Main);
+        assert_eq!(cmd, "maw ws create --random --from main");
+    }
+
+    #[test]
+    fn ws_create_named_for_change() {
+        let cmd = ws_create_named_cmd("frost-castle", WorkspaceSource::Change("ch-123"));
+        assert_eq!(cmd, "maw ws create frost-castle --change ch-123");
+    }
+
+    #[test]
+    fn ws_merge_check_default_target() {
+        let cmd = ws_merge_check_cmd("frost-castle", MergeTarget::Default);
         assert_eq!(
             cmd,
-            "maw ws merge frost-castle --destroy --message 'feat: add login flow'"
+            "maw ws merge frost-castle --into default --check --format json"
+        );
+    }
+
+    #[test]
+    fn ws_merge_with_default_target() {
+        let cmd = ws_merge_cmd("frost-castle", MergeTarget::Default, "feat: add login flow");
+        assert_eq!(
+            cmd,
+            "maw ws merge frost-castle --into default --destroy --message 'feat: add login flow'"
+        );
+    }
+
+    #[test]
+    fn ws_merge_with_change_target() {
+        let cmd = ws_merge_cmd(
+            "frost-castle",
+            MergeTarget::Change("ch-123"),
+            "feat: add login flow",
+        );
+        assert_eq!(
+            cmd,
+            "maw ws merge frost-castle --into ch-123 --destroy --message 'feat: add login flow'"
         );
     }
 

@@ -269,7 +269,7 @@ fn build_bone_guidance(
         // No review, no workspace → needs workspace
         (None, None) => {
             guidance.step(format!("# {} — claimed but no workspace", bead_id));
-            guidance.step(shell::ws_create_cmd());
+            guidance.step(shell::ws_create_cmd(shell::WorkspaceSource::Main));
             guidance.step(format!("# Stake workspace claim after creation:"));
             guidance.step(shell::claims_stake_cmd(
                 "agent",

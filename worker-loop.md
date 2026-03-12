@@ -78,7 +78,7 @@ Before triaging new work, check if you have unfinished work from a previous sess
 
 - `maw exec default -- br update --actor $AGENT <bead-id> --status=in_progress --owner=$AGENT`
 - `rite claims stake --agent $AGENT "bead://$BOTBOX_PROJECT/<bead-id>" -m "<bead-id>"`
-- `maw ws create --random` — note the workspace name (e.g., `frost-castle`). Store as `$WS`.
+- `maw ws create --random --from main` — note the workspace name (e.g., `frost-castle`). Store as `$WS`. Use `--change <change-id>` instead when continuing change-bound work.
 - **All file operations must use the workspace path** `ws/$WS/`. Use absolute paths for Read, Write, and Edit (e.g., `$PROJECT_ROOT/ws/$WS/src/file.rs`). For commands: `maw exec $WS -- <command>`.
 - **No `jj`**: this workflow is Git + maw. Keep workspace operations in `maw` and run `git` only via `maw exec $WS -- ...`.
 - `rite claims stake --agent $AGENT "workspace://$BOTBOX_PROJECT/$WS" -m "<bead-id>"`
@@ -168,7 +168,7 @@ If a review was conducted:
 Then proceed with teardown:
 - `maw exec default -- br comments add --actor $AGENT --author $AGENT <bead-id> "Completed by $AGENT"`
 - `maw exec default -- br close --actor $AGENT <bead-id> --reason="Completed" --suggest-next`
-- `maw ws merge $WS --destroy` (if merge conflict, preserve workspace and announce; maw v0.22.0+ produces linear squashed history and auto-moves main)
+- `maw ws merge $WS --into default --destroy --message "feat: <bone-title>"` (if merge conflict, preserve workspace and announce; swap `default` for a change id when the workspace is change-bound)
 - `maw push` (if pushMain enabled in `.botbox.json`; maw v0.24.0+ handles bookmark and push)
 - `rite claims release --agent $AGENT --all`
 - `maw exec default -- br sync --flush-only`
