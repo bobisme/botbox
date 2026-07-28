@@ -634,6 +634,30 @@ impl Config {
     }
 }
 
+/// Resolve the identity a spawned agent loop should adopt.
+///
+/// Agent loops (`responder`, `reviewer-loop`) are launched by rite hooks. In hook
+/// context, `$AGENT`/`$RITE_AGENT` in the environment are set to the *sender* of
+/// the triggering message — not the identity the loop should run as. Resolving
+/// from the environment is exactly the regression tracked by `bn-uwj7` (and the
+/// earlier `bd-3i5c` / `bd-2z38` fixes): a reviewer spawned for `@project-security`
+/// would vote and merge as the message sender instead of the mentioned reviewer.
+///
+/// This resolver therefore **never reads the environment**. Identity comes only
+/// from the explicit `--agent` flag (`agent_override`), falling back to the
+/// configured default agent (empty string when no config is available, preserving
+/// the responder's prior behavior).
+///
+/// Callers MUST then set `AGENT`/`RITE_AGENT` to the returned value so downstream
+/// tools (rite, seal, bn) and the `init-agent` hook resolve the loop's identity
+/// rather than the sender's. Both the responder and the reviewer-loop route
+/// through this single choke point so the two paths cannot drift apart and
+/// reintroduce sender-identity resolution on only one of them.
+#[must_use]
+pub fn resolve_loop_identity(agent_override: Option<String>, config: Option<&Config>) -> String {
+    agent_override.unwrap_or_else(|| config.map(Config::default_agent).unwrap_or_default())
+}
+
 /// Expand shell-style variable references in a string.
 /// Supports `$VAR` and `${VAR}` syntax. Unknown variables are left as-is.
 fn expand_env_value(value: &str) -> String {
@@ -758,6 +782,115 @@ timeout = 600
         let worker = config.agents.worker.unwrap();
         assert_eq!(worker.model, "haiku");
         assert_eq!(worker.timeout, 600);
+    }
+
+    /// Minimal config with an explicit `default_agent`.
+    fn config_with_default_agent(name: &str, default_agent: Option<&str>) -> Config {
+        let default_line =
+            default_agent.map_or(String::new(), |a| format!("default_agent = \"{a}\"\n"));
+        let toml_str = format!(
+            r#"
+version = "1.0.16"
+
+[project]
+name = "{name}"
+type = ["cli"]
+{default_line}
+[tools]
+bones = true
+maw = true
+seal = true
+rite = true
+vessel = true
+
+[review]
+enabled = true
+reviewers = ["security"]
+"#
+        );
+        Config::parse_toml(&toml_str).unwrap()
+    }
+
+    #[test]
+    fn resolve_loop_identity_prefers_explicit_agent_flag() {
+        let config = config_with_default_agent("myapp", Some("myapp-dev"));
+        // The --agent flag (e.g. the reviewer's own identity from its mention hook)
+        // always wins over the configured default.
+        assert_eq!(
+            resolve_loop_identity(Some("myapp-security".to_string()), Some(&config)),
+            "myapp-security"
+        );
+    }
+
+    #[test]
+    fn resolve_loop_identity_falls_back_to_configured_default() {
+        let config = config_with_default_agent("myapp", Some("myapp-dev"));
+        assert_eq!(resolve_loop_identity(None, Some(&config)), "myapp-dev");
+    }
+
+    #[test]
+    fn resolve_loop_identity_falls_back_to_name_dev() {
+        // No explicit default_agent → "{name}-dev".
+        let config = config_with_default_agent("myapp", None);
+        assert_eq!(resolve_loop_identity(None, Some(&config)), "myapp-dev");
+    }
+
+    #[test]
+    fn resolve_loop_identity_empty_without_config() {
+        // Preserves the responder's prior behavior when config fails to load.
+        assert_eq!(resolve_loop_identity(None, None), "");
+        assert_eq!(
+            resolve_loop_identity(Some("myapp-security".to_string()), None),
+            "myapp-security"
+        );
+    }
+
+    #[test]
+    fn resolve_loop_identity_ignores_sender_in_environment() {
+        // Regression guard (bn-uwj7 / bd-3i5c): in hook context AGENT/RITE_AGENT are
+        // the message *sender*, not the loop's identity. `resolve_loop_identity`
+        // must never consult them — with the *real* AGENT/RITE_AGENT set to a
+        // sender, the resolved identity still comes only from the flag / default.
+        //
+        // Env is process-global and racy under the parallel test harness, so this
+        // test serializes all real-AGENT manipulation behind a shared mutex and
+        // restores prior values before releasing it.
+        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        const SENDER: &str = "some-other-agent-sender";
+
+        let _guard = ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let prev_agent = std::env::var("AGENT").ok();
+        let prev_rite = std::env::var("RITE_AGENT").ok();
+        // SAFETY: serialized by ENV_LOCK; restored below before the guard drops.
+        unsafe {
+            std::env::set_var("AGENT", SENDER);
+            std::env::set_var("RITE_AGENT", SENDER);
+        }
+
+        let config = config_with_default_agent("myapp", Some("myapp-dev"));
+        // Neither the flag path nor the default path yields the sender in env.
+        let via_flag = resolve_loop_identity(Some("myapp-security".to_string()), Some(&config));
+        let via_default = resolve_loop_identity(None, Some(&config));
+
+        // SAFETY: serialized by ENV_LOCK; restore prior values before asserting so
+        // a panic can't leak the sender into AGENT for other tests.
+        unsafe {
+            match prev_agent {
+                Some(v) => std::env::set_var("AGENT", v),
+                None => std::env::remove_var("AGENT"),
+            }
+            match prev_rite {
+                Some(v) => std::env::set_var("RITE_AGENT", v),
+                None => std::env::remove_var("RITE_AGENT"),
+            }
+        }
+
+        assert_eq!(via_flag, "myapp-security");
+        assert_eq!(via_default, "myapp-dev");
+        assert_ne!(via_flag, SENDER);
+        assert_ne!(via_default, SENDER);
     }
 
     #[test]

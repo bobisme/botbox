@@ -687,10 +687,11 @@ pub fn run_reviewer_loop(
 
     let config = Config::load(&config_path)?;
 
-    // Determine agent name
-    let agent = agent_override
-        .or_else(|| config.project.default_agent.clone())
-        .unwrap_or_else(|| config.default_agent());
+    // Determine agent name via the shared choke point so the reviewer-loop and
+    // responder resolve identity identically. Identity comes only from the
+    // explicit `--agent` flag, never from AGENT/RITE_AGENT in the environment
+    // (those are the message *sender* in hook context — see `resolve_loop_identity`).
+    let agent = crate::config::resolve_loop_identity(agent_override, Some(&config));
 
     // Set AGENT and RITE_AGENT env so spawned tools (seal, rite) resolve identity correctly
     // SAFETY: single-threaded at this point in startup, before spawning any threads

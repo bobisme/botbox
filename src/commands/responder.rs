@@ -547,10 +547,6 @@ impl Responder {
             .as_ref()
             .map(super::super::config::Config::channel)
             .unwrap_or_default();
-        let default_agent = config
-            .as_ref()
-            .map(super::super::config::Config::default_agent)
-            .unwrap_or_default();
 
         let responder_config = config.as_ref().and_then(|c| c.agents.responder.clone());
 
@@ -572,10 +568,12 @@ impl Responder {
         let multi_lead_enabled = multi_lead_config.as_ref().is_some_and(|m| m.enabled);
         let multi_lead_max_leads = multi_lead_config.as_ref().map_or(3, |m| m.max_leads);
 
-        // Resolve agent name: CLI flag > config default
-        // Note: we intentionally ignore AGENT/RITE_AGENT here because in hook context
-        // they're set to the message *sender*, not the responder's identity.
-        let agent = agent.unwrap_or(default_agent);
+        // Resolve agent name: CLI flag > config default. This routes through the
+        // shared choke point so the responder and reviewer-loop resolve identity
+        // identically. It intentionally ignores AGENT/RITE_AGENT here because in
+        // hook context they're set to the message *sender*, not the responder's
+        // identity (see `resolve_loop_identity`).
+        let agent = super::super::config::resolve_loop_identity(agent, config.as_ref());
 
         // Override AGENT/RITE_AGENT env with the resolved identity so spawned tools
         // (rite, seal, bn) use the responder's identity, not the message sender's.
