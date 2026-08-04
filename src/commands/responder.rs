@@ -183,7 +183,7 @@ fn route_bang_prefix(trimmed: &str) -> Option<Route> {
         return Some(Route {
             kind: RouteType::Question,
             body: rest,
-            model: Some("haiku".into()),
+            model: Some("openai-codex/gpt-5.6-luna:high".into()),
         });
     }
 
@@ -224,7 +224,7 @@ fn route_colon_prefix(trimmed: &str) -> Option<Route> {
         return Some(Route {
             kind: RouteType::Question,
             body: rest,
-            model: Some("haiku".into()),
+            model: Some("openai-codex/gpt-5.6-luna:high".into()),
         });
     }
 
@@ -1284,7 +1284,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         eprintln!("Triage: classifying message...");
         self.transcript.add("user", &message.agent, &message.body);
 
-        let triage_model = self.resolve_model("openai-codex/gpt-5.6-luna");
+        let triage_model = self.resolve_model("openai-codex/gpt-5.6-luna:high");
         let prompt = self.build_triage_prompt(message);
         match self.run_agent(&prompt, &triage_model) {
             Ok(output) => {
@@ -1884,7 +1884,7 @@ mod tests {
     fn route_question_qq() {
         let r = route_message("!qq quick question");
         assert_eq!(r.kind, RouteType::Question);
-        assert_eq!(r.model, Some("haiku".into()));
+        assert_eq!(r.model, Some("openai-codex/gpt-5.6-luna:high".into()));
         assert_eq!(r.body, "quick question");
     }
 
@@ -1932,7 +1932,7 @@ mod tests {
     fn route_legacy_qq_colon() {
         let r = route_message("qq: quick one");
         assert_eq!(r.kind, RouteType::Question);
-        assert_eq!(r.model, Some("haiku".into()));
+        assert_eq!(r.model, Some("openai-codex/gpt-5.6-luna:high".into()));
         assert_eq!(r.body, "quick one");
     }
 
@@ -1966,7 +1966,7 @@ mod tests {
         // !qq should match before !q
         let r = route_message("!qq test");
         assert_eq!(r.kind, RouteType::Question);
-        assert_eq!(r.model, Some("haiku".into()));
+        assert_eq!(r.model, Some("openai-codex/gpt-5.6-luna:high".into()));
     }
 
     #[test]

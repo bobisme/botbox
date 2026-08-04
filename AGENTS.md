@@ -46,7 +46,7 @@ The router hook spawns `edict run responder` which routes messages based on `!` 
 - `!dev [msg]` — create bone + spawn dev-loop
 - `!bead [desc]` — create bone (with dedup via `bn search`)
 - `!q [question]` — answer with sonnet
-- `!qq [question]` — answer with haiku
+- `!qq [question]` — answer with gpt-5.6-luna
 - `!bigq [question]` — answer with opus
 - `!q(model) [question]` — answer with explicit model
 - No prefix — smart triage via gpt-5.6-luna (chat → reply, question → conversation mode, work → bone + dev-loop)
