@@ -501,15 +501,19 @@ struct HistoryResponse {
 const SKIP_LABELS: &[&str] = &[
     "task-done",
     "task-claim",
+    "task-update",
+    "task-blocked",
     "spawn-ack",
     "agent-idle",
     "agent-error",
     "coord:merge",
     "coord:interface",
     "coord:blocker",
+    "coord:handoff",
     "review-request",
     "review-response",
     "release",
+    "triage-reply",
 ];
 
 // ---------------------------------------------------------------------------
@@ -2076,6 +2080,28 @@ mod tests {
         assert!(!"alice".to_string().starts_with(&project_prefix));
         assert!(!"alice-dev".to_string().starts_with(&project_prefix));
         assert!(!"myproject-dev".to_string().starts_with(&project_prefix));
+    }
+
+    #[test]
+    fn skip_labels_cover_status_and_coordination_announcements() {
+        // These labels mark messages that only announce state — bone transitions
+        // (task-update), already-tracked blocked work (task-blocked), worker
+        // handoffs (coord:handoff), and the responder's own reply format
+        // (triage-reply). Workers get random names (not project-prefixed), so
+        // without these in SKIP_LABELS such messages fall through to
+        // handle_triage's haiku classifier, which misreads status prose as a new
+        // work request and files a duplicate bone.
+        for label in [
+            "task-update",
+            "task-blocked",
+            "coord:handoff",
+            "triage-reply",
+        ] {
+            assert!(
+                SKIP_LABELS.contains(&label),
+                "{label} should be in SKIP_LABELS"
+            );
+        }
     }
 
     #[test]
