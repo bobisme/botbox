@@ -1284,7 +1284,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         eprintln!("Triage: classifying message...");
         self.transcript.add("user", &message.agent, &message.body);
 
-        let triage_model = self.resolve_model("haiku");
+        let triage_model = self.resolve_model("openai-codex/gpt-5.6-luna");
         let prompt = self.build_triage_prompt(message);
         match self.run_agent(&prompt, &triage_model) {
             Ok(output) => {
@@ -2089,7 +2089,7 @@ mod tests {
         // handoffs (coord:handoff), and the responder's own reply format
         // (triage-reply). Workers get random names (not project-prefixed), so
         // without these in SKIP_LABELS such messages fall through to
-        // handle_triage's haiku classifier, which misreads status prose as a new
+        // handle_triage's classifier, which misreads status prose as a new
         // work request and files a duplicate bone.
         for label in [
             "task-update",

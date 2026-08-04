@@ -49,7 +49,7 @@ The router hook spawns `edict run responder` which routes messages based on `!` 
 - `!qq [question]` — answer with haiku
 - `!bigq [question]` — answer with opus
 - `!q(model) [question]` — answer with explicit model
-- No prefix — smart triage via haiku (chat → reply, question → conversation mode, work → bone + dev-loop)
+- No prefix — smart triage via gpt-5.6-luna (chat → reply, question → conversation mode, work → bone + dev-loop)
 
 Also accepts old-style `q:` / `qq:` / `big q:` / `q(model):` prefixes for backwards compatibility.
 
@@ -237,7 +237,7 @@ Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
 
 THE single entrypoint for all project channel messages. Routes based on `!` prefixes, maintains conversation context across turns, and can escalate to dev-loop mid-conversation.
 
-**Commands:** `!dev` → dev-loop, `!bead` → create bone, `!q`/`!qq`/`!bigq`/`!q(model)` → question answering, no prefix → haiku triage (chat/question/work)
+**Commands:** `!dev` → dev-loop, `!bead` → create bone, `!q`/`!qq`/`!bigq`/`!q(model)` → question answering, no prefix → gpt-5.6-luna triage (chat/question/work)
 
 **Flow:** Fetch message → route by prefix → dispatch to handler. Question mode enters a conversation loop with transcript buffer. Triage classifies bare messages and routes accordingly. Mid-conversation escalation creates a bone with conversation context and spawns dev-loop.
 
