@@ -297,36 +297,55 @@ fn check_bone_gate(
     });
 
     // Check bone status
-    match ctx.bone_status(bone_id) {
-        Ok(bone_info) => {
-            guidance.bone = Some(render::BoneRef {
-                id: bone_id.to_string(),
-                title: bone_info.title.clone(),
-            });
+    if let Ok(bone_info) = ctx.bone_status(bone_id) {
+        guidance.bone = Some(render::BoneRef {
+            id: bone_id.to_string(),
+            title: bone_info.title.clone(),
+        });
 
-            if bone_info.state != "done" && !force {
-                guidance.status = ProtocolStatus::Blocked;
-                guidance.diagnostic(format!(
-                    "Bone {} is '{}', expected 'done'. Worker may still be working.",
-                    bone_id, bone_info.state
-                ));
-                guidance.advise(format!(
-                    "Wait for worker to finish bone {bone_id}, or use --force to merge anyway."
-                ));
-
-                let mut steps = Vec::new();
-                steps.push(format!("maw exec default -- bn show {bone_id}"));
-                guidance.steps(steps);
-
-                print_guidance(guidance, format)?;
-                return Ok(true);
-            }
-        }
-        Err(_) => {
+        if bone_info.state != "done" && !force {
+            guidance.status = ProtocolStatus::Blocked;
             guidance.diagnostic(format!(
-                "Could not fetch bone {bone_id} — it may have been deleted. Proceeding with merge."
+                "Bone {} is '{}', expected 'done'. Worker may still be working.",
+                bone_id, bone_info.state
             ));
+            guidance.advise(format!(
+                "Wait for worker to finish bone {bone_id}, or use --force to merge anyway."
+            ));
+
+            let mut steps = Vec::new();
+            steps.push(format!("maw exec default -- bn show {bone_id}"));
+            guidance.steps(steps);
+
+            print_guidance(guidance, format)?;
+            return Ok(true);
         }
+    } else {
+        // Fail closed: every other unresolvable input in this module (no
+        // bone, unknown status, uncorroborated identity) blocks. This is
+        // safe to bypass with --force like the sibling state-mismatch
+        // check above, but must not silently pass by default just because
+        // `bn show` failed — that would let a bones-tool outage or a wrong
+        // bone ID open the merge gate.
+        if !force {
+            guidance.status = ProtocolStatus::Blocked;
+            guidance.diagnostic(format!(
+                "Could not fetch bone {bone_id} — refusing to assume it is done. It may have been deleted, or `bn show` may be failing."
+            ));
+            guidance.advise(format!(
+                "Investigate why `bn show {bone_id}` failed, or use --force to merge anyway."
+            ));
+
+            let mut steps = Vec::new();
+            steps.push(format!("maw exec default -- bn show {bone_id}"));
+            guidance.steps(steps);
+
+            print_guidance(guidance, format)?;
+            return Ok(true);
+        }
+        guidance.diagnostic(format!(
+            "Could not fetch bone {bone_id} — proceeding with --force."
+        ));
     }
 
     Ok(false)
@@ -1043,5 +1062,42 @@ mod tests {
         claims[0].memo = Some("bn-victim".to_string());
         let ctx = ProtocolContext::for_test("crimson-storm", claims, Vec::new());
         assert_eq!(find_bone_for_workspace(&ctx, "my-ws"), None);
+    }
+
+    /// `bone_status` fails fast on a malformed ID (no subprocess needed), which
+    /// is enough to exercise check_bone_gate's Err arm deterministically. The
+    /// same malformed ID also fails `print_guidance`'s own bone-id validation
+    /// (an unrelated shell-safety check, elsewhere in this module), so the
+    /// call's `Result` isn't meaningful here — what matters is that `guidance`
+    /// was already flipped to `Blocked` before that render attempt, proving
+    /// the gate decided to block rather than silently proceeding.
+    #[test]
+    fn check_bone_gate_fails_closed_when_bone_status_unresolvable() {
+        let ctx = ProtocolContext::for_test("crimson-storm", Vec::new(), Vec::new());
+        let mut guidance = ProtocolGuidance::new("merge");
+        let _ = check_bone_gate(
+            &mut guidance,
+            &ctx,
+            Some("not_a_valid_id"),
+            false,
+            OutputFormat::Json,
+        );
+        assert_eq!(guidance.status, ProtocolStatus::Blocked);
+    }
+
+    #[test]
+    fn check_bone_gate_force_bypasses_unresolvable_bone() {
+        let ctx = ProtocolContext::for_test("crimson-storm", Vec::new(), Vec::new());
+        let mut guidance = ProtocolGuidance::new("merge");
+        let stop = check_bone_gate(
+            &mut guidance,
+            &ctx,
+            Some("not_a_valid_id"),
+            true,
+            OutputFormat::Json,
+        )
+        .unwrap();
+        assert!(!stop, "--force must still bypass the bone-status gate");
+        assert_ne!(guidance.status, ProtocolStatus::Blocked);
     }
 }
