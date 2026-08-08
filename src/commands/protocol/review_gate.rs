@@ -23,6 +23,11 @@ pub struct ReviewGateDecision {
     pub approved_by: Vec<String>,
     /// Total voted block
     pub blocked_by: Vec<String>,
+    /// True when votes alone would have approved this review, but the commit
+    /// it was approved for no longer matches the commit being merged (or
+    /// that couldn't be confirmed) — `status` was downgraded to
+    /// `NeedsReview` for this reason specifically, not for missing votes.
+    pub stale_approval: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,6 +38,27 @@ pub enum ReviewGateStatus {
     Blocked,
     /// Review exists but not all required reviewers have voted
     NeedsReview,
+}
+
+/// Whether the commit a review was approved for still matches the commit
+/// about to be merged.
+///
+/// Binds the review→commit axis of the gate (the review→bone axis alone
+/// only proves *some* version of this bone's work was approved, not that
+/// the version being merged is the one reviewers saw).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommitFreshness {
+    /// The review's last-known target commit matches the workspace HEAD
+    /// being merged — the approval covers the code being merged.
+    Fresh,
+    /// Both commits were determined but differ: new commits landed on the
+    /// workspace since the review's diff was last computed (creation or
+    /// last re-request). The approval is stale.
+    Stale,
+    /// One or both commits could not be determined (subprocess failure,
+    /// missing field). Fail closed: treated the same as `Stale` — an
+    /// approval whose scope can't be confirmed does not satisfy the gate.
+    Unknown,
 }
 
 impl ReviewGateDecision {
@@ -62,6 +88,10 @@ impl ReviewGateDecision {
 /// 4. If any required reviewer's latest vote is "block" → Blocked, add to `newer_block_after_lgtm`
 /// 5. If all required reviewers have voted lgtm and no blocks → Approved
 /// 6. Otherwise → `NeedsReview`
+///
+/// Does not check whether the approval still covers the commit about to be
+/// merged — callers that gate an actual merge action must additionally use
+/// [`bind_to_commit`] on the result.
 #[must_use]
 pub fn evaluate_review_gate(
     review: &ReviewDetail,
@@ -144,7 +174,32 @@ pub fn evaluate_review_gate(
         total_required: required_reviewers.len(),
         approved_by,
         blocked_by,
+        stale_approval: false,
     }
+}
+
+/// Bind a vote-based decision to the commit actually being merged.
+///
+/// Votes alone only prove *some* version of this work was approved — not
+/// that it's the version about to land. If `decision.status` is `Approved`
+/// but `commit_freshness` is not `Fresh`, downgrades to `NeedsReview` and
+/// sets `stale_approval`. Leaves `Blocked` and vote-driven `NeedsReview`
+/// untouched: those are already correct for their own reasons and
+/// shouldn't be relabeled by an unrelated commit-freshness concern.
+///
+/// Only merge-gating callers need this — commands that merely report review
+/// state (status/resume/review/finish) evaluate votes on their own via
+/// [`evaluate_review_gate`].
+#[must_use]
+pub fn bind_to_commit(
+    mut decision: ReviewGateDecision,
+    commit_freshness: CommitFreshness,
+) -> ReviewGateDecision {
+    if decision.status == ReviewGateStatus::Approved && commit_freshness != CommitFreshness::Fresh {
+        decision.status = ReviewGateStatus::NeedsReview;
+        decision.stale_approval = true;
+    }
+    decision
 }
 
 fn implicit_status_lgtm(review: &ReviewDetail, reviewer: &str) -> bool {
@@ -396,5 +451,100 @@ mod tests {
 
         assert_eq!(decision.status, ReviewGateStatus::Blocked);
         assert_eq!(decision.blocked_by, vec!["edict-security"]);
+    }
+
+    // --- Commit freshness (review→commit binding) ---
+
+    #[test]
+    fn stale_commit_downgrades_approval_to_needs_review() {
+        let review = make_review(vec![make_vote(
+            "edict-security",
+            "lgtm",
+            "2026-02-16T10:00:00Z",
+        )]);
+        let required = vec!["edict-security".to_string()];
+
+        let decision = bind_to_commit(
+            evaluate_review_gate(&review, &required),
+            CommitFreshness::Stale,
+        );
+
+        assert_eq!(decision.status, ReviewGateStatus::NeedsReview);
+        assert!(decision.stale_approval);
+        // Votes are untouched — the reviewer really did approve; it's the
+        // commit binding that's wrong, not who voted.
+        assert_eq!(decision.approved_by, vec!["edict-security"]);
+        assert!(decision.missing_approvals.is_empty());
+    }
+
+    #[test]
+    fn unknown_commit_fails_closed_like_stale() {
+        let review = make_review(vec![make_vote(
+            "edict-security",
+            "lgtm",
+            "2026-02-16T10:00:00Z",
+        )]);
+        let required = vec!["edict-security".to_string()];
+
+        let decision = bind_to_commit(
+            evaluate_review_gate(&review, &required),
+            CommitFreshness::Unknown,
+        );
+
+        assert_eq!(decision.status, ReviewGateStatus::NeedsReview);
+        assert!(decision.stale_approval);
+    }
+
+    #[test]
+    fn fresh_commit_does_not_disturb_approval() {
+        let review = make_review(vec![make_vote(
+            "edict-security",
+            "lgtm",
+            "2026-02-16T10:00:00Z",
+        )]);
+        let required = vec!["edict-security".to_string()];
+
+        let decision = bind_to_commit(
+            evaluate_review_gate(&review, &required),
+            CommitFreshness::Fresh,
+        );
+
+        assert_eq!(decision.status, ReviewGateStatus::Approved);
+        assert!(!decision.stale_approval);
+    }
+
+    #[test]
+    fn stale_commit_does_not_relabel_an_already_blocked_review() {
+        // A genuine block should read as "blocked by a reviewer", not get
+        // relabeled by an unrelated commit-freshness concern.
+        let review = make_review(vec![make_vote(
+            "edict-security",
+            "block",
+            "2026-02-16T10:00:00Z",
+        )]);
+        let required = vec!["edict-security".to_string()];
+
+        let decision = bind_to_commit(
+            evaluate_review_gate(&review, &required),
+            CommitFreshness::Stale,
+        );
+
+        assert_eq!(decision.status, ReviewGateStatus::Blocked);
+        assert!(!decision.stale_approval);
+    }
+
+    #[test]
+    fn stale_commit_does_not_relabel_missing_votes() {
+        let review = make_review(vec![]);
+        let required = vec!["edict-security".to_string()];
+
+        let decision = bind_to_commit(
+            evaluate_review_gate(&review, &required),
+            CommitFreshness::Stale,
+        );
+
+        assert_eq!(decision.status, ReviewGateStatus::NeedsReview);
+        assert!(!decision.stale_approval);
+        assert_eq!(decision.missing_approvals, vec!["edict-security"]);
     }
 }

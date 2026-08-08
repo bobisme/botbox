@@ -10,6 +10,7 @@ use std::io::IsTerminal;
 use anyhow::Context;
 use serde::Deserialize;
 
+use super::adapters::ReviewDetail;
 use super::context::ProtocolContext;
 use super::render::{self, ProtocolGuidance, ProtocolStatus};
 use super::review_gate::{self, ReviewGateStatus};
@@ -351,6 +352,21 @@ fn check_bone_gate(
     Ok(false)
 }
 
+/// Classify whether the review's approved commit still matches the
+/// workspace HEAD about to be merged. `None` in either position (the
+/// subprocess failed, or the review has no recorded target commit yet)
+/// fails closed as `Unknown` rather than assuming freshness.
+fn classify_commit_freshness(
+    approved_commit: Option<String>,
+    workspace_head: Option<String>,
+) -> review_gate::CommitFreshness {
+    match (approved_commit, workspace_head) {
+        (Some(approved), Some(head)) if approved == head => review_gate::CommitFreshness::Fresh,
+        (Some(_), Some(_)) => review_gate::CommitFreshness::Stale,
+        _ => review_gate::CommitFreshness::Unknown,
+    }
+}
+
 /// Check the review gate. Only called when review is enabled and not forced.
 /// Returns `Ok(true)` when the caller should stop (guidance was printed),
 /// `Ok(false)` to continue. May update `merge_target` from the review detail.
@@ -366,91 +382,163 @@ fn check_review_gate(
     if let Some((review_id, review_detail)) =
         bone_id.and_then(|id| ctx.find_review_for_bone(workspace, id))
     {
-        let decision = review_gate::evaluate_review_gate(&review_detail, required_reviewers);
         if merge_target.is_none() {
-            *merge_target = review_detail.change_id;
+            merge_target.clone_from(&review_detail.change_id);
         }
-        guidance.review = Some(render::ReviewRef {
-            review_id: review_id.clone(),
-            status: decision.status_str().to_string(),
-        });
+        return evaluate_found_review(
+            guidance,
+            ctx,
+            workspace,
+            &review_id,
+            &review_detail,
+            required_reviewers,
+            format,
+        );
+    }
+    handle_missing_review(guidance, workspace, bone_id, required_reviewers, format)
+}
 
-        match decision.status {
-            ReviewGateStatus::Approved => {
-                // Good — review approved, proceed to merge
-            }
-            ReviewGateStatus::Blocked => {
-                guidance.status = ProtocolStatus::Blocked;
-                guidance.diagnostic(format!(
-                    "Review {} is blocked by: {}. Resolve feedback before merging.",
-                    review_id,
-                    decision.blocked_by.join(", ")
-                ));
-                guidance.advise("Address reviewer feedback, then re-request review.".to_string());
+/// Evaluate a review that was found for this bone, including the
+/// review→commit binding, and apply guidance. Returns `Ok(true)` when the
+/// caller should stop (guidance was printed), `Ok(false)` to continue.
+fn evaluate_found_review(
+    guidance: &mut ProtocolGuidance,
+    ctx: &ProtocolContext,
+    workspace: &str,
+    review_id: &str,
+    review_detail: &ReviewDetail,
+    required_reviewers: &[String],
+    format: OutputFormat,
+) -> anyhow::Result<bool> {
+    // Votes alone only prove *some* version of this work was approved,
+    // not that it's the version about to be merged (review→bone binding
+    // without review→commit binding). Compare the commit the review's
+    // diff was last computed against to the workspace's actual current
+    // HEAD; either subprocess failing, or the two disagreeing, fails
+    // closed via `bind_to_commit` below rather than trusting stale votes.
+    let commit_freshness = classify_commit_freshness(
+        ctx.review_target_commit(review_id, workspace)
+            .ok()
+            .flatten(),
+        ctx.workspace_head_commit(workspace).ok(),
+    );
+    let decision = review_gate::bind_to_commit(
+        review_gate::evaluate_review_gate(review_detail, required_reviewers),
+        commit_freshness,
+    );
+    guidance.review = Some(render::ReviewRef {
+        review_id: review_id.to_string(),
+        status: decision.status_str().to_string(),
+    });
 
-                let steps = vec![shell::seal_show_cmd(workspace, &review_id)];
-                guidance.steps(steps);
-
-                print_guidance(guidance, format)?;
-                return Ok(true);
-            }
-            ReviewGateStatus::NeedsReview => {
-                guidance.status = ProtocolStatus::NeedsReview;
-                guidance.diagnostic(format!(
-                    "Review {} still awaiting votes from: {}",
-                    review_id,
-                    decision.missing_approvals.join(", ")
-                ));
-                guidance
-                    .advise("Wait for reviewers or re-request review before merging.".to_string());
-
-                let steps = vec![shell::seal_show_cmd(workspace, &review_id)];
-                guidance.steps(steps);
-
-                print_guidance(guidance, format)?;
-                return Ok(true);
-            }
+    match decision.status {
+        ReviewGateStatus::Approved => {
+            // Good — review approved, proceed to merge
         }
-    } else {
-        guidance.status = ProtocolStatus::NeedsReview;
-
-        if let Some(id) = bone_id {
+        ReviewGateStatus::Blocked => {
+            guidance.status = ProtocolStatus::Blocked;
             guidance.diagnostic(format!(
-                "Review is enabled but no live review exists for bone {id}."
+                "Review {} is blocked by: {}. Resolve feedback before merging.",
+                review_id,
+                decision.blocked_by.join(", ")
             ));
-            guidance.advise("Create a review before merging.".to_string());
+            guidance.advise("Address reviewer feedback, then re-request review.".to_string());
 
-            let mut steps = Vec::new();
-            steps.push(shell::seal_create_cmd(
-                workspace,
-                "agent",
-                id,
-                &format!("work from {workspace}"),
-                &required_reviewers.join(","),
-            ));
+            let steps = vec![shell::seal_show_cmd(workspace, review_id)];
             guidance.steps(steps);
-        } else {
-            // Without a bone ID there is no title the gate could match, so a review
-            // created here would be invisible to it — approved and still reported as
-            // missing. Offering that step would leave `--force` (skip the gate) as the
-            // only way forward, so say what is actually wrong instead.
-            guidance.diagnostic(format!(
-                "Review is enabled but the bone behind workspace {workspace} could not be \
-                 identified, so no review can be bound to it."
-            ));
-            guidance.advise(
-                "Stake the workspace claim for the bone \
-                 (rite claims stake \"workspace://<project>/<ws>\" -m \"<bone-id>\"), \
-                 then run `edict protocol review <bone-id>` to open a review against it."
-                    .to_string(),
-            );
-        }
 
-        print_guidance(guidance, format)?;
-        return Ok(true);
+            print_guidance(guidance, format)?;
+            return Ok(true);
+        }
+        ReviewGateStatus::NeedsReview if decision.stale_approval => {
+            guidance.status = ProtocolStatus::NeedsReview;
+            guidance.diagnostic(format!(
+                "Review {review_id} was approved for an earlier commit — new commits have \
+                 landed on workspace {workspace} since (or the commit couldn't be \
+                 confirmed). Re-request review so it covers the latest commits."
+            ));
+            guidance
+                .advise("Re-request review, then wait for approval before merging.".to_string());
+
+            let steps = vec![
+                shell::seal_request_cmd(
+                    workspace,
+                    review_id,
+                    &required_reviewers.join(","),
+                    ctx.agent(),
+                ),
+                shell::seal_show_cmd(workspace, review_id),
+            ];
+            guidance.steps(steps);
+
+            print_guidance(guidance, format)?;
+            return Ok(true);
+        }
+        ReviewGateStatus::NeedsReview => {
+            guidance.status = ProtocolStatus::NeedsReview;
+            guidance.diagnostic(format!(
+                "Review {} still awaiting votes from: {}",
+                review_id,
+                decision.missing_approvals.join(", ")
+            ));
+            guidance.advise("Wait for reviewers or re-request review before merging.".to_string());
+
+            let steps = vec![shell::seal_show_cmd(workspace, review_id)];
+            guidance.steps(steps);
+
+            print_guidance(guidance, format)?;
+            return Ok(true);
+        }
     }
 
     Ok(false)
+}
+
+/// No live review exists for this bone. Returns `Ok(true)` when the caller
+/// should stop (guidance was printed), `Ok(false)` to continue.
+fn handle_missing_review(
+    guidance: &mut ProtocolGuidance,
+    workspace: &str,
+    bone_id: Option<&str>,
+    required_reviewers: &[String],
+    format: OutputFormat,
+) -> anyhow::Result<bool> {
+    guidance.status = ProtocolStatus::NeedsReview;
+
+    if let Some(id) = bone_id {
+        guidance.diagnostic(format!(
+            "Review is enabled but no live review exists for bone {id}."
+        ));
+        guidance.advise("Create a review before merging.".to_string());
+
+        let mut steps = Vec::new();
+        steps.push(shell::seal_create_cmd(
+            workspace,
+            "agent",
+            id,
+            &format!("work from {workspace}"),
+            &required_reviewers.join(","),
+        ));
+        guidance.steps(steps);
+    } else {
+        // Without a bone ID there is no title the gate could match, so a review
+        // created here would be invisible to it — approved and still reported as
+        // missing. Offering that step would leave `--force` (skip the gate) as the
+        // only way forward, so say what is actually wrong instead.
+        guidance.diagnostic(format!(
+            "Review is enabled but the bone behind workspace {workspace} could not be \
+                 identified, so no review can be bound to it."
+        ));
+        guidance.advise(
+            "Stake the workspace claim for the bone \
+                 (rite claims stake \"workspace://<project>/<ws>\" -m \"<bone-id>\"), \
+                 then run `edict protocol review <bone-id>` to open a review against it."
+                .to_string(),
+        );
+    }
+
+    print_guidance(guidance, format)?;
+    Ok(true)
 }
 
 /// Run the pre-flight conflict check and apply guidance. Returns `Ok(true)`
@@ -1099,5 +1187,49 @@ mod tests {
         .unwrap();
         assert!(!stop, "--force must still bypass the bone-status gate");
         assert_ne!(guidance.status, ProtocolStatus::Blocked);
+    }
+
+    // --- classify_commit_freshness ---
+
+    #[test]
+    fn commit_freshness_matching_commits_are_fresh() {
+        assert_eq!(
+            classify_commit_freshness(Some("abc123".into()), Some("abc123".into())),
+            review_gate::CommitFreshness::Fresh
+        );
+    }
+
+    #[test]
+    fn commit_freshness_differing_commits_are_stale() {
+        assert_eq!(
+            classify_commit_freshness(Some("abc123".into()), Some("def456".into())),
+            review_gate::CommitFreshness::Stale
+        );
+    }
+
+    #[test]
+    fn commit_freshness_missing_approved_commit_is_unknown() {
+        // e.g. `seal diff` failed, or the review has no recorded target yet.
+        assert_eq!(
+            classify_commit_freshness(None, Some("def456".into())),
+            review_gate::CommitFreshness::Unknown
+        );
+    }
+
+    #[test]
+    fn commit_freshness_missing_workspace_head_is_unknown() {
+        // e.g. `git rev-parse HEAD` failed in the workspace.
+        assert_eq!(
+            classify_commit_freshness(Some("abc123".into()), None),
+            review_gate::CommitFreshness::Unknown
+        );
+    }
+
+    #[test]
+    fn commit_freshness_both_missing_is_unknown() {
+        assert_eq!(
+            classify_commit_freshness(None, None),
+            review_gate::CommitFreshness::Unknown
+        );
     }
 }

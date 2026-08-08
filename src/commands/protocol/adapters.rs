@@ -297,6 +297,29 @@ pub fn parse_review_detail(json: &str) -> Result<ReviewDetailResponse, AdapterEr
     })
 }
 
+/// Parsed output from `seal diff <id> --format json`.
+///
+/// Only the field the merge gate's commit-freshness check needs — `seal
+/// diff` also returns `base_commit`, `changed_files`, `diff`, and thread
+/// info, ignored here.
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewDiffSummary {
+    #[serde(default)]
+    pub target_commit: Option<String>,
+}
+
+/// Parse `seal diff <id> --format json`.
+///
+/// # Errors
+///
+/// Returns `Err` if the JSON cannot be deserialized into a `ReviewDiffSummary`.
+pub fn parse_review_diff(json: &str) -> Result<ReviewDiffSummary, AdapterError> {
+    serde_json::from_str(json).map_err(|e| AdapterError::ParseFailed {
+        tool: "seal diff",
+        detail: e.to_string(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -492,6 +515,38 @@ mod tests {
             resp.review.status_changed_by.as_deref(),
             Some("myapp-security")
         );
+    }
+
+    // --- Review diff parsing ---
+
+    #[test]
+    fn parse_review_diff_basic() {
+        let json = r#"{
+            "review_id": "cr-x",
+            "base_commit": "aaa",
+            "initial_commit": "bbb",
+            "target_commit": "ccc",
+            "changed_files": ["a.rs"],
+            "diff": "...",
+            "thread_count": 0,
+            "threads_by_file": []
+        }"#;
+        let diff = parse_review_diff(json).unwrap();
+        assert_eq!(diff.target_commit.as_deref(), Some("ccc"));
+    }
+
+    #[test]
+    fn parse_review_diff_missing_target_commit() {
+        let json = r#"{"review_id": "cr-x"}"#;
+        let diff = parse_review_diff(json).unwrap();
+        assert_eq!(diff.target_commit, None);
+    }
+
+    #[test]
+    fn parse_review_diff_invalid_json() {
+        let result = parse_review_diff("not json");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("seal diff"));
     }
 
     // --- Claim helper tests ---
