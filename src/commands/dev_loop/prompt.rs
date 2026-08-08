@@ -608,7 +608,7 @@ Before outputting COMPLETE, check if a release is needed:
 2. If any commits start with "feat:" or "fix:" (user-visible changes), a release is needed:
    - Bump version in Cargo.toml/package.json (semantic versioning)
    - Update changelog if one exists
-   - Release: maw release vX.Y.Z (this tags, pushes, and updates bookmarks)
+   - Release: maw release vX.Y.Z (this advances the branch, pushes it, and creates the tag)
    - Announce: rite send --agent {agent} {project} "<project> vX.Y.Z released - <summary>" -L release
 3. If only "chore:", "docs:", "refactor:" commits, no release needed.
 4. RELEASE MUTEX: rite claims release --agent {agent} "release://{project}"
