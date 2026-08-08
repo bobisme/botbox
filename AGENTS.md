@@ -83,7 +83,7 @@ SQLite-backed channel messaging system. Default output is `text` format (concise
 - `rite inbox [--channels <ch>] [--mentions] [--mark-read]` — Check unread messages. `--mentions` checks all channels for @agent mentions. `--count-only` for just the count.
 - `rite history <channel> [-n count] [--from agent] [--since time]` — Browse message history. Channel can also be passed as `-c/--channel <ch>`. `rite history projects` shows the project registry.
 - `rite search <query> [-c channel]` — Full-text search (FTS5 syntax)
-- `rite wait [-c channel] [--mention] [-L label] [-t timeout]` — Block until matching message arrives. Used by the responder for follow-up conversations.
+- `rite wait [-c channel] [--mentions] [--from agent] [-L label] [-t timeout]` — Block until matching message arrives. Used by the responder for follow-up conversations.
 - `rite watch [-c channel] [--all]` — Stream messages in real-time
 
 **Claims (advisory locks):**
@@ -637,11 +637,11 @@ Agents communicate via rite channels. You don't need to be expert on everything 
 |-----------|---------|
 | Send message | `rite send --agent $AGENT <channel> "message" [-L label]` |
 | Check inbox | `rite inbox --agent $AGENT --channels <ch> [--mark-read]` |
-| Wait for reply | `rite wait -c <channel> --mention -t 120` |
+| Wait for reply | `rite wait --mentions --from <agent> -t 120` |
 | Browse history | `rite history <channel> -n 20` |
 | Search messages | `rite search "query" -c <channel>` |
 
-**Conversations**: After sending a question, use `rite wait -c <channel> --mention -t <seconds>` to block until the other agent replies. This enables back-and-forth conversations across channels.
+**Conversations**: After sending a question, use `rite wait --mentions --from <agent> -t <seconds>` to block until that agent replies. This enables back-and-forth conversations across channels.
 
 **Project experts**: Each `<project>-dev` is the expert on their project. When stuck on a companion tool (rite, maw, seal, vessel, bn), post a question to its project channel instead of guessing.
 
