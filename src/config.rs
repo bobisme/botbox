@@ -658,6 +658,27 @@ pub fn resolve_loop_identity(agent_override: Option<String>, config: Option<&Con
     agent_override.unwrap_or_else(|| config.map(Config::default_agent).unwrap_or_default())
 }
 
+/// Reject an empty resolved loop identity at the point a loop spawns.
+///
+/// `resolve_loop_identity` intentionally still returns `""` when no `--agent`
+/// flag is given and no config is available, preserving prior behavior for
+/// callers that only inspect the raw result. Every loop that goes on to *act*
+/// as this identity (staking claims, sending rite messages, voting on
+/// reviews) must call this guard immediately after resolving it, so no loop
+/// ever operates against rite/seal/bn under an empty `AGENT`.
+///
+/// # Errors
+///
+/// Returns `Err` if `agent` is empty.
+pub fn reject_empty_loop_identity(agent: &str) -> anyhow::Result<()> {
+    if agent.is_empty() {
+        anyhow::bail!(
+            "Could not resolve agent identity (no --agent flag and no configured default_agent); refusing to run with an empty AGENT"
+        );
+    }
+    Ok(())
+}
+
 /// Expand shell-style variable references in a string.
 /// Supports `$VAR` and `${VAR}` syntax. Unknown variables are left as-is.
 fn expand_env_value(value: &str) -> String {
@@ -843,6 +864,16 @@ reviewers = ["security"]
             resolve_loop_identity(Some("myapp-security".to_string()), None),
             "myapp-security"
         );
+    }
+
+    #[test]
+    fn reject_empty_loop_identity_rejects_empty() {
+        assert!(reject_empty_loop_identity("").is_err());
+    }
+
+    #[test]
+    fn reject_empty_loop_identity_accepts_nonempty() {
+        assert!(reject_empty_loop_identity("myapp-dev").is_ok());
     }
 
     #[test]

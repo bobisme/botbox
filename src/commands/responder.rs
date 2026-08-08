@@ -578,6 +578,7 @@ impl Responder {
         // hook context they're set to the message *sender*, not the responder's
         // identity (see `resolve_loop_identity`).
         let agent = super::super::config::resolve_loop_identity(agent, config.as_ref());
+        super::super::config::reject_empty_loop_identity(&agent)?;
 
         // Override AGENT/RITE_AGENT env with the resolved identity so spawned tools
         // (rite, seal, bn) use the responder's identity, not the message sender's.

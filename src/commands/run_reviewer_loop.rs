@@ -692,6 +692,7 @@ pub fn run_reviewer_loop(
     // explicit `--agent` flag, never from AGENT/RITE_AGENT in the environment
     // (those are the message *sender* in hook context — see `resolve_loop_identity`).
     let agent = crate::config::resolve_loop_identity(agent_override, Some(&config));
+    crate::config::reject_empty_loop_identity(&agent)?;
 
     // Set AGENT and RITE_AGENT env so spawned tools (seal, rite) resolve identity correctly
     // SAFETY: single-threaded at this point in startup, before spawning any threads
