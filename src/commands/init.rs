@@ -960,7 +960,7 @@ pub(super) fn register_router_hook(
     agent: &str,
     memory_limit: Option<&str>,
 ) {
-    let env_inherit = "RITE_CHANNEL,RITE_MESSAGE_ID,RITE_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
+    let env_inherit = crate::reply::HOOK_ENV_INHERIT;
     let claim_uri = format!("agent://{name}-dev");
     let spawn_name = format!("{name}-responder");
     let description = format!("edict:{name}:responder");
@@ -1013,7 +1013,7 @@ pub(super) fn register_reviewer_hook(
     reviewer_agent: &str,
     memory_limit: Option<&str>,
 ) {
-    let env_inherit = "RITE_CHANNEL,RITE_MESSAGE_ID,RITE_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
+    let env_inherit = crate::reply::HOOK_ENV_INHERIT;
     let claim_uri = format!("agent://{reviewer_agent}");
     // Extract role suffix from reviewer_agent (e.g., "myproject-security" → "security")
     let role = reviewer_agent

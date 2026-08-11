@@ -5,6 +5,7 @@ pub mod config;
 pub mod error;
 pub mod hooks;
 pub mod layout;
+pub mod reply;
 pub mod subprocess;
 pub mod telemetry;
 pub mod template;

@@ -354,6 +354,25 @@ pub fn rite_send_cmd(agent: &str, project: &str, message: &str, label: &str) -> 
     cmd
 }
 
+/// Advice that turns an announced review request into an answered one.
+///
+/// The announce step above is a plain command, so the id of the message it sent
+/// is read back from history rather than captured. The wait is what stops the
+/// requester from asking again.
+#[must_use]
+pub fn review_wait_advice(agent: &str, project: &str) -> String {
+    let agent_safe = safe_ident(agent);
+    let project_safe = safe_ident(project);
+    let timeout = crate::reply::DEFAULT_WAIT_TIMEOUT;
+    format!(
+        "Then block on the verdict instead of asking again: \
+         req=$(rite history {project_safe} --from {agent_safe} -n 1 --format json | jq -r .last_id) \
+         && rite wait --agent {agent_safe} --reply-to \"$req\" -t {timeout} --format json. \
+         Exit 0 = answered, exit 1 = escalate with -L task-blocked (never re-announce), \
+         exit 2 = wrong id."
+    )
+}
+
 /// Build: `maw exec default -- bn do <id>`
 #[allow(dead_code)]
 #[must_use]

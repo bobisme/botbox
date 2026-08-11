@@ -141,6 +141,36 @@ pub fn build(
     let layout = crate::layout::Layout::detect(std::path::Path::new(project_dir.as_str()));
     let command_pattern = command_pattern(layout);
 
+    // Re-resolved every iteration: an agent told its anchor once at spawn drifts
+    // within a few turns, an agent told the current anchor every turn does not.
+    let reply_section = format!(
+        "{}{}",
+        crate::reply::anchor_section(crate::reply::anchor_from_env().as_deref(), agent, project),
+        crate::reply::ask_and_wait_section(agent, crate::reply::DEFAULT_WAIT_TIMEOUT),
+    );
+    let wait_timeout = crate::reply::DEFAULT_WAIT_TIMEOUT;
+    let review_recipe = crate::reply::review_recipe(
+        crate::reply::ReviewAsk::New,
+        agent,
+        project,
+        wait_timeout,
+        "    ",
+    );
+    let review_recipe_2 = crate::reply::review_recipe(
+        crate::reply::ReviewAsk::New,
+        agent,
+        project,
+        wait_timeout,
+        "  ",
+    );
+    let review_update_recipe = crate::reply::review_recipe(
+        crate::reply::ReviewAsk::Update,
+        agent,
+        project,
+        wait_timeout,
+        "       ",
+    );
+
     let prompt = format!(
         r#"You are lead dev agent "{agent}" for project "{project}".
 
@@ -150,7 +180,7 @@ CRITICAL - HUMAN MESSAGE PRIORITY: If you see a system reminder with "STOP:" sho
 
 {command_pattern}
 VERSION CONTROL: This project uses Git + maw.
-{previous_context}{status_section}{sibling_section}Execute exactly ONE dev cycle. Triage inbox, assess ready bones, either work on one yourself
+{reply_section}{previous_context}{status_section}{sibling_section}Execute exactly ONE dev cycle. Triage inbox, assess ready bones, either work on one yourself
 or dispatch multiple workers in parallel, monitor progress, merge results. Then STOP.
 {focus_directive}
 
@@ -182,8 +212,8 @@ For EACH unfinished bone:
           - Resolve: maw exec $WS -- seal threads resolve <thread-id> --agent {agent}
        3. Commit changes: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<id>: <summary> (addressed review feedback)"
        4. Re-request: maw exec $WS -- seal reviews request <review-id> --reviewers {project}-security --agent {agent}
-       5. Announce: rite send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
-       STOP this iteration — wait for re-review
+       5. Announce and wait for the re-review:
+{review_update_recipe}
      * If PENDING (no votes yet): STOP this iteration — wait for reviewer
      * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
    - If workspace comment exists but no review comment (work was in progress when session died):
@@ -317,8 +347,8 @@ RISK:MEDIUM — Standard review (if REVIEW is true):
     CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
     Create review with reviewer (if none exists): maw exec $WS -- seal reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
     IMMEDIATELY record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace $WS"
-    Spawn reviewer via @mention: rite send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-  STOP this iteration — wait for reviewer.
+    The @mention in the request spawns the reviewer.
+{review_recipe}
 
 RISK:HIGH — Security review + failure-mode checklist:
   Same as risk:medium, but add to review description: "risk:high — failure-mode checklist required."
@@ -536,8 +566,7 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
   CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
   Create review (if none): maw exec $WS -- seal reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
   Record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace <ws-name>"
-  Announce: rite send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-  STOP — wait for reviewer
+{review_recipe_2}
   For risk:high add failure-mode checklist to review description, for risk:critical add human approval request.
 
 ### Manual fallback (only if protocol merge is unavailable):
@@ -563,8 +592,8 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
     CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
     Create review (if none): maw exec $WS -- seal reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
     Record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace <ws-name>"
-    Announce: rite send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-    STOP — wait for reviewer. For risk:high add failure-mode checklist, for risk:critical add human approval request.
+{review_recipe}
+    For risk:high add failure-mode checklist, for risk:critical add human approval request.
 
   If REVIEW is false (regardless of risk):
     Run MERGE PROTOCOL above for $WS
@@ -907,6 +936,31 @@ mod tests {
         assert!(t.contains("do NOT pick up unrelated"));
         // Disabled missions render nothing.
         assert!(build_mission_triage(false, Some("bn-mission")).is_empty());
+    }
+
+    /// The review flow must ask and wait, not ask and hope. Every rebuild of the
+    /// prompt carries the wait and the escalate-on-timeout rule.
+    #[test]
+    fn prompt_teaches_ask_and_wait_for_reviews() {
+        let ctx = test_ctx();
+        let prompt = build(&ctx, None, &[], None);
+
+        assert!(
+            prompt.contains("ASK AND WAIT"),
+            "dev-loop prompt must carry the ask-and-wait protocol"
+        );
+        assert!(
+            prompt.contains("rite wait --agent test-dev --reply-to \"$req\" -t 300"),
+            "review requests must block on a reply to the request itself"
+        );
+        assert!(
+            prompt.contains("Do NOT send the request again."),
+            "a timed-out request must escalate, never repeat"
+        );
+        assert!(
+            prompt.contains("-L review-response"),
+            "the re-request path must anchor its own announcement"
+        );
     }
 
     #[test]

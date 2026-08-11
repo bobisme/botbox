@@ -267,6 +267,11 @@ impl SyncArgs {
             migrate_botbus_env_hooks(&config, &project_root);
         }
 
+        // Forward RITE_BATCH_* so spawned agents can resolve their reply anchor
+        if !self.check {
+            migrate_hook_reply_env(&config, &project_root);
+        }
+
         // Ensure reviewer mention hooks exist for declared reviewer roles
         // (independent of review.enabled — see ensure_reviewer_hooks)
         if !self.check {
@@ -1636,6 +1641,106 @@ fn migrate_botbus_env_hooks(config: &Config, project_root: &Path) {
             println!("  Migrated reviewer hook {role}: RITE_* env vars (was BOTBUS_*)");
         }
     }
+}
+
+/// Re-register hooks whose `--env-inherit` predates rite threading support.
+///
+/// A spawned agent can only anchor its reply when the hook forwards the id of
+/// the message that woke it. Hooks registered before `RITE_BATCH_*` support
+/// carry an env-inherit list without `RITE_BATCH_MESSAGE_IDS`, so a lease batch
+/// leaves the agent with no anchor for the triggering message.
+///
+/// Idempotent — a hook that already carries the marker is skipped.
+fn migrate_hook_reply_env(config: &Config, project_root: &Path) {
+    let output = match Tool::new("rite")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(o) if o.success() => o,
+        _ => return,
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let hooks = match parsed.get("hooks").and_then(|h| h.as_array()) {
+        Some(h) => h.clone(),
+        None => return,
+    };
+
+    let name = &config.project.name;
+    let root_str = resolve_hook_root(project_root);
+    let agent = config.default_agent();
+
+    for hook in &hooks {
+        // Only hooks that pass an env-inherit list without the batch vars.
+        let command = hook.get("command").and_then(|c| c.as_array());
+        let Some(command) = command else { continue };
+        let inherits_env = command
+            .iter()
+            .any(|v| v.as_str().is_some_and(|s| s.contains("RITE_MESSAGE_ID")));
+        let has_batch = command.iter().any(|v| {
+            v.as_str()
+                .is_some_and(|s| s.contains(crate::reply::BATCH_ENV_MARKER))
+        });
+        if !inherits_env || has_batch {
+            continue;
+        }
+
+        let desc = hook
+            .get("description")
+            .and_then(|d| d.as_str())
+            .unwrap_or("");
+
+        if desc == format!("edict:{name}:responder") {
+            let ml = config
+                .agents
+                .responder
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
+            super::init::register_router_hook(&root_str, &root_str, name, &agent, ml);
+            println!("  Migrated router hook: forwards RITE_BATCH_* for reply anchors");
+        } else if let Some(role) = desc
+            .strip_prefix(&format!("edict:{name}:reviewer-"))
+            .filter(|r| !r.is_empty())
+        {
+            let reviewer_agent = format!("{name}-{role}");
+            let ml = config
+                .agents
+                .reviewer
+                .as_ref()
+                .and_then(|r| r.memory_limit.as_deref());
+            super::init::register_reviewer_hook(
+                &root_str,
+                &root_str,
+                name,
+                &agent,
+                &reviewer_agent,
+                ml,
+            );
+            println!("  Migrated reviewer hook {role}: forwards RITE_BATCH_* for reply anchors");
+        }
+    }
+}
+
+/// Resolve the path hooks should use as `--cwd` (the bare root when there is one).
+fn resolve_hook_root(project_root: &Path) -> String {
+    let bare_root = if project_root.ends_with("ws/default") {
+        project_root
+            .parent()
+            .and_then(Path::parent)
+            .filter(|r| r.join(".manifold").exists())
+    } else if project_root.join(".manifold").exists() {
+        Some(project_root)
+    } else {
+        None
+    };
+    bare_root.map_or_else(
+        || project_root.display().to_string(),
+        |r| r.display().to_string(),
+    )
 }
 
 /// Migrate beads → bones: config key, data directory, .maw.toml, .sealignore, .gitignore.

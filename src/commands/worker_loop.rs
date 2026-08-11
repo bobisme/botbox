@@ -302,10 +302,11 @@ Go directly to:
          - maw exec $WS -- seal reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
          - IMMEDIATELY record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace $WS"
        rite statuses set --agent {agent} "Review: <review-id>".
-       Spawn reviewer via @mention: rite send --agent {agent} {project} "Review requested: <review-id> for <id> @{project}-security" -L review-request
-     Do NOT close the bone. Do NOT merge. Do NOT release claims.
+       The @mention in the request spawns the reviewer.
+{review_recipe}
+     Do NOT close the bone. Do NOT merge. Do NOT release claims until the verdict is LGTM.
      Output: <promise>COMPLETE</promise>
-     STOP this iteration.
+     STOP this iteration when no verdict arrived.
 
    RISK:HIGH PATH — Security review + failure-mode checklist:
      Same as risk:medium, but when creating the review, add to description: "risk:high — failure-mode checklist required."
@@ -324,6 +325,13 @@ Go directly to:
      STOP this iteration."#,
                 agent = self.agent,
                 project = self.project,
+                review_recipe = crate::reply::review_recipe(
+                    crate::reply::ReviewAsk::New,
+                    &self.agent,
+                    &self.project,
+                    crate::reply::DEFAULT_WAIT_TIMEOUT,
+                    "       ",
+                ),
                 critical_approvers = if self.critical_approvers.is_empty() {
                     "Check project.critical_approvers in .edict.toml".to_string()
                 } else {
@@ -392,6 +400,18 @@ Go directly to:
             review_status,
             review_note,
         } = *sections;
+
+        // Rebuilt every iteration — a stale anchor is worse than none.
+        let reply_section = format!(
+            "{}{}",
+            crate::reply::anchor_section(
+                crate::reply::anchor_from_env().as_deref(),
+                &self.agent,
+                &self.project,
+            ),
+            crate::reply::ask_and_wait_section(&self.agent, crate::reply::DEFAULT_WAIT_TIMEOUT),
+        );
+
         format!(
             r#"You are worker agent "{agent}" for project "{project}".
 
@@ -407,7 +427,7 @@ COMMAND PATTERN — maw exec: All bn commands run in the default workspace. All 
 VERSION CONTROL: This project uses Git + maw.
   Workers commit with: maw exec $WS -- git add -A && maw exec $WS -- git commit -m "<message>"
   The lead handles merging workspaces into main.
-
+{reply_section}
 {dispatched}{dispatched_intro}
 
 At the end of your work, output exactly one of these completion signals:
@@ -432,8 +452,8 @@ At the end of your work, output exactly one of these completion signals:
             - Reply: maw exec $WS -- seal reply <thread-id> --agent {agent} "Fixed: <what you did>"
             - Resolve: maw exec $WS -- seal threads resolve <thread-id> --agent {agent}
          3. Re-request: maw exec $WS -- seal reviews request <review-id> --reviewers {project}-security --agent {agent}
-         5. Announce: rite send --agent {agent} {project} "Review updated: <review-id> — addressed feedback @{project}-security" -L review-response
-         STOP this iteration — wait for re-review.
+         4. Announce and wait for the re-review:
+{review_update_recipe}
        * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
        * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
      - If no review comment (work was in progress when session ended):
@@ -487,7 +507,11 @@ At the end of your work, output exactly one of these completion signals:
 
    COORDINATION LABELS on rite messages:
    - coord:interface — API/schema/config changes that affect siblings
-   - coord:blocker — You need something from a sibling: rite send --agent {agent} {project} "Blocked by <sibling-bone>: <reason>" -L coord:blocker -L "mission:<mission-id>"
+   - coord:blocker — You need something from a sibling. Anchor it and block on the answer:
+       id=$(rite send --agent {agent} {project} "Blocked by <sibling-bone>: <reason> @<sibling>" -L coord:blocker -L "mission:<mission-id>" --format json | jq -r .id)
+       rite wait --agent {agent} --reply-to "$id" -t 120 --format json
+     exit 0: follow the answer. exit 1: report the anchor to the lead once and work on
+     something else — do NOT post the same request again. exit 2: re-read the id.
    - task-done — Signal completion: rite send --agent {agent} {project} "Completed <id>" -L task-done -L "mission:<mission-id>"
 
 3. START: Try protocol command: edict protocol start <bone-id> --agent {agent}
@@ -551,6 +575,14 @@ Key rules:
             finish_step = finish_step,
             review_status = review_status,
             review_note = review_note,
+            reply_section = reply_section,
+            review_update_recipe = crate::reply::review_recipe(
+                crate::reply::ReviewAsk::Update,
+                &self.agent,
+                &self.project,
+                crate::reply::DEFAULT_WAIT_TIMEOUT,
+                "            ",
+            ),
         )
     }
 }
@@ -991,6 +1023,37 @@ mod tests {
         assert!(prompt.contains("RESUME CHECK"));
         assert!(prompt.contains("INBOX"));
         assert!(prompt.contains("TRIAGE"));
+    }
+
+    /// The worker must block on the review verdict and escalate on timeout,
+    /// instead of re-requesting the review on the next iteration.
+    #[test]
+    fn build_prompt_teaches_ask_and_wait_for_reviews() {
+        unsafe {
+            std::env::set_var("EDICT_BONE", "");
+            std::env::set_var("EDICT_WORKSPACE", "");
+        }
+
+        let worker = WorkerLoop {
+            project_root: PathBuf::from("/test"),
+            agent: "test-worker".to_string(),
+            project: "testproject".to_string(),
+            model_pool: vec!["haiku".to_string()],
+            timeout: 900,
+            review_enabled: true,
+            critical_approvers: vec![],
+            dispatched_bone: None,
+            dispatched_workspace: None,
+            dispatched_mission: None,
+            dispatched_siblings: None,
+            dispatched_mission_outcome: None,
+            dispatched_file_hints: None,
+        };
+
+        let prompt = worker.build_prompt();
+        assert!(prompt.contains("ASK AND WAIT"));
+        assert!(prompt.contains("rite wait --agent test-worker --reply-to \"$req\" -t 300"));
+        assert!(prompt.contains("Do NOT send the request again."));
     }
 
     #[test]

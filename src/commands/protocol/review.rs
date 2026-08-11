@@ -234,8 +234,9 @@ fn build_new_review_guidance(
     }
 
     guidance.advise(format!(
-        "Create review and announce. Reviewers: {}",
-        reviewer_names.join(", ")
+        "Create review and announce. Reviewers: {}. {}",
+        reviewer_names.join(", "),
+        shell::review_wait_advice(agent, project),
     ));
 
     Ok(())
@@ -406,7 +407,10 @@ fn build_blocked_guidance(
         decision.blocked_by.join(", "),
         review_detail.open_thread_count,
     ));
-    guidance.advise("Read review feedback, address issues, then re-request review.".to_string());
+    guidance.advise(format!(
+        "Read review feedback, address issues, then re-request review. {}",
+        shell::review_wait_advice(agent, project),
+    ));
 
     Ok(())
 }
@@ -463,10 +467,11 @@ fn build_needs_review_guidance(
     }
 
     guidance.advise(format!(
-        "Awaiting review from: {}. {} of {} required reviewers have voted.",
+        "Awaiting review from: {}. {} of {} required reviewers have voted. {}",
         decision.missing_approvals.join(", "),
         decision.approved_by.len(),
         decision.total_required,
+        shell::review_wait_advice(agent, project),
     ));
 
     Ok(())

@@ -417,6 +417,21 @@ fn build_prompt(
         }
     }
 
+    // Reply anchor, re-resolved on every iteration. The reviewer is spawned by a
+    // mention hook, so the anchor is the review request itself: anchoring the
+    // verdict to it is what lets the requester's `rite wait --reply-to` return.
+    let anchor = crate::reply::anchor_from_env();
+    if let Some(anchor) = anchor.as_deref() {
+        base_prompt.push_str(&crate::reply::anchor_section(Some(anchor), agent, project));
+        writeln!(
+            base_prompt,
+            "- The requester blocks on `rite wait --reply-to {anchor}`. Post the verdict as a\n  \
+             reply to it (`-L review-done`) as soon as you vote. A verdict posted top-level\n  \
+             leaves the requester waiting until timeout."
+        )
+        .expect("writing to a String is infallible");
+    }
+
     // Append previous iteration context if available
     if let Some((content, age)) = last_iteration {
         writeln!(

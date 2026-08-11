@@ -420,7 +420,7 @@ fn register_rite_hooks(root: &Path, config: &Config) -> Result<()> {
         validate_name(reviewer, "reviewer name")?;
     }
 
-    let env_inherit = "RITE_CHANNEL,RITE_MESSAGE_ID,RITE_HOOK_ID,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
+    let env_inherit = crate::reply::HOOK_ENV_INHERIT;
     let root_str = root.display().to_string();
 
     register_router_hook(

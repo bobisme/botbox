@@ -474,9 +474,11 @@ fn build_no_review_section(
         "review-request",
     ));
     guidance.steps(steps);
-    guidance.advise(
-        "No review exists yet. Create one and request reviewers before finishing.".to_string(),
-    );
+    guidance.advise(format!(
+        "No review exists yet. Create one and request reviewers before finishing. {}",
+        // Matches the placeholder identity used by the steps above.
+        shell::review_wait_advice("agent", project),
+    ));
 }
 
 /// Execute finish steps and render the execution report.
