@@ -272,6 +272,12 @@ impl SyncArgs {
             migrate_hook_reply_env(&config, &project_root);
         }
 
+        // Ensure the router hook exists — a project channel with no responder
+        // silently answers nobody (see ensure_router_hook)
+        if !self.check {
+            ensure_router_hook(&config, &project_root);
+        }
+
         // Ensure reviewer mention hooks exist for declared reviewer roles
         // (independent of review.enabled — see ensure_reviewer_hooks)
         if !self.check {
@@ -1458,6 +1464,74 @@ fn migrate_vessel_hooks(config: &Config, project_root: &Path, config_path: &Path
     }
 }
 
+/// Report whether this project should have a router (responder) hook.
+///
+/// The responder is the single entrypoint for project channel messages, and it
+/// runs entirely on rite. A project with rite disabled has no channel to route.
+const fn router_hook_enabled(config: &Config) -> bool {
+    config.tools.rite
+}
+
+/// Ensure the router (responder) hook exists.
+///
+/// `edict init` registers it, but a project can end up without one:
+///
+/// - the hook was removed by hand or lost from the hook store, or
+/// - the project was renamed, so the old hook carries the old description
+///   (`edict:<old-name>:responder`) and no migration matches it. Once that stale
+///   hook goes away, nothing recreates it.
+///
+/// Sync already guarantees this for reviewer hooks. Without the same guarantee
+/// for the router hook, `edict sync` reports success on a project whose channel
+/// answers nobody.
+fn ensure_router_hook(config: &Config, project_root: &Path) {
+    if !router_hook_enabled(config) {
+        return;
+    }
+
+    let output = match Tool::new("rite")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(o) if o.success() => o,
+        _ => return,
+    };
+
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+
+    let Some(hooks) = parsed.get("hooks").and_then(|h| h.as_array()) else {
+        return;
+    };
+
+    let name = &config.project.name;
+    let description = format!("edict:{name}:responder");
+
+    let exists = hooks.iter().any(|h| {
+        h.get("description")
+            .and_then(|d| d.as_str())
+            .is_some_and(|d| d == description)
+    });
+    if exists {
+        return;
+    }
+
+    let root_str = resolve_hook_root(project_root);
+    let agent = config.default_agent();
+    let ml = config
+        .agents
+        .responder
+        .as_ref()
+        .and_then(|r| r.memory_limit.as_deref());
+
+    // register_router_hook listens on `name`, so report that, not
+    // `config.channel()` — the two differ on projects renamed since init.
+    super::init::register_router_hook(&root_str, &root_str, name, &agent, ml);
+    println!("  Registered missing router hook for #{name}");
+}
+
 /// Ensure reviewer hooks exist when review is enabled in config.
 ///
 /// `edict init` registers these, but they can be lost during migrations or
@@ -1919,6 +1993,29 @@ mod tests {
         let design_ver = compute_design_docs_version();
         assert_eq!(design_ver.len(), 32);
         assert!(design_ver.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn router_hook_follows_the_rite_tool_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".edict.toml");
+
+        fs::write(
+            &path,
+            "version = \"1.0.16\"\n[project]\nname = \"demo\"\n\n[tools]\nrite = true\n",
+        )
+        .unwrap();
+        assert!(router_hook_enabled(&Config::load(&path).unwrap()));
+
+        fs::write(
+            &path,
+            "version = \"1.0.16\"\n[project]\nname = \"demo\"\n\n[tools]\nrite = false\n",
+        )
+        .unwrap();
+        assert!(
+            !router_hook_enabled(&Config::load(&path).unwrap()),
+            "a project without rite has no channel to route"
+        );
     }
 
     #[test]

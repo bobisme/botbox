@@ -585,34 +585,55 @@ fn check_rite_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) {
     let empty_vec = vec![];
     let hooks = hooks_data["hooks"].as_array().unwrap_or(&empty_vec);
 
-    let router_claim = format!("agent://{}-router", config.project.name);
-    let has_router = hooks.iter().any(|h| {
-        h["condition"]["claim"]
-            .as_str()
-            .is_some_and(|c| c == router_claim)
-    });
-
-    if !has_router {
-        issues.push(format!("Missing rite router hook (claim: {router_claim})"));
+    // Match on description, the one field edict controls and keeps stable.
+    // Earlier versions matched `condition.claim` / `condition.mention`, which
+    // are not the field names rite emits (`condition.pattern`, and an agent
+    // under a `mention_received` type), so both checks reported missing hooks
+    // whether or not they existed.
+    let name = &config.project.name;
+    if !has_hook(hooks, &format!("edict:{name}:responder")) {
+        issues.push(format!("Missing rite router hook (edict:{name}:responder)"));
     }
 
     for reviewer in &config.review.reviewers {
-        let mention_name = format!("{}-{reviewer}", config.project.name);
-        let has_reviewer = hooks.iter().any(|h| {
-            h["condition"]["mention"]
-                .as_str()
-                .is_some_and(|m| m == mention_name)
-        });
-
-        if !has_reviewer {
-            issues.push(format!("Missing rite reviewer hook for @{mention_name}"));
+        if !has_hook(hooks, &format!("edict:{name}:reviewer-{reviewer}")) {
+            issues.push(format!("Missing rite reviewer hook for @{name}-{reviewer}"));
         }
     }
+}
+
+/// Report whether a hook with this edict description is registered.
+fn has_hook(hooks: &[serde_json::Value], description: &str) -> bool {
+    hooks
+        .iter()
+        .any(|h| h["description"].as_str().is_some_and(|d| d == description))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn has_hook_matches_the_edict_description() {
+        // Shape as rite emits it: no `condition.claim`, no `condition.mention`.
+        let hooks = vec![
+            json!({
+                "id": "hk-1",
+                "condition": {"type": "claim_available", "pattern": "agent://demo-dev"},
+                "description": "edict:demo:responder"
+            }),
+            json!({
+                "id": "hk-2",
+                "condition": {"type": "mention_received", "agent": "demo-security"},
+                "description": "edict:demo:reviewer-security"
+            }),
+        ];
+
+        assert!(has_hook(&hooks, "edict:demo:responder"));
+        assert!(has_hook(&hooks, "edict:demo:reviewer-security"));
+        assert!(!has_hook(&hooks, "edict:other:responder"));
+        assert!(!has_hook(&[], "edict:demo:responder"));
+    }
 
     #[test]
     fn validate_name_accepts_valid() {
