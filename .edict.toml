@@ -8,7 +8,7 @@ name = "edict"
 type = ["cli"]
 languages = ["rust"]
 default_agent = "edict-dev"
-channel = "botbox"
+channel = "edict"
 release_instructions = """
 1. Commit and push to main
 2. Tag and push: `maw release vX.Y.Z`
