@@ -282,41 +282,77 @@ fn run_with_timeout(
 
 /// Ensure exactly one rite hook exists with the given description.
 ///
-/// Performs idempotent upsert: finds any existing hook(s) matching the
-/// description, removes them, then adds a new hook with current parameters.
-/// The `add_args` slice should contain all args for `rite hooks add` *except*
-/// `--description` (which is added automatically).
+/// Converges the hook by its stable name (`rite hooks add --name`), which
+/// updates the record in place and keeps its ID. That matters:
 ///
-/// Returns `Ok(("created"|"updated"|"unchanged", hook_id))`.
+/// - The ID is the spawn-lease key (`spawn://<hook-id>/<channel>`). A new ID
+///   means a responder that is still running holds a lease on the old ID while
+///   the replacement sees a free pattern and spawns a second agent beside it.
+/// - Fields edict does not pass keep their current values, so a converge cannot
+///   strip configuration edict never learned about — a lease, most of all.
+/// - `last_fired` survives, so a cooldown hook does not get a free firing.
+///
+/// Hooks registered before named hooks existed carry no name, and adding a
+/// named hook beside one produces a duplicate rather than adopting it. Those
+/// are removed once, on the converge that adopts the name.
+///
+/// Falls back to remove-and-add against a rite that has no `--name`.
+///
+/// The `add_args` slice should contain all args for `rite hooks add` *except*
+/// `--description`, `--name` and `--owner`, which are added here.
+///
+/// Returns `Ok(("created"|"updated"|"adopted", hook_id))`.
 ///
 /// # Errors
 ///
 /// Returns `Err` if the `rite hooks add` command cannot be run or fails.
 pub fn ensure_rite_hook(description: &str, add_args: &[&str]) -> anyhow::Result<(String, String)> {
-    // List existing hooks
-    let existing = Tool::new("rite")
-        .args(&["hooks", "list", "--format", "json"])
-        .run();
+    let hooks = list_rite_hooks();
+    let named = rite_supports_named_hooks();
+    let plan = plan_converge(&hooks, description, named);
 
+    let mut adopted = false;
     let mut removed = false;
-    if let Ok(output) = existing
-        && output.success()
-        && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output.stdout)
-        && let Some(hooks) = parsed.get("hooks").and_then(|h| h.as_array())
-    {
-        for hook in hooks {
-            let desc = hook.get("description").and_then(|d| d.as_str());
-            if desc == Some(description)
-                && let Some(id) = hook.get("id").and_then(|i| i.as_str())
-            {
+    match &plan {
+        // Nothing to remove: the add updates the named record in place.
+        ConvergePlan::UpdateInPlace | ConvergePlan::Create => {}
+        ConvergePlan::Adopt { id, duplicates } => {
+            let set_ok = Tool::new("rite")
+                .args(&[
+                    "hooks",
+                    "set",
+                    id,
+                    "--name",
+                    description,
+                    "--owner",
+                    HOOK_OWNER,
+                ])
+                .run()
+                .is_ok_and(|o| o.success());
+            if set_ok {
+                adopted = true;
+            } else {
+                // Could not name it in place — fall back to replacing it.
+                let _ = Tool::new("rite").args(&["hooks", "remove", id]).run();
+                removed = true;
+            }
+            for dup in duplicates {
+                let _ = Tool::new("rite").args(&["hooks", "remove", dup]).run();
+                removed = true;
+            }
+        }
+        ConvergePlan::Replace(ids) => {
+            for id in ids {
                 let _ = Tool::new("rite").args(&["hooks", "remove", id]).run();
                 removed = true;
             }
         }
     }
 
-    // Add with --description
     let mut args = vec!["hooks", "add", "--description", description];
+    if named {
+        args.extend_from_slice(&["--name", description, "--owner", HOOK_OWNER]);
+    }
     args.extend_from_slice(add_args);
 
     let result = Tool::new("rite").args(&args).run()?;
@@ -333,8 +369,119 @@ pub fn ensure_rite_hook(description: &str, add_args: &[&str]) -> anyhow::Result<
         .unwrap_or("unknown")
         .to_string();
 
-    let action = if removed { "updated" } else { "created" };
+    let action = if plan == ConvergePlan::UpdateInPlace {
+        "updated"
+    } else if adopted {
+        "adopted"
+    } else if removed {
+        "replaced"
+    } else {
+        "created"
+    };
     Ok((action.to_string(), hook_id))
+}
+
+/// What a converge must do to the hooks already in the store.
+#[derive(Debug, PartialEq, Eq)]
+enum ConvergePlan {
+    /// A hook already carries this name: adding again updates it in place.
+    UpdateInPlace,
+    /// A legacy hook matches by description. Name it in place, keeping its ID
+    /// (and its spawn lease); remove any further duplicate, since a name is
+    /// unique per channel.
+    Adopt { id: String, duplicates: Vec<String> },
+    /// No named-hook support: the old remove-and-add path.
+    Replace(Vec<String>),
+    /// Nothing matches — this is a new hook.
+    Create,
+}
+
+/// Decide how to converge, given the current hooks and whether rite names them.
+fn plan_converge(hooks: &[serde_json::Value], description: &str, named: bool) -> ConvergePlan {
+    let field = |h: &serde_json::Value, key: &str| -> Option<String> {
+        h.get(key)
+            .and_then(|v| v.as_str())
+            .map(std::string::ToString::to_string)
+    };
+
+    if named
+        && hooks
+            .iter()
+            .any(|h| field(h, "name").as_deref() == Some(description))
+    {
+        return ConvergePlan::UpdateInPlace;
+    }
+
+    let matching: Vec<String> = hooks
+        .iter()
+        .filter(|h| field(h, "description").as_deref() == Some(description))
+        .filter(|h| !named || field(h, "name").is_none())
+        .filter_map(|h| field(h, "id"))
+        .collect();
+
+    if !named {
+        return if matching.is_empty() {
+            ConvergePlan::Create
+        } else {
+            ConvergePlan::Replace(matching)
+        };
+    }
+
+    let mut ids = matching.into_iter();
+    ids.next()
+        .map_or(ConvergePlan::Create, |id| ConvergePlan::Adopt {
+            id,
+            duplicates: ids.collect(),
+        })
+}
+
+/// Owner recorded on every hook edict manages (`rite hooks list --owner edict`).
+pub const HOOK_OWNER: &str = "edict";
+
+/// Read the hook records rite knows about, or an empty list when rite is absent.
+fn list_rite_hooks() -> Vec<serde_json::Value> {
+    let Ok(output) = Tool::new("rite")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    else {
+        return Vec::new();
+    };
+    if !output.success() {
+        return Vec::new();
+    }
+    serde_json::from_str::<serde_json::Value>(&output.stdout)
+        .ok()
+        .and_then(|v| v.get("hooks").and_then(|h| h.as_array()).cloned())
+        .unwrap_or_default()
+}
+
+/// Report whether the installed rite converges hooks by name.
+///
+/// Probed from `--help` rather than the version string: named hooks landed on
+/// rite trunk after v0.33.0 was cut, so `rite --version` says 0.33.0 both with
+/// and without them.
+pub fn rite_supports_named_hooks() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| help_mentions("rite", &["hooks", "add", "--help"], "--name"))
+}
+
+/// Report whether the installed vessel inherits a whole env namespace
+/// (`--env-inherit "RITE_*"`).
+///
+/// An older vessel treats `RITE_*` as a literal variable name and silently
+/// inherits nothing, which would leave every spawned agent without
+/// `RITE_CHANNEL`. Probe before shortening the list.
+pub fn vessel_supports_env_prefix() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| help_mentions("vessel", &["spawn", "--help"], "RITE_*"))
+}
+
+/// Run `<tool> <args>` and report whether the help text contains `needle`.
+fn help_mentions(tool: &str, args: &[&str], needle: &str) -> bool {
+    Tool::new(tool)
+        .args(args)
+        .run()
+        .is_ok_and(|o| o.stdout.contains(needle) || o.stderr.contains(needle))
 }
 
 /// Simple helper to run a command with args, optionally in a specific directory.
@@ -366,6 +513,85 @@ pub fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> anyhow::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn hook(id: &str, description: &str, name: Option<&str>) -> serde_json::Value {
+        let mut h = serde_json::json!({"id": id, "description": description});
+        if let Some(n) = name {
+            h["name"] = serde_json::json!(n);
+        }
+        h
+    }
+
+    #[test]
+    fn a_named_hook_converges_in_place() {
+        // The whole point: no removal, so the ID — and the spawn lease keyed on
+        // it — survives the converge.
+        let hooks = vec![hook(
+            "hk-1",
+            "edict:demo:responder",
+            Some("edict:demo:responder"),
+        )];
+        assert_eq!(
+            plan_converge(&hooks, "edict:demo:responder", true),
+            ConvergePlan::UpdateInPlace
+        );
+    }
+
+    #[test]
+    fn a_legacy_hook_is_named_in_place_not_replaced() {
+        let hooks = vec![hook("hk-1", "edict:demo:responder", None)];
+        assert_eq!(
+            plan_converge(&hooks, "edict:demo:responder", true),
+            ConvergePlan::Adopt {
+                id: "hk-1".to_string(),
+                duplicates: vec![],
+            }
+        );
+    }
+
+    #[test]
+    fn duplicate_legacy_hooks_collapse_to_one() {
+        let hooks = vec![
+            hook("hk-1", "edict:demo:responder", None),
+            hook("hk-2", "edict:demo:responder", None),
+        ];
+        assert_eq!(
+            plan_converge(&hooks, "edict:demo:responder", true),
+            ConvergePlan::Adopt {
+                id: "hk-1".to_string(),
+                duplicates: vec!["hk-2".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn other_hooks_are_never_touched() {
+        let hooks = vec![
+            hook(
+                "hk-1",
+                "edict:other:responder",
+                Some("edict:other:responder"),
+            ),
+            hook("hk-2", "rite:canary", None),
+        ];
+        assert_eq!(
+            plan_converge(&hooks, "edict:demo:responder", true),
+            ConvergePlan::Create
+        );
+    }
+
+    #[test]
+    fn without_named_hooks_the_old_replace_path_stands() {
+        let hooks = vec![hook("hk-1", "edict:demo:responder", None)];
+        assert_eq!(
+            plan_converge(&hooks, "edict:demo:responder", false),
+            ConvergePlan::Replace(vec!["hk-1".to_string()])
+        );
+        assert_eq!(
+            plan_converge(&[], "edict:demo:responder", false),
+            ConvergePlan::Create
+        );
+    }
 
     #[test]
     fn run_echo() {

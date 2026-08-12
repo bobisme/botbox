@@ -420,7 +420,7 @@ fn register_rite_hooks(root: &Path, config: &Config) -> Result<()> {
         validate_name(reviewer, "reviewer name")?;
     }
 
-    let env_inherit = crate::reply::HOOK_ENV_INHERIT;
+    let env_inherit = crate::reply::hook_env_inherit();
     let root_str = root.display().to_string();
 
     register_router_hook(

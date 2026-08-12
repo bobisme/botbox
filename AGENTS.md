@@ -53,9 +53,21 @@ The router hook spawns `edict run responder` which routes messages based on `!` 
 
 Also accepts old-style `q:` / `qq:` / `big q:` / `q(model):` prefixes for backwards compatibility.
 
-Hook commands use `vessel spawn` with `--env-inherit` to forward environment variables to the spawned agent: `RITE_CHANNEL`, `RITE_MESSAGE_ID`, `RITE_HOOK_ID`, and the lease batch vars `RITE_BATCH_COUNT` / `RITE_BATCH_MESSAGE_IDS` / `RITE_LEASE_PATTERN`. The list lives in one place — `reply::HOOK_ENV_INHERIT` (`src/reply.rs`).
+Hook commands use `vessel spawn --env-inherit "RITE_*,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT"` to forward environment to the spawned agent. One namespace covers every var rite sets — `RITE_CHANNEL`, `RITE_MESSAGE_ID`, `RITE_AGENT`, `RITE_HOOK_ID`, and the lease-only `RITE_BATCH_COUNT` / `RITE_BATCH_MESSAGE_IDS` / `RITE_LEASE_PATTERN` — plus `RITE_DATA_DIR`, which keeps an isolated test store isolated across a spawn. The value lives in one place — `reply::hook_env_inherit()` (`src/reply.rs`).
 
-`RITE_AGENT` is deliberately NOT inherited: the hook sets it to the message *sender*, so a spawned reviewer or responder resolves its own identity from its `--agent` flag instead.
+A vessel older than 0.18 treats `RITE_*` as a literal name and inherits nothing, so `hook_env_inherit()` probes `vessel spawn --help` and falls back to the explicit list.
+
+`RITE_AGENT` holds the hook's `claim_owner` when it has one, which for every edict hook is the spawned agent itself, not the sender. The loops still resolve identity from `--agent` and override the env.
+
+### Hook Convergence
+
+`ensure_rite_hook` (`src/subprocess.rs`) converges a hook by its stable name (`rite hooks add --name edict:<project>:<role> --owner edict`), which rewrites the record in place and keeps its ID. Never remove-and-add:
+
+- The ID is the spawn-lease key (`spawn://<hook-id>/<channel>`). A new ID lets a replacement spawn beside a responder that still holds the old lease.
+- Fields edict does not pass keep their current values, so a converge cannot strip configuration edict never learned about — a lease above all.
+- `last_fired` survives, so a cooldown hook gets no free firing.
+
+Hooks registered before named hooks existed carry no name. Adding a named hook beside one produces a duplicate, so the first converge adopts them with `rite hooks set <id> --name … --owner edict`, which keeps the ID and the lease. Against a rite with no `--name` (probed from `hooks add --help`, since the feature landed after v0.33.0 was cut), the old remove-and-add path still applies.
 
 `RITE_MESSAGE_ID` is also the spawned agent's **reply anchor** — the message it must answer with `rite send --reply-to`. For a lease batch the anchor is the LAST id in `RITE_BATCH_MESSAGE_IDS` (chronological, triggering message last).
 

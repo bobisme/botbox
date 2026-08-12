@@ -11,26 +11,41 @@
 //! lease-enabled hook handed it a batch (that list is chronological, and the
 //! triggering message is last).
 
-/// Env vars forwarded to hook-spawned agents by `vessel spawn --env-inherit`.
+/// Env vars forwarded to hook-spawned agents, as `vessel spawn --env-inherit`
+/// takes them: the whole `RITE_` namespace plus the few vars outside it.
 ///
-/// `RITE_BATCH_*` and `RITE_LEASE_PATTERN` are set only for lease-enabled hooks;
-/// inheriting them is harmless when they are unset.
+/// One namespace covers every var rite sets at spawn — `RITE_CHANNEL`,
+/// `RITE_MESSAGE_ID`, `RITE_HOOK_ID`, and the lease-only `RITE_BATCH_COUNT`,
+/// `RITE_BATCH_MESSAGE_IDS`, `RITE_LEASE_PATTERN` — so a var rite adds later
+/// reaches the agent without an edict release. It also carries `RITE_DATA_DIR`,
+/// which keeps an isolated test store isolated across a spawn.
 ///
-/// `RITE_AGENT` is deliberately absent. The hook sets it to the *sender*, and a
-/// spawned reviewer or responder must resolve its own identity from its
-/// `--agent` flag instead.
-pub const HOOK_ENV_INHERIT: &str = "RITE_CHANNEL,RITE_MESSAGE_ID,RITE_HOOK_ID,RITE_BATCH_COUNT,RITE_BATCH_MESSAGE_IDS,RITE_LEASE_PATTERN,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
+/// `RITE_AGENT` comes along too. rite sets it to the hook's `claim_owner` when
+/// there is one, which for every edict hook is the spawned agent itself, not
+/// the sender. The loops override it from `--agent` regardless.
+pub const HOOK_ENV_INHERIT: &str = "RITE_*,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
+
+/// The pre-wildcard form, for a vessel too old to expand `RITE_*`.
+///
+/// Such a vessel treats `RITE_*` as a literal variable name, inherits nothing,
+/// and leaves the agent without `RITE_CHANNEL`.
+pub const HOOK_ENV_INHERIT_EXPLICIT: &str = "RITE_CHANNEL,RITE_MESSAGE_ID,RITE_AGENT,RITE_HOOK_ID,RITE_BATCH_COUNT,RITE_BATCH_MESSAGE_IDS,RITE_LEASE_PATTERN,SSH_AUTH_SOCK,OTEL_EXPORTER_OTLP_ENDPOINT,TRACEPARENT";
+
+/// The `--env-inherit` value to register, matched to the installed vessel.
+#[must_use]
+pub fn hook_env_inherit() -> &'static str {
+    if crate::subprocess::vessel_supports_env_prefix() {
+        HOOK_ENV_INHERIT
+    } else {
+        HOOK_ENV_INHERIT_EXPLICIT
+    }
+}
 
 /// Seconds a loop blocks on `rite wait --reply-to` before it escalates.
 ///
 /// Short enough to leave room inside an agent timeout (900s for dev and worker
 /// loops), long enough for a spawned reviewer to start and answer.
 pub const DEFAULT_WAIT_TIMEOUT: u64 = 300;
-
-/// Marker that identifies a hook registered with the batch env vars.
-///
-/// Sync uses it to detect hooks registered before threading support.
-pub const BATCH_ENV_MARKER: &str = "RITE_BATCH_MESSAGE_IDS";
 
 /// Report whether `s` looks like a ULID (26 Crockford base32 characters).
 ///
@@ -301,12 +316,39 @@ mod tests {
     }
 
     #[test]
-    fn hook_env_inherit_carries_batch_vars_but_not_identity() {
-        assert!(HOOK_ENV_INHERIT.contains(BATCH_ENV_MARKER));
-        assert!(HOOK_ENV_INHERIT.contains("RITE_MESSAGE_ID"));
-        assert!(
-            !HOOK_ENV_INHERIT.split(',').any(|v| v == "RITE_AGENT"),
-            "inheriting RITE_AGENT would give the spawned agent the sender's identity"
-        );
+    fn env_inherit_forms_cover_the_same_rite_namespace() {
+        // The wildcard stands in for every RITE_ var the explicit list names,
+        // so a vessel that cannot expand it loses nothing.
+        assert!(HOOK_ENV_INHERIT.split(',').any(|v| v == "RITE_*"));
+        for var in HOOK_ENV_INHERIT_EXPLICIT.split(',') {
+            if let Some(rest) = var.strip_prefix("RITE_") {
+                assert!(!rest.is_empty(), "RITE_ prefix alone is not a variable");
+            } else {
+                assert!(
+                    HOOK_ENV_INHERIT.split(',').any(|v| v == var),
+                    "{var} is outside the RITE_ namespace and must be listed explicitly"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn explicit_env_inherit_names_every_var_rite_sets() {
+        // Mirrors rite src/cli/hooks.rs: the four always set, plus the three a
+        // lease adds.
+        for var in [
+            "RITE_CHANNEL",
+            "RITE_MESSAGE_ID",
+            "RITE_AGENT",
+            "RITE_HOOK_ID",
+            "RITE_BATCH_COUNT",
+            "RITE_BATCH_MESSAGE_IDS",
+            "RITE_LEASE_PATTERN",
+        ] {
+            assert!(
+                HOOK_ENV_INHERIT_EXPLICIT.split(',').any(|v| v == var),
+                "{var} missing from the pre-wildcard list"
+            );
+        }
     }
 }

@@ -1717,14 +1717,15 @@ fn migrate_botbus_env_hooks(config: &Config, project_root: &Path) {
     }
 }
 
-/// Re-register hooks whose `--env-inherit` predates rite threading support.
+/// Converge hooks whose `--env-inherit` differs from the one edict registers now.
 ///
 /// A spawned agent can only anchor its reply when the hook forwards the id of
-/// the message that woke it. Hooks registered before `RITE_BATCH_*` support
-/// carry an env-inherit list without `RITE_BATCH_MESSAGE_IDS`, so a lease batch
-/// leaves the agent with no anchor for the triggering message.
+/// the message that woke it, so an older list without `RITE_BATCH_MESSAGE_IDS`
+/// leaves a lease batch with no anchor. Comparing against the current value
+/// rather than probing for one marker also covers the move to the `RITE_*`
+/// namespace, and any list edict adopts later.
 ///
-/// Idempotent — a hook that already carries the marker is skipped.
+/// Idempotent — a hook already carrying the current list is skipped.
 fn migrate_hook_reply_env(config: &Config, project_root: &Path) {
     let output = match Tool::new("rite")
         .args(&["hooks", "list", "--format", "json"])
@@ -1748,18 +1749,18 @@ fn migrate_hook_reply_env(config: &Config, project_root: &Path) {
     let root_str = resolve_hook_root(project_root);
     let agent = config.default_agent();
 
+    let wanted = crate::reply::hook_env_inherit();
+
     for hook in &hooks {
-        // Only hooks that pass an env-inherit list without the batch vars.
+        // Only hooks that inherit an env list, and only when it is not the one
+        // edict registers today.
         let command = hook.get("command").and_then(|c| c.as_array());
         let Some(command) = command else { continue };
         let inherits_env = command
             .iter()
-            .any(|v| v.as_str().is_some_and(|s| s.contains("RITE_MESSAGE_ID")));
-        let has_batch = command.iter().any(|v| {
-            v.as_str()
-                .is_some_and(|s| s.contains(crate::reply::BATCH_ENV_MARKER))
-        });
-        if !inherits_env || has_batch {
+            .any(|v| v.as_str().is_some_and(|s| s.contains("RITE_")));
+        let current = command.iter().any(|v| v.as_str() == Some(wanted));
+        if !inherits_env || current {
             continue;
         }
 
@@ -1775,7 +1776,7 @@ fn migrate_hook_reply_env(config: &Config, project_root: &Path) {
                 .as_ref()
                 .and_then(|r| r.memory_limit.as_deref());
             super::init::register_router_hook(&root_str, &root_str, name, &agent, ml);
-            println!("  Migrated router hook: forwards RITE_BATCH_* for reply anchors");
+            println!("  Converged router hook --env-inherit");
         } else if let Some(role) = desc
             .strip_prefix(&format!("edict:{name}:reviewer-"))
             .filter(|r| !r.is_empty())
@@ -1794,7 +1795,7 @@ fn migrate_hook_reply_env(config: &Config, project_root: &Path) {
                 &reviewer_agent,
                 ml,
             );
-            println!("  Migrated reviewer hook {role}: forwards RITE_BATCH_* for reply anchors");
+            println!("  Converged reviewer hook {role} --env-inherit");
         }
     }
 }
