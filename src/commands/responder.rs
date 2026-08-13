@@ -759,30 +759,50 @@ impl Responder {
             .map_or_else(|| model.to_string(), |c| c.resolve_model(model))
     }
 
+    /// Resolve a model string to the pool to try in order.
+    ///
+    /// A tier name yields every model in that tier, so one provider failing does
+    /// not end the conversation. A legacy short name or an explicit
+    /// `provider/model` yields just itself — asking for one model means that
+    /// model.
+    fn model_pool(&self, model: &str) -> Vec<String> {
+        self.config
+            .as_ref()
+            .map_or_else(|| vec![model.to_string()], |c| c.resolve_model_pool(model))
+    }
+
     // --- Run agent ---
 
+    /// Run one agent turn, trying each model in the pool before giving up.
     fn run_agent(&self, prompt: &str, model: &str) -> anyhow::Result<String> {
-        eprintln!("Running agent (model: {model})...");
-        let timeout_str = self.claude_timeout.to_string();
+        let pool = self.model_pool(model);
+        eprintln!("Running agent (model: {})...", pool.join(", "));
         let start = crate::telemetry::metrics::time_start();
-        let output = Tool::new("edict")
-            .args(&[
-                "run",
-                "agent",
-                prompt,
-                "-m",
-                model,
-                "-t",
-                &timeout_str,
-                "--skip-permissions",
-            ])
-            .run_ok()?;
+        let output =
+            super::worker_loop::run_agent_with_fallback(prompt, &pool, self.claude_timeout)?;
         crate::telemetry::metrics::time_record(
             "edict.responder.agent_run_duration_seconds",
             start,
             &[("model", model)],
         );
-        Ok(output.stdout)
+        Ok(output)
+    }
+
+    /// Tell the channel the turn failed, anchored to the message being answered.
+    ///
+    /// A responder that dies quietly looks identical to one that never woke up:
+    /// the human sees their follow-up get no reply and the agent disappear. Say
+    /// so instead, and leave the conversation open.
+    fn report_turn_failure(&self, error: &anyhow::Error) {
+        let reason = error.to_string();
+        let reason = reason.lines().next().unwrap_or("unknown error");
+        let reason: String = reason.chars().take(200).collect();
+        eprintln!("Agent run failed: {reason}");
+        crate::telemetry::metrics::counter("edict.responder.turn_failures_total", 1, &[]);
+        let _ = self.rite_send(
+            &format!("Could not answer that: {reason}. Send it again to retry."),
+            Some("agent-error"),
+        );
     }
 
     // --- Capture agent response from rite history ---
@@ -1022,8 +1042,10 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error running Claude: {e}");
-                    break;
+                    // One failed turn must not end the conversation: report it
+                    // and go back to waiting, so the next message gets a fresh
+                    // attempt instead of silence.
+                    self.report_turn_failure(&e);
                 }
             }
 
@@ -1387,7 +1409,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 self.handle_question_follow_up_loop(message)?;
             }
             Err(e) => {
-                eprintln!("Error in triage: {e}");
+                self.report_turn_failure(&e);
             }
         }
         Ok(())
@@ -1496,8 +1518,7 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     }
                 }
                 Err(e) => {
-                    eprintln!("Error running Claude: {e}");
-                    break;
+                    self.report_turn_failure(&e);
                 }
             }
         }
@@ -1917,6 +1938,66 @@ mod tests {
             body: "how does sync work?".to_string(),
             labels: Vec::new(),
         }
+    }
+
+    fn config_with_tiers() -> (tempfile::TempDir, Config) {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(".edict.toml");
+        std::fs::write(
+            &path,
+            r#"version = "1.0.16"
+[project]
+name = "testproject"
+
+[models]
+fast = ["anthropic/claude-haiku-4-5:low", "openai-codex/gpt-5.6-luna"]
+"#,
+        )
+        .unwrap();
+        let config = Config::load(&path).unwrap();
+        (dir, config)
+    }
+
+    #[test]
+    fn a_tier_gives_the_whole_pool_to_fall_back_through() {
+        let (_dir, config) = config_with_tiers();
+        let mut r = test_responder(None);
+        r.config = Some(config);
+
+        let mut pool = r.model_pool("fast");
+        pool.sort();
+        assert_eq!(
+            pool,
+            vec![
+                "anthropic/claude-haiku-4-5:low".to_string(),
+                "openai-codex/gpt-5.6-luna".to_string(),
+            ],
+            "a tier must yield every model, so one provider failing is survivable"
+        );
+    }
+
+    #[test]
+    fn naming_one_model_gets_exactly_that_model() {
+        let (_dir, config) = config_with_tiers();
+        let mut r = test_responder(None);
+        r.config = Some(config);
+
+        // Legacy short name: deterministic, no surprise substitution.
+        assert_eq!(
+            r.model_pool("sonnet"),
+            vec!["anthropic/claude-sonnet-5:medium"]
+        );
+        // Explicit provider/model passes through untouched.
+        assert_eq!(
+            r.model_pool("openai-codex/gpt-5.6-sol"),
+            vec!["openai-codex/gpt-5.6-sol"]
+        );
+    }
+
+    #[test]
+    fn a_pool_is_still_returned_without_config() {
+        let r = test_responder(None);
+        assert_eq!(r.model_pool("sonnet"), vec!["sonnet"]);
     }
 
     #[test]

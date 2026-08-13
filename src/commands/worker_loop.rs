@@ -675,7 +675,13 @@ fn load_config(root: &Path) -> anyhow::Result<Config> {
 /// Tries each model in the pool sequentially. If a model returns a rate limit error (429),
 /// logs a warning and tries the next model. Returns error only when all models are exhausted
 /// or a non-rate-limit error occurs.
-fn run_agent_with_fallback(
+///
+/// Shared with the responder so both paths survive one provider failing.
+///
+/// # Errors
+///
+/// Returns `Err` when every model in the pool fails.
+pub fn run_agent_with_fallback(
     prompt: &str,
     model_pool: &[String],
     timeout: u64,
