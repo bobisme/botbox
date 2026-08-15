@@ -10,7 +10,7 @@ use std::io::IsTerminal;
 use anyhow::Context;
 use serde::Deserialize;
 
-use super::adapters::ReviewDetail;
+use super::adapters::{self, ReviewDetail};
 use super::context::ProtocolContext;
 use super::render::{self, ProtocolGuidance, ProtocolStatus};
 use super::review_gate::{self, ReviewGateStatus};
@@ -367,6 +367,30 @@ fn classify_commit_freshness(
     }
 }
 
+/// Classify freshness from a `seal diff` summary, preferring seal's own answer.
+///
+/// seal >= 0.28 records the commit each approval applied to and reports
+/// `approval_stale` directly. That is the authoritative answer to the question
+/// this gate asks, and it is the same check `seal reviews mark-merged` enforces
+/// — so agreeing with it means edict blocks where seal would block, instead of
+/// sending an agent into a merge that exits 1.
+///
+/// Older seal reports no coverage. Fall back to comparing the review's target
+/// commit against the workspace HEAD, which is all edict could ever infer.
+fn freshness_from_summary(
+    summary: Option<&adapters::ReviewDiffSummary>,
+    workspace_head: Option<String>,
+) -> review_gate::CommitFreshness {
+    match summary.and_then(|s| s.approval_stale) {
+        Some(true) => review_gate::CommitFreshness::Stale,
+        Some(false) => review_gate::CommitFreshness::Fresh,
+        None => classify_commit_freshness(
+            summary.and_then(|s| s.target_commit.clone()),
+            workspace_head,
+        ),
+    }
+}
+
 /// Check the review gate. Only called when review is enabled and not forced.
 /// Returns `Ok(true)` when the caller should stop (guidance was printed),
 /// `Ok(false)` to continue. May update `merge_target` from the review detail.
@@ -416,10 +440,9 @@ fn evaluate_found_review(
     // diff was last computed against to the workspace's actual current
     // HEAD; either subprocess failing, or the two disagreeing, fails
     // closed via `bind_to_commit` below rather than trusting stale votes.
-    let commit_freshness = classify_commit_freshness(
-        ctx.review_target_commit(review_id, workspace)
-            .ok()
-            .flatten(),
+    let diff_summary = ctx.review_diff_summary(review_id, workspace).ok();
+    let commit_freshness = freshness_from_summary(
+        diff_summary.as_ref(),
         ctx.workspace_head_commit(workspace).ok(),
     );
     let decision = review_gate::bind_to_commit(
@@ -452,13 +475,29 @@ fn evaluate_found_review(
         }
         ReviewGateStatus::NeedsReview if decision.stale_approval => {
             guidance.status = ProtocolStatus::NeedsReview;
+            // Name the uncovered commits when seal counted them, so the agent
+            // sees the same numbers `seal reviews mark-merged` would refuse on.
+            let scope = diff_summary.as_ref().map_or_else(String::new, |d| {
+                match (d.approved_commit.as_deref(), d.uncovered_commits) {
+                    (Some(commit), Some(n)) => {
+                        let short: String = commit.chars().take(12).collect();
+                        format!(" Approved at {short}, {n} commit(s) not covered.")
+                    }
+                    _ => String::new(),
+                }
+            });
             guidance.diagnostic(format!(
                 "Review {review_id} was approved for an earlier commit — new commits have \
                  landed on workspace {workspace} since (or the commit couldn't be \
-                 confirmed). Re-request review so it covers the latest commits."
+                 confirmed).{scope} `seal reviews mark-merged` refuses this until the \
+                 approval covers the current code."
             ));
-            guidance
-                .advise("Re-request review, then wait for approval before merging.".to_string());
+            guidance.advise(
+                "Re-request review and wait for a fresh LGTM, which moves the approval onto \
+                 the new commit. Only pass --allow-stale-approval when the new commits are \
+                 provably outside what was reviewed."
+                    .to_string(),
+            );
 
             let steps = vec![
                 shell::seal_request_cmd(
@@ -1190,6 +1229,61 @@ mod tests {
     }
 
     // --- classify_commit_freshness ---
+
+    fn summary(target: Option<&str>, stale: Option<bool>) -> adapters::ReviewDiffSummary {
+        adapters::ReviewDiffSummary {
+            target_commit: target.map(ToString::to_string),
+            approval_stale: stale,
+            approved_commit: None,
+            uncovered_commits: None,
+        }
+    }
+
+    #[test]
+    fn seals_own_verdict_wins_over_the_commit_comparison() {
+        // seal >= 0.28 knows which commit the approval applied to. Its answer is
+        // the one `mark-merged` enforces, so the gate must agree with it even
+        // when the target commit happens to match the workspace HEAD.
+        assert_eq!(
+            freshness_from_summary(
+                Some(&summary(Some("abc123"), Some(true))),
+                Some("abc123".into())
+            ),
+            review_gate::CommitFreshness::Stale
+        );
+        assert_eq!(
+            freshness_from_summary(
+                Some(&summary(Some("abc123"), Some(false))),
+                Some("def456".into())
+            ),
+            review_gate::CommitFreshness::Fresh
+        );
+    }
+
+    #[test]
+    fn older_seal_falls_back_to_comparing_commits() {
+        // No coverage reported: compare target against workspace HEAD.
+        assert_eq!(
+            freshness_from_summary(Some(&summary(Some("abc123"), None)), Some("abc123".into())),
+            review_gate::CommitFreshness::Fresh
+        );
+        assert_eq!(
+            freshness_from_summary(Some(&summary(Some("abc123"), None)), Some("def456".into())),
+            review_gate::CommitFreshness::Stale
+        );
+    }
+
+    #[test]
+    fn a_failed_diff_still_fails_closed() {
+        assert_eq!(
+            freshness_from_summary(None, Some("abc123".into())),
+            review_gate::CommitFreshness::Unknown
+        );
+        assert_eq!(
+            freshness_from_summary(Some(&summary(None, None)), Some("abc123".into())),
+            review_gate::CommitFreshness::Unknown
+        );
+    }
 
     #[test]
     fn commit_freshness_matching_commits_are_fresh() {

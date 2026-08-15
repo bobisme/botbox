@@ -370,6 +370,9 @@ Go directly to:
    If it fails (exit 1 = command unavailable), fall back to manual finish:
      If a review was conducted:
        maw exec default -- seal reviews mark-merged <review-id> --agent {agent}.
+       Exits 1 if you committed after the LGTM ("the approval does not cover the current
+       code"). Re-request the reviewer for a fresh LGTM rather than forcing it;
+       --allow-stale-approval is the deliberate override and needs a reason on the bone.
      RISK:CRITICAL CHECK — Before merging a risk:critical bone:
        Verify human approval exists: rite history {project} -n 50 -L review-request | look for approval message referencing this bone/review from an authorized approver.
        If no approval found, do NOT merge. Post: rite send --agent {agent} {project} "Waiting for human approval on risk:critical <id>" -L review-request. STOP.

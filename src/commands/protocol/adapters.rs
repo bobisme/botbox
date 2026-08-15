@@ -306,6 +306,18 @@ pub fn parse_review_detail(json: &str) -> Result<ReviewDetailResponse, AdapterEr
 pub struct ReviewDiffSummary {
     #[serde(default)]
     pub target_commit: Option<String>,
+    /// Whether the approval still covers the target commit (seal >= 0.28).
+    ///
+    /// `None` from an older seal, which reports no coverage at all — the
+    /// caller then falls back to comparing commits itself.
+    #[serde(default)]
+    pub approval_stale: Option<bool>,
+    /// The commit the approval applied to (seal >= 0.28).
+    #[serde(default)]
+    pub approved_commit: Option<String>,
+    /// Commits in `approved_commit..target_commit` (seal >= 0.28).
+    #[serde(default)]
+    pub uncovered_commits: Option<usize>,
 }
 
 /// Parse `seal diff <id> --format json`.
@@ -323,6 +335,43 @@ pub fn parse_review_diff(json: &str) -> Result<ReviewDiffSummary, AdapterError> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Captured verbatim from `seal 0.28.0`: `seal diff <id> --format json`
+    /// on a review whose approval was overtaken by a later commit.
+    #[test]
+    fn parses_seal_028_approval_coverage() {
+        let json = r#"{
+            "base_commit": "a3dc2ed99f9df2f7d939a2159918befbcf5ba492",
+            "target_commit": "75489a943a25c7383be91739bd97110074491d19",
+            "base_is_persisted": true,
+            "approval_stale": true,
+            "approved_commit": "c1e4d22e7e223173747afee739a2e1b96bb27b72",
+            "uncovered_commits": 1
+        }"#;
+        let d = parse_review_diff(json).unwrap();
+        assert_eq!(
+            d.target_commit.as_deref(),
+            Some("75489a943a25c7383be91739bd97110074491d19")
+        );
+        assert_eq!(d.approval_stale, Some(true));
+        assert_eq!(
+            d.approved_commit.as_deref(),
+            Some("c1e4d22e7e223173747afee739a2e1b96bb27b72")
+        );
+        assert_eq!(d.uncovered_commits, Some(1));
+    }
+
+    /// An older seal reports no coverage at all. The fields must stay absent
+    /// rather than defaulting to "fresh", so the gate falls back instead of
+    /// assuming an approval covers code it never saw.
+    #[test]
+    fn older_seal_reports_no_coverage() {
+        let d = parse_review_diff(r#"{"target_commit": "abc123"}"#).unwrap();
+        assert_eq!(d.target_commit.as_deref(), Some("abc123"));
+        assert_eq!(d.approval_stale, None);
+        assert_eq!(d.approved_commit, None);
+        assert_eq!(d.uncovered_commits, None);
+    }
 
     // --- Claims parsing ---
 

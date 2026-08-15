@@ -168,7 +168,18 @@ maw exec default -- seal reviews mark-merged <review-id>          # Mark as merg
 maw exec $WS -- seal inbox --agent $AGENT                        # Show reviews/threads needing attention
 ```
 
-**Key details:**
+**Key details (seal >= 0.28):**
+- A review covers a **commit range**, not one commit. `seal reviews create` discovers the
+  branch/workspace fork point and prints the resolved range plus commit count. `--base <rev>`
+  sets it explicitly; `--base <target>~1` restores tip-only. The base is persisted on the
+  `ReviewCreated` event, so later commits extend the range instead of shifting it.
+- An approval records the commit it covered. `seal reviews mark-merged` **exits 1** when
+  commits landed after the approval. The fix is a repeat LGTM (which moves the approval onto
+  the new commit); `--allow-stale-approval` is the deliberate override.
+- `seal diff <id> --format json` reports `base_is_persisted`, `approval_stale`,
+  `approved_commit` and `uncovered_commits`. `edict protocol merge` reads `approval_stale`
+  and agrees with seal, falling back to comparing the target commit against the workspace
+  HEAD on older seal (`freshness_from_summary`, `src/commands/protocol/merge.rs`).
 - Always run seal commands via `maw exec <ws> --` in the workspace context
 - Reviewers iterate workspaces via `maw ws list` + `maw exec $WS -- seal inbox` per workspace
 - Agent identity via `--agent` flag or `CRIT_AGENT`/`RITE_AGENT` env vars
@@ -663,6 +674,26 @@ rite wait --agent $AGENT --reply-to "$req" -t 300 --format json
 **Reviewers**: post the verdict as a reply to the request that woke you
 (`--reply-to "$RITE_MESSAGE_ID"`, `-L review-done`). A top-level verdict leaves the author
 blocked until timeout.
+
+#### What a review covers
+
+`seal reviews create` finds the fork point of your branch or workspace, so the review
+covers every commit of the feature. It prints the range and commit count — check it.
+`--base <rev>` sets the range explicitly; `--base <target>~1` reviews the tip commit only.
+The base is persisted, so later commits extend the range instead of shifting it.
+
+#### Do not commit after the LGTM
+
+An approval records the commit it covered. Commit anything afterwards and
+`seal reviews mark-merged` exits 1: "the approval does not cover the current code".
+
+- **Fix**: get a fresh LGTM. A repeat vote moves the approval onto the new commit.
+  Reviewers — that repeat LGTM is what unblocks the merge, so never leave a re-review
+  unvoted.
+- `--allow-stale-approval` merges past the check. Use it only when the new commits are
+  provably outside what was reviewed, and say why in a bone comment.
+- Check first: `maw exec $WS -- seal diff <review-id> --format json` reports
+  `approval_stale`, `approved_commit` and `uncovered_commits`.
 
 ### Bus Communication
 

@@ -577,6 +577,10 @@ Every merge into default MUST follow this protocol to prevent concurrent merge c
 
   Already reviewed and approved (LGTM):
     maw exec default -- seal reviews mark-merged <review-id> --agent {agent}
+    If it exits 1 with "the approval does not cover the current code", you committed after
+    the LGTM. Re-request the reviewer and wait for a fresh LGTM, which moves the approval
+    onto the new commit. Use --allow-stale-approval only when the new commits are provably
+    outside what was reviewed, and record why on the bone.
     Run MERGE PROTOCOL above for $WS
     maw exec default -- bn done <id> --reason="Completed"
     rite send --agent {agent} {project} "Completed <id>: <title>" -L task-done

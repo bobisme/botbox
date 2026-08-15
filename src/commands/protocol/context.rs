@@ -295,35 +295,31 @@ impl ProtocolContext {
         Ok(review_resp.review)
     }
 
-    /// Fetch the commit a review's diff was last computed against, via
-    /// `maw exec <ws> -- seal diff <id> --format json`.
+    /// Fetch the full `seal diff <id> --format json` summary for `review_id`.
     ///
-    /// This is a snapshot from the review's own state (set at creation and
-    /// refreshed on re-request), not a live recomputation — it answers "what
-    /// commit did the reviewers actually see", which the merge gate compares
-    /// against [`Self::workspace_head_commit`] to detect commits that landed
-    /// after approval.
+    /// Carries seal >= 0.28's approval coverage (`approval_stale`,
+    /// `approved_commit`, `uncovered_commits`) alongside the target commit.
     ///
     /// # Errors
     ///
-    /// Returns error if the review ID or workspace name is invalid, the subprocess fails, or the output is unparseable.
+    /// Returns error if the ids are invalid, the subprocess fails, or the
+    /// output cannot be parsed.
     #[allow(
         clippy::unused_self,
         reason = "part of the ProtocolContext query interface, symmetric with its stateful methods"
     )]
-    pub fn review_target_commit(
+    pub fn review_diff_summary(
         &self,
         review_id: &str,
         workspace: &str,
-    ) -> Result<Option<String>, ContextError> {
+    ) -> Result<adapters::ReviewDiffSummary, ContextError> {
         Self::validate_review_id(review_id)?;
         Self::validate_workspace_name(workspace)?;
         let output = Self::run_subprocess(&[
             "maw", "exec", workspace, "--", "seal", "diff", review_id, "--format", "json",
         ])?;
-        let diff = adapters::parse_review_diff(&output)
-            .map_err(|e| ContextError::ParseFailed(format!("diff {review_id}: {e}")))?;
-        Ok(diff.target_commit)
+        adapters::parse_review_diff(&output)
+            .map_err(|e| ContextError::ParseFailed(format!("diff {review_id}: {e}")))
     }
 
     /// Fetch the commit currently checked out in `workspace`, via
