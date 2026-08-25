@@ -897,8 +897,17 @@ INSTRUCTIONS:
 - RESPOND using: rite send --agent {agent} {channel} "your response here"{reply_flag}
 - Do NOT create bones or workspaces — this is a conversation, not a work task
 - If during the conversation you realize this is actually a bug or work item that needs
-  immediate attention, output <escalate>brief description of the issue</escalate> AFTER
-  posting your response. This will hand off to the dev-loop with full conversation context.
+  immediate attention, escalate AFTER posting your response. This hands off to the dev-loop
+  with full conversation context. Write the FIRST LINE as a short bone title (under 100
+  characters, imperative, no trailing period), then a blank line, then every detail worth
+  keeping — repro, affected ids, proposal, constraints:
+  <escalate>
+  Short title of the work
+  
+  Full detail: what is broken or wanted, how it was hit, what a fix looks like.
+  </escalate>
+  The first line becomes the bone title. Everything after it becomes the description, so
+  put the detail there rather than in the title.
 
 After posting your response, output: <promise>RESPONDED</promise>"#,
             agent = self.agent,
@@ -956,7 +965,13 @@ You received a message in channel #{channel} from {sender}:
 Classify this message. If it's clearly a work request (bug report, feature request, task,
 "please fix/add/change X"), post a brief one-line acknowledgment (do NOT make promises or
 describe a solution — just confirm receipt), then output
-<escalate>one-line summary of the work</escalate>.
+<escalate>
+Short title of the work
+
+Full detail: what was asked, why it matters, anything needed to act on it.
+</escalate>
+The first line becomes the bone title (keep it under 100 characters). Everything after it
+becomes the bone description — put the detail there, never in the title.
 Otherwise, just respond helpfully — I'll wait for follow-ups automatically.
 {reply_anchor}
 RULES:
@@ -1022,10 +1037,11 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     }
                     if let Some(reason) = Self::extract_escalation(&output) {
                         eprintln!("Escalation detected: {reason}");
-                        match Self::bn_create(&reason, &reason, None) {
+                        let (title, description) = split_escalation(&reason);
+                        match Self::bn_create(&title, &description, None) {
                             Ok(bone_id) => {
                                 let _ = self.rite_send(
-                                    &format!("Filed {bone_id}: {reason}"),
+                                    &format!("Filed {bone_id}: {title}"),
                                     Some("feedback"),
                                 );
                                 self.handle_dev("", DevScope::Focus(&bone_id))?;
@@ -1033,8 +1049,10 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                             Err(e) => {
                                 eprintln!("Error creating bone from escalation: {e}");
                                 let _ = self.rite_send(
-                                    &format!("Got a work request but failed to file bone: {e}"),
-                                    None,
+                                    &format!(
+                                        "Could not file a bone for \"{title}\": {e}. The request is in this thread — file it by hand or send it again."
+                                    ),
+                                    Some("agent-error"),
                                 );
                             }
                         }
@@ -1140,11 +1158,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
         // Create the bone
         let lines: Vec<&str> = body.lines().collect();
-        let mut title = lines[0].trim().to_string();
-        if title.len() > 80 {
-            title.truncate(80);
-            title = title.trim().to_string();
-        }
+        // Char-safe: String::truncate would panic mid-character on non-ASCII.
+        let title = bone_title_from(lines[0]);
         let mut description = if lines.len() > 1 {
             lines[1..].join("\n").trim().to_string()
         } else {
@@ -1337,11 +1352,8 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
         }
 
         let lines: Vec<&str> = body.lines().collect();
-        let mut title = lines[0].trim().to_string();
-        if title.len() > 80 {
-            title.truncate(80);
-            title = title.trim().to_string();
-        }
+        // Char-safe: String::truncate would panic mid-character on non-ASCII.
+        let title = bone_title_from(lines[0]);
 
         let mut description = if lines.len() > 1 {
             body.trim().to_string()
@@ -1388,17 +1400,20 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                 }
                 if let Some(reason) = Self::extract_escalation(&output) {
                     eprintln!("Triage → work: \"{reason}\"");
-                    match Self::bn_create(&reason, &reason, None) {
+                    let (title, description) = split_escalation(&reason);
+                    match Self::bn_create(&title, &description, None) {
                         Ok(bone_id) => {
                             let _ = self
-                                .rite_send(&format!("Filed {bone_id}: {reason}"), Some("feedback"));
+                                .rite_send(&format!("Filed {bone_id}: {title}"), Some("feedback"));
                             self.handle_dev("", DevScope::Focus(&bone_id))?;
                         }
                         Err(e) => {
                             eprintln!("Error creating bone from triage: {e}");
                             let _ = self.rite_send(
-                                &format!("Got a work request but failed to file bone: {e}"),
-                                None,
+                                &format!(
+                                    "Could not file a bone for \"{title}\": {e}. The request is in this thread — file it by hand or send it again."
+                                ),
+                                Some("agent-error"),
                             );
                         }
                     }
@@ -1498,10 +1513,11 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                     }
                     if let Some(reason) = Self::extract_escalation(&output) {
                         eprintln!("Escalation detected: {reason}");
-                        match Self::bn_create(&reason, &reason, None) {
+                        let (title, description) = split_escalation(&reason);
+                        match Self::bn_create(&title, &description, None) {
                             Ok(bone_id) => {
                                 let _ = self.rite_send(
-                                    &format!("Filed {bone_id}: {reason}"),
+                                    &format!("Filed {bone_id}: {title}"),
                                     Some("feedback"),
                                 );
                                 self.handle_dev("", DevScope::Focus(&bone_id))?;
@@ -1509,8 +1525,10 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
                             Err(e) => {
                                 eprintln!("Error creating bone from escalation: {e}");
                                 let _ = self.rite_send(
-                                    &format!("Got a work request but failed to file bone: {e}"),
-                                    None,
+                                    &format!(
+                                        "Could not file a bone for \"{title}\": {e}. The request is in this thread — file it by hand or send it again."
+                                    ),
+                                    Some("agent-error"),
                                 );
                             }
                         }
@@ -1842,6 +1860,85 @@ After posting your response, output: <promise>RESPONDED</promise>"#,
 
 // Config discovery uses crate::config::find_config_in_project() for canonical priority.
 
+/// Split an escalation block into the bone title and description.
+///
+/// The agent is asked to write a short title on the first line, a blank line,
+/// then the detail. Honour that split when it is there: the agent knows what
+/// the work is called far better than any truncation does.
+///
+/// `bone_title_from` still runs over the chosen title, as a backstop for a model
+/// that writes one long paragraph anyway. The full block always becomes the
+/// description, so no detail is lost either way.
+fn split_escalation(reason: &str) -> (String, String) {
+    let reason = reason.trim();
+    let (first, rest) = reason.split_once('\n').unwrap_or((reason, ""));
+    let first = first.trim();
+    let rest = rest.trim();
+
+    // A first line that already reads as a title, with detail behind it.
+    if !rest.is_empty() && first.chars().count() <= MAX_BONE_TITLE {
+        return (bone_title_from(first), reason.to_string());
+    }
+
+    // One blob: derive a title from it and keep the blob as the description.
+    (bone_title_from(reason), reason.to_string())
+}
+
+/// Longest title bn accepts.
+const MAX_BONE_TITLE: usize = 200;
+
+/// Derive a bone title from free text, keeping it inside bn's limit.
+///
+/// Escalation reasons come from a model told to write "one line". Models write
+/// paragraphs. The responder used to pass that text as both title and
+/// description, so bn refused the whole `bn create` and the work request was
+/// lost — on #seal a 561-character reason took a feature request down with it.
+///
+/// Prefer the first sentence, which is usually the actual summary. Fall back to
+/// a word-boundary cut. Counts characters, not bytes, so a multibyte character
+/// cannot be split (`String::truncate` panics on that).
+///
+/// The caller keeps the full text as the description, so nothing is dropped.
+fn bone_title_from(text: &str) -> String {
+    let stripped = ansi_escape_re().replace_all(text, "");
+    let flat = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.is_empty() {
+        return "Untitled work request".to_string();
+    }
+
+    // A sentence end is a period/question/exclamation followed by a space. The
+    // "followed by a space" part keeps version numbers (1.1.1) and ids intact.
+    let sentence_end = flat
+        .char_indices()
+        .zip(flat.chars().skip(1))
+        .find(|((_, c), next)| matches!(c, '.' | '?' | '!') && next.is_whitespace())
+        .map(|((i, c), _)| i + c.len_utf8());
+
+    let candidate = match sentence_end {
+        Some(end) if flat[..end].chars().count() <= MAX_BONE_TITLE => &flat[..end],
+        _ => flat.as_str(),
+    };
+
+    truncate_on_word(candidate, MAX_BONE_TITLE)
+}
+
+/// Cut `text` to at most `max` characters, preferring a word boundary.
+///
+/// The ellipsis is included in the budget, so the result never exceeds `max`.
+fn truncate_on_word(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+
+    // Reserve one character for the ellipsis.
+    let budget = max.saturating_sub(1);
+    let cut: String = text.chars().take(budget).collect();
+    let trimmed = cut.rsplit_once(' ').map_or(cut.as_str(), |(head, _)| head);
+    let head = trimmed.trim_end_matches([',', ';', ':', '.', '-']).trim();
+    let head = if head.is_empty() { cut.trim() } else { head };
+    format!("{head}\u{2026}")
+}
+
 fn extract_bone_id(output: &str) -> Option<String> {
     // Find bn-XXXX pattern in output
     let start = output.find("bn-")?;
@@ -1910,6 +2007,116 @@ pub fn run_responder(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- bone title tests ---
+
+    /// The verbatim escalation reason that lost a feature request on #seal.
+    const SEAL_REASON: &str = "Feature gap: Seal has no way to retarget an open review's scm_anchor for Git-backed workspaces when new descendant commits change reviewed content but the change id/anchor can't be remapped (unlike jj). sigil-dev hit this in workspace bn-1159 (review cr-218gkk, anchor dfb6aa0, HEAD now 128ce0e) and needs it before merge. Proposal: add a ReviewRetargeted event + seal reviews retarget command, author-initiated, requiring a fresh vote after retarget, fully audit-logged. Worked around this instance via a new review; the underlying gap remains.";
+
+    #[test]
+    fn the_agents_own_title_is_used_verbatim() {
+        // The contract: first line is the title, the rest is detail. The agent
+        // decides what the work is called; no truncation involved.
+        let (title, desc) = split_escalation(
+            "Add seal reviews retarget for Git-backed workspaces\n\n\
+             sigil-dev hit this in bn-1159 (cr-218gkk, anchor dfb6aa0, HEAD 128ce0e). \
+             Proposal: a ReviewRetargeted event requiring a fresh vote.",
+        );
+        assert_eq!(title, "Add seal reviews retarget for Git-backed workspaces");
+        assert!(desc.contains("ReviewRetargeted"));
+        assert!(desc.contains("cr-218gkk"), "detail must survive in full");
+    }
+
+    #[test]
+    fn one_long_paragraph_still_files_something_usable() {
+        // Backstop for a model that ignores the format. The bone is filed, the
+        // detail is kept, and the title fits.
+        let (title, desc) = split_escalation(SEAL_REASON);
+        assert!(title.chars().count() <= MAX_BONE_TITLE);
+        assert_eq!(desc, SEAL_REASON, "nothing may be dropped");
+        assert!(title.starts_with("Feature gap: Seal has no way to retarget"));
+    }
+
+    #[test]
+    fn a_single_line_escalation_is_both_title_and_detail() {
+        let (title, desc) = split_escalation("Fix the auth bug");
+        assert_eq!(title, "Fix the auth bug");
+        assert_eq!(desc, "Fix the auth bug");
+    }
+
+    #[test]
+    fn an_overlong_first_line_falls_back_to_truncation() {
+        let long_first = format!("{}\n\ndetail here", "word ".repeat(80));
+        let (title, desc) = split_escalation(&long_first);
+        assert!(title.chars().count() <= MAX_BONE_TITLE);
+        assert!(desc.contains("detail here"));
+    }
+
+    #[test]
+    fn the_seal_reason_now_yields_a_title_bn_accepts() {
+        let title = bone_title_from(SEAL_REASON);
+        assert!(
+            title.chars().count() <= MAX_BONE_TITLE,
+            "bn refuses over {MAX_BONE_TITLE}, got {}",
+            title.chars().count()
+        );
+        // The first sentence is the actual summary — keep its opening.
+        assert!(title.starts_with("Feature gap: Seal has no way to retarget"));
+        // And it must not swallow the whole paragraph.
+        assert!(!title.contains("Proposal:"));
+    }
+
+    #[test]
+    fn a_short_reason_is_left_alone() {
+        let r = "Add a retarget command to seal.";
+        assert_eq!(bone_title_from(r), r);
+    }
+
+    #[test]
+    fn the_first_sentence_wins_when_it_fits() {
+        let title = bone_title_from(
+            "Short summary here. Then a much longer second sentence that carries the detail.",
+        );
+        assert_eq!(title, "Short summary here.");
+    }
+
+    #[test]
+    fn version_numbers_do_not_end_a_sentence() {
+        // "1.1.1" has periods, but none is followed by a space.
+        let title = bone_title_from("codec 1.1.1 release is burned and must be denied.");
+        assert_eq!(title, "codec 1.1.1 release is burned and must be denied.");
+    }
+
+    #[test]
+    fn a_long_first_sentence_is_cut_on_a_word_boundary() {
+        let long = format!("{} end.", "word ".repeat(80));
+        let title = bone_title_from(&long);
+        assert!(title.chars().count() <= MAX_BONE_TITLE);
+        assert!(title.ends_with('\u{2026}'));
+        // No half-word before the ellipsis.
+        assert!(title.trim_end_matches('\u{2026}').ends_with("word"));
+    }
+
+    #[test]
+    fn multibyte_text_does_not_panic_or_split_a_character() {
+        // String::truncate would panic here; this must not.
+        let text = "\u{7d71}\u{5408}".repeat(300);
+        let title = bone_title_from(&text);
+        assert!(title.chars().count() <= MAX_BONE_TITLE);
+        // Round-trips as valid UTF-8 by construction.
+        assert!(!title.is_empty());
+    }
+
+    #[test]
+    fn whitespace_and_ansi_are_flattened() {
+        let title = bone_title_from("  \u{1b}[31mFix\u{1b}[0m   the\n\n  parser  ");
+        assert_eq!(title, "Fix the parser");
+    }
+
+    #[test]
+    fn empty_text_still_produces_a_usable_title() {
+        assert_eq!(bone_title_from("   \n  "), "Untitled work request");
+    }
 
     // --- reply anchor tests ---
 
