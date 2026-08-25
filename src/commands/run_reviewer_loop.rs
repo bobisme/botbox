@@ -1,5 +1,6 @@
 //! Reviewer loop implementation - processes code reviews across workspaces
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -175,6 +176,10 @@ struct ThreadInfo {
     thread_id: String,
     #[serde(default)]
     review_id: Option<String>,
+    /// Timestamp of the newest comment. Used to tell a genuinely new response
+    /// apart from the same one seal keeps listing.
+    #[serde(default)]
+    latest_response_at: Option<String>,
 }
 
 /// seal inbox JSON output.
@@ -196,6 +201,71 @@ struct WorkItem {
     thread_id: Option<String>,
 }
 
+/// Path to the record of threads this agent has already worked.
+fn handled_threads_path(agent_name: &str) -> Result<PathBuf> {
+    let role = derive_role_from_agent_name(agent_name);
+    let role_suffix = role.as_deref().unwrap_or("reviewer");
+    Ok(get_cache_dir()?.join(format!("handled-threads-{role_suffix}.txt")))
+}
+
+/// Read the `thread_id -> latest_response_at` pairs handled in earlier runs.
+///
+/// A missing or unreadable file yields an empty map: the guard may repeat work,
+/// but it must never suppress it.
+fn read_handled_threads(agent_name: &str) -> HashMap<String, String> {
+    let Ok(path) = handled_threads_path(agent_name) else {
+        return HashMap::new();
+    };
+    let Ok(text) = fs::read_to_string(path) else {
+        return HashMap::new();
+    };
+    text.lines()
+        .filter_map(|line| line.split_once('\t'))
+        .map(|(id, ts)| (id.to_string(), ts.to_string()))
+        .collect()
+}
+
+/// Persist the handled-thread record, newest state wins.
+fn write_handled_threads(agent_name: &str, handled: &HashMap<String, String>) {
+    let Ok(path) = handled_threads_path(agent_name) else {
+        return;
+    };
+    if let Some(parent) = path.parent()
+        && fs::create_dir_all(parent).is_err()
+    {
+        return;
+    }
+    // Bound the file so a long-lived project cannot grow it without limit.
+    let mut entries: Vec<(&String, &String)> = handled.iter().collect();
+    entries.sort_by(|a, b| b.1.cmp(a.1));
+    entries.truncate(500);
+    let mut body = String::new();
+    for (id, ts) in entries {
+        let _ = writeln!(body, "{id}\t{ts}");
+    }
+    let _ = fs::write(path, body);
+}
+
+/// Whether this thread is the same work the agent already did.
+///
+/// `seal inbox` lists a thread while its newest comment is not the agent's. An
+/// agent that reviews the thread without replying or resolving therefore sees
+/// the identical item on its next spawn, and repeats the same verdict forever —
+/// six identical LGTMs in six minutes, observed on #sigil.
+///
+/// Skip only when the newest response has not moved since the last run. A real
+/// new reply advances `latest_response_at` and comes through.
+fn thread_already_handled(handled: &HashMap<String, String>, thread: &ThreadInfo) -> bool {
+    match (
+        handled.get(&thread.thread_id),
+        thread.latest_response_at.as_ref(),
+    ) {
+        (Some(seen), Some(current)) => seen == current,
+        // No timestamp from seal: cannot prove it is unchanged, so let it through.
+        _ => false,
+    }
+}
+
 /// Find pending reviews and threads across all workspaces.
 fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
     // Get list of workspaces
@@ -213,6 +283,8 @@ fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
     let mut work_items = Vec::new();
     let mut seen_reviews = std::collections::HashSet::new();
     let mut seen_threads = std::collections::HashSet::new();
+    let mut handled_threads = read_handled_threads(agent);
+    let mut newly_handled: HashMap<String, String> = HashMap::new();
 
     for ws in workspaces {
         // Sync seal index to pick up newly created reviews (avoids race
@@ -246,9 +318,15 @@ fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
                 }
             }
 
-            // Deduplicate threads
+            // Deduplicate threads, within this pass and against earlier runs
             for thread in inbox.threads_with_new_responses {
+                if thread_already_handled(&handled_threads, &thread) {
+                    continue;
+                }
                 if seen_threads.insert(thread.thread_id.clone()) {
+                    if let Some(ts) = thread.latest_response_at.clone() {
+                        newly_handled.insert(thread.thread_id.clone(), ts);
+                    }
                     work_items.push(WorkItem {
                         workspace: ws.clone(),
                         review_id: thread.review_id.unwrap_or_default(),
@@ -260,6 +338,13 @@ fn find_work(agent: &str) -> Result<Vec<WorkItem>> {
             }
         }
         // Silently skip workspaces where seal fails (stale, no .seal, etc.)
+    }
+
+    // Record what this run is about to work, so a thread the agent leaves
+    // unanswered is not handed back identically on the next spawn.
+    if !newly_handled.is_empty() {
+        handled_threads.extend(newly_handled);
+        write_handled_threads(agent, &handled_threads);
     }
 
     Ok(work_items)
@@ -641,38 +726,125 @@ fn run_one_iteration(
 }
 
 /// Send the idle sign-off message when no reviews are pending.
+/// Send to the project channel, anchored to the request that spawned this
+/// reviewer when there is one.
+///
+/// The requester blocks on `rite wait --reply-to <that id>`. A top-level
+/// message does not satisfy that wait, so an unanchored sign-off leaves the
+/// requester waiting until timeout — observed on #sigil, where sigil-dev
+/// reported the anchor timing out after the reviewer had already signed off.
+fn send_anchored(agent: &str, project: &str, message: &str, label: &str) {
+    let anchor = crate::reply::anchor_from_env();
+    let mut args = vec!["send", "--agent", agent, project, message, "-L", label];
+    if let Some(anchor) = anchor.as_deref() {
+        args.push("--reply-to");
+        args.push(anchor);
+    }
+    let _ = Tool::new("rite").args(&args).run();
+}
+
+/// Review ids named in the message that spawned this reviewer.
+///
+/// A request usually names exactly what it wants looked at. When the loop finds
+/// none of them, saying "no reviews pending" is false from the requester's side
+/// — they wait on the anchor until it times out. Naming the ids and where the
+/// loop looked turns a silent no-op into a report the requester can act on.
+fn requested_review_ids(body: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    let bytes = body.as_bytes();
+    let mut i = 0;
+    while let Some(pos) = body[i..].find("cr-") {
+        let start = i + pos;
+        let mut end = start + 3;
+        while end < bytes.len() && bytes[end].is_ascii_alphanumeric() {
+            end += 1;
+        }
+        // "cr-" alone is not an id.
+        if end > start + 3 {
+            let id = body[start..end].to_string();
+            if !ids.contains(&id) {
+                ids.push(id);
+            }
+        }
+        i = end.max(start + 3);
+    }
+    ids
+}
+
+/// Body of the message that spawned this reviewer, if it can be fetched.
+fn trigger_message_body() -> Option<String> {
+    let id = env::var("RITE_MESSAGE_ID").ok()?;
+    if !crate::reply::is_ulid(&id) {
+        return None;
+    }
+    let output = Tool::new("rite")
+        .args(&["messages", "get", &id, "--format", "json"])
+        .run()
+        .ok()?;
+    if !output.success() {
+        return None;
+    }
+    let value: serde_json::Value = serde_json::from_str(&output.stdout).ok()?;
+    value
+        .get("body")
+        .and_then(|b| b.as_str())
+        .map(ToString::to_string)
+}
+
 fn announce_idle(agent: &str, project: &str) {
     let _ = Tool::new("rite")
         .args(&["statuses", "set", "--agent", agent, "Idle"])
         .run();
 
-    eprintln!("No reviews pending. Exiting cleanly.");
+    // A request that named review ids the loop could not reach is not "nothing
+    // pending" — report the gap instead of signing off over it.
+    let unreachable: Vec<String> =
+        trigger_message_body().map_or_else(Vec::new, |body| requested_review_ids(&body));
 
-    let _ = Tool::new("rite")
-        .args(&[
-            "send",
-            "--agent",
-            agent,
-            project,
-            &format!("No reviews pending. Reviewer {agent} signing off."),
-            "-L",
+    let (message, label) = if unreachable.is_empty() {
+        (
+            format!("No reviews pending. Reviewer {agent} signing off."),
             "agent-idle",
-        ])
-        .run();
+        )
+    } else {
+        let searched = Tool::new("maw")
+            .args(&["ws", "list", "--format", "json"])
+            .run()
+            .ok()
+            .and_then(|o| o.parse_json::<WorkspaceList>().ok())
+            .map_or_else(
+                || "none".to_string(),
+                |l| {
+                    l.workspaces
+                        .into_iter()
+                        .map(|w| w.name)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                },
+            );
+        (
+            format!(
+                "Cannot review {}: not found in this project's workspaces ({searched}). \
+                 A review outside them is unreachable from {agent} — ask the project that \
+                 owns that repo, or move the work into a workspace here.",
+                unreachable.join(", ")
+            ),
+            "task-blocked",
+        )
+    };
+
+    eprintln!("{message}");
+
+    send_anchored(agent, project, &message, label);
 }
 
 fn announce_failure(agent: &str, project: &str, error: &anyhow::Error) {
-    let _ = Tool::new("rite")
-        .args(&[
-            "send",
-            "--agent",
-            agent,
-            project,
-            &format!("Reviewer {agent} stopped: {error}"),
-            "-L",
-            "agent-error",
-        ])
-        .run();
+    send_anchored(
+        agent,
+        project,
+        &format!("Reviewer {agent} stopped: {error}"),
+        "agent-error",
+    );
 }
 
 /// Main entry point for reviewer-loop.
@@ -832,6 +1004,80 @@ pub fn run_reviewer_loop(
 mod tests {
     use super::*;
     use crate::commands::protocol::adapters::ReviewDetail;
+
+    fn thread(id: &str, latest: Option<&str>) -> ThreadInfo {
+        ThreadInfo {
+            thread_id: id.to_string(),
+            review_id: Some("cr-3ncshe".to_string()),
+            latest_response_at: latest.map(ToString::to_string),
+        }
+    }
+
+    #[test]
+    fn an_unchanged_thread_is_not_reviewed_again() {
+        // The #sigil loop: seal kept listing th-3qre23, the agent kept voting
+        // LGTM without answering it, and every spawn saw the identical item.
+        let mut handled = HashMap::new();
+        handled.insert("th-3qre23".to_string(), "2026-08-24T21:30:06Z".to_string());
+
+        assert!(thread_already_handled(
+            &handled,
+            &thread("th-3qre23", Some("2026-08-24T21:30:06Z"))
+        ));
+    }
+
+    #[test]
+    fn a_genuinely_new_response_still_comes_through() {
+        let mut handled = HashMap::new();
+        handled.insert("th-3qre23".to_string(), "2026-08-24T21:30:06Z".to_string());
+
+        // Author replied again: must be picked up.
+        assert!(!thread_already_handled(
+            &handled,
+            &thread("th-3qre23", Some("2026-08-25T09:00:00Z"))
+        ));
+        // Never seen before.
+        assert!(!thread_already_handled(
+            &handled,
+            &thread("th-new", Some("2026-08-24T21:30:06Z"))
+        ));
+    }
+
+    #[test]
+    fn a_thread_without_a_timestamp_is_never_suppressed() {
+        // Cannot prove it is unchanged, so the guard must not hide it.
+        let mut handled = HashMap::new();
+        handled.insert("th-3qre23".to_string(), "2026-08-24T21:30:06Z".to_string());
+        assert!(!thread_already_handled(
+            &handled,
+            &thread("th-3qre23", None)
+        ));
+        assert!(!thread_already_handled(
+            &HashMap::new(),
+            &thread("th-x", None)
+        ));
+    }
+
+    #[test]
+    fn review_ids_are_pulled_out_of_the_request() {
+        let body = "Security recovery reviews requested: cr-1equnw at /a/b exact ba85cf6a..0ac4924b; \
+                    cr-35h703 at /c/d; cr-2nrvq7 at /e/f; cr-67ilak at /g/h. @sigil-security";
+        assert_eq!(
+            requested_review_ids(body),
+            vec!["cr-1equnw", "cr-35h703", "cr-2nrvq7", "cr-67ilak"]
+        );
+    }
+
+    #[test]
+    fn request_id_scan_ignores_noise_and_repeats() {
+        assert!(requested_review_ids("no ids here").is_empty());
+        assert!(requested_review_ids("a bare cr- prefix").is_empty());
+        // A repeated id is reported once.
+        assert_eq!(
+            requested_review_ids("cr-abc123 and again cr-abc123"),
+            vec!["cr-abc123"]
+        );
+    }
 
     #[test]
     fn test_derive_role_security() {
