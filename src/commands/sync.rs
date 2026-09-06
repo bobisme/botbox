@@ -46,8 +46,8 @@ pub const WORKFLOW_DOCS: &[(&str, &str)] = &[
         include_str!("../templates/docs/review-response.md"),
     ),
     (
-        "review-loop.md",
-        include_str!("../templates/docs/review-loop.md"),
+        "security-review.md",
+        include_str!("../templates/docs/security-review.md"),
     ),
     (
         "merge-check.md",
@@ -78,18 +78,6 @@ pub const DESIGN_DOCS: &[(&str, &str)] = &[(
     "cli-conventions.md",
     include_str!("../templates/design/cli-conventions.md"),
 )];
-
-/// Embedded reviewer prompts
-pub const REVIEWER_PROMPTS: &[(&str, &str)] = &[
-    (
-        "reviewer.md",
-        include_str!("../templates/reviewer.md.jinja"),
-    ),
-    (
-        "reviewer-security.md",
-        include_str!("../templates/reviewer-security.md.jinja"),
-    ),
-];
 
 impl SyncArgs {
     /// Run the sync command: detect staleness and update managed files, hooks, and docs.
@@ -178,10 +166,9 @@ impl SyncArgs {
         // Check staleness for each component
         let docs_stale = Self::check_docs_staleness(&agents_dir, layout)?;
         let managed_stale = Self::check_managed_section_staleness(&project_root, &config, layout)?;
-        let prompts_stale = Self::check_prompts_staleness(&agents_dir)?;
         let design_docs_stale = Self::check_design_docs_staleness(&agents_dir)?;
 
-        let any_stale = docs_stale || managed_stale || prompts_stale || design_docs_stale;
+        let any_stale = docs_stale || managed_stale || design_docs_stale;
 
         if self.check {
             if any_stale {
@@ -191,9 +178,6 @@ impl SyncArgs {
                 }
                 if managed_stale {
                     parts.push("AGENTS.md managed section");
-                }
-                if prompts_stale {
-                    parts.push("reviewer prompts");
                 }
                 if design_docs_stale {
                     parts.push("design docs");
@@ -217,6 +201,10 @@ impl SyncArgs {
             changed_files.push(".edict.toml");
             println!("Updated retired model defaults");
         }
+        if migrate_retired_reviewer_config(&active_config_path)? {
+            changed_files.push(".edict.toml");
+            println!("Removed retired reviewer-loop configuration");
+        }
 
         if docs_stale {
             Self::sync_workflow_docs(&agents_dir, layout)?;
@@ -230,12 +218,6 @@ impl SyncArgs {
             println!("Updated AGENTS.md managed section");
         }
 
-        if prompts_stale {
-            Self::sync_prompts(&agents_dir)?;
-            changed_files.push(".agents/edict/prompts/*.md");
-            println!("Updated reviewer prompts");
-        }
-
         if design_docs_stale {
             Self::sync_design_docs(&agents_dir)?;
             changed_files.push(".agents/edict/design/*.md");
@@ -247,6 +229,11 @@ impl SyncArgs {
 
         // Migrate rite hooks from bun .mjs to edict run
         migrate_rite_hooks(&config);
+
+        // The ambient reviewer loop is retired. Only remove hooks that Edict
+        // can prove it owns; a project's independently managed mention hooks
+        // are outside this migration's authority.
+        retire_owned_reviewer_hooks(&config);
 
         // Migrate rite hooks from botbox: descriptions to edict: descriptions
         migrate_botbox_rite_hooks_to_edict(&config, &project_root);
@@ -276,12 +263,6 @@ impl SyncArgs {
         // silently answers nobody (see ensure_router_hook)
         if !self.check {
             ensure_router_hook(&config, &project_root);
-        }
-
-        // Ensure reviewer mention hooks exist for declared reviewer roles
-        // (independent of review.enabled — see ensure_reviewer_hooks)
-        if !self.check {
-            ensure_reviewer_hooks(&config, &project_root);
         }
 
         // Migrate beads → bones (config, data, tooling files)
@@ -495,18 +476,6 @@ impl SyncArgs {
         Ok(content != updated)
     }
 
-    fn check_prompts_staleness(agents_dir: &Path) -> Result<bool> {
-        let version_file = agents_dir.join("prompts/.prompts-version");
-        let current = compute_prompts_version();
-
-        if !version_file.exists() {
-            return Ok(true);
-        }
-
-        let installed = fs::read_to_string(&version_file)?.trim().to_string();
-        Ok(installed != current)
-    }
-
     /// Clean up per-repo hooks that are now managed globally.
     /// Removes botbox hooks from per-repo .claude/settings.json and .pi/extensions/.
     fn cleanup_per_repo_hooks(&self, project_root: &Path) -> Result<()> {
@@ -627,6 +596,25 @@ impl SyncArgs {
         let version = compute_docs_version(layout);
         fs::write(agents_dir.join(".version"), version)?;
 
+        // These files belonged to the retired ambient reviewer loop. They are
+        // generated artifacts, so sync may remove them without touching
+        // project-authored workflow guidance.
+        for legacy in [
+            "review-loop.md",
+            "prompts/reviewer.md",
+            "prompts/reviewer-security.md",
+            "prompts/.prompts-version",
+        ] {
+            let path = agents_dir.join(legacy);
+            if path.exists() {
+                fs::remove_file(path)?;
+            }
+        }
+        let prompts_dir = agents_dir.join("prompts");
+        if prompts_dir.exists() && fs::read_dir(&prompts_dir)?.next().is_none() {
+            fs::remove_dir(prompts_dir)?;
+        }
+
         Ok(())
     }
 
@@ -641,22 +629,6 @@ impl SyncArgs {
         let updated = update_managed_section(&content, &ctx)?;
 
         fs::write(&agents_md, updated)?;
-        Ok(())
-    }
-
-    fn sync_prompts(agents_dir: &Path) -> Result<()> {
-        let prompts_dir = agents_dir.join("prompts");
-        fs::create_dir_all(&prompts_dir)?;
-
-        for (name, content) in REVIEWER_PROMPTS {
-            let path = prompts_dir.join(name);
-            fs::write(&path, content)
-                .with_context(|| format!("Failed to write {}", path.display()))?;
-        }
-
-        let version = compute_prompts_version();
-        fs::write(prompts_dir.join(".prompts-version"), version)?;
-
         Ok(())
     }
 
@@ -806,6 +778,79 @@ fn migrate_retired_model_defaults(config_path: &Path) -> Result<bool> {
     Ok(changed)
 }
 
+/// Remove the configuration block that only configured the retired ambient
+/// reviewer loop. `review.reviewers` remains: it names the reviewers Seal must
+/// collect votes from, including the dedicated Daybreak security reviewer.
+fn migrate_retired_reviewer_config(config_path: &Path) -> Result<bool> {
+    let source = fs::read_to_string(config_path)
+        .with_context(|| format!("reading {}", config_path.display()))?;
+    let mut document = source
+        .parse::<toml_edit::DocumentMut>()
+        .with_context(|| format!("parsing {}", config_path.display()))?;
+
+    let Some(agents) = document
+        .get_mut("agents")
+        .and_then(toml_edit::Item::as_table_like_mut)
+    else {
+        return Ok(false);
+    };
+
+    if agents.remove("reviewer").is_none() {
+        return Ok(false);
+    }
+
+    fs::write(config_path, document.to_string())
+        .with_context(|| format!("writing {}", config_path.display()))?;
+    Ok(true)
+}
+
+/// Remove a named reviewer-loop hook only when it is demonstrably owned by
+/// Edict. A project may have its own `@project-security` automation, so a
+/// matching mention alone is deliberately insufficient authority to remove it.
+fn retire_owned_reviewer_hooks(config: &Config) {
+    let output = match Tool::new("rite")
+        .args(&["hooks", "list", "--format", "json"])
+        .run()
+    {
+        Ok(output) if output.success() => output,
+        _ => return,
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
+        Ok(value) => value,
+        Err(_) => return,
+    };
+    let Some(hooks) = parsed.get("hooks").and_then(|hooks| hooks.as_array()) else {
+        return;
+    };
+
+    for hook in hooks {
+        if !is_owned_reviewer_hook(hook, &config.project.name) {
+            continue;
+        }
+        let Some(id) = hook.get("id").and_then(|id| id.as_str()) else {
+            continue;
+        };
+        match Tool::new("rite").args(&["hooks", "remove", id]).run() {
+            Ok(output) if output.success() => println!("Retired Edict reviewer hook {id}"),
+            Ok(output) => {
+                tracing::warn!(hook_id = %id, stderr = %output.stderr, "failed to retire Edict reviewer hook");
+            }
+            Err(error) => {
+                tracing::warn!(hook_id = %id, %error, "failed to retire Edict reviewer hook");
+            }
+        }
+    }
+}
+
+fn is_owned_reviewer_hook(hook: &serde_json::Value, project_name: &str) -> bool {
+    let expected_prefix = format!("edict:{project_name}:reviewer-");
+    hook.get("owner").and_then(|owner| owner.as_str()) == Some("edict")
+        && hook
+            .get("name")
+            .and_then(|name| name.as_str())
+            .is_some_and(|name| name.starts_with(&expected_prefix))
+}
+
 /// Migrate rite hooks from `botbox:` descriptions to `edict:` descriptions.
 ///
 /// Finds hooks with `botbox:{name}:responder` or `botbox:{name}:reviewer-*` descriptions,
@@ -881,22 +926,8 @@ fn migrate_botbox_rite_hooks_to_edict(config: &Config, project_root: &Path) {
                 .and_then(|r| r.memory_limit.as_deref());
             super::init::register_router_hook(&root_str, &root_str, name, &agent, responder_ml);
             println!("  Migrated hook {desc} → edict:{name}:responder");
-        } else if let Some(role) = desc.strip_prefix(&format!("botbox:{name}:reviewer-")) {
-            let reviewer_agent = format!("{name}-{role}");
-            let reviewer_ml = config
-                .agents
-                .reviewer
-                .as_ref()
-                .and_then(|r| r.memory_limit.as_deref());
-            super::init::register_reviewer_hook(
-                &root_str,
-                &root_str,
-                name,
-                &agent,
-                &reviewer_agent,
-                reviewer_ml,
-            );
-            println!("  Migrated hook {desc} → edict:{name}:reviewer-{role}");
+        } else if desc.starts_with(&format!("botbox:{name}:reviewer-")) {
+            println!("  Retired legacy reviewer hook {desc}");
         }
     }
 }
@@ -962,11 +993,7 @@ fn migrate_rite_hooks(config: &Config) {
         let is_router = cmd_strs.iter().any(|s| {
             s.contains("responder") || s.contains("respond.mjs") || s.contains("router.mjs")
         });
-        let is_reviewer = cmd_strs
-            .iter()
-            .any(|s| s.contains("reviewer-loop") || s.contains("reviewer-loop.mjs"));
-
-        if !is_router && !is_reviewer {
+        if !is_router {
             continue;
         }
 
@@ -984,31 +1011,7 @@ fn migrate_rite_hooks(config: &Config) {
             continue;
         }
 
-        if is_router {
-            reregister_legacy_router_hook(config, name, &agent, env_inherit, spawn_cwd, &id);
-        } else if is_reviewer {
-            let reviewer_agent = hook
-                .get("condition")
-                .and_then(|c| c.get("agent"))
-                .and_then(|a| a.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            if reviewer_agent.is_empty() {
-                tracing::warn!(hook_id = %id, "could not determine reviewer agent for hook");
-                continue;
-            }
-
-            reregister_legacy_reviewer_hook(
-                config,
-                name,
-                &agent,
-                env_inherit,
-                spawn_cwd,
-                &id,
-                &reviewer_agent,
-            );
-        }
+        reregister_legacy_router_hook(config, name, &agent, env_inherit, spawn_cwd, &id);
     }
 }
 
@@ -1070,77 +1073,6 @@ fn reregister_legacy_router_hook(
     }
 }
 
-/// Re-register a legacy reviewer hook with the current `edict run reviewer-loop` command.
-fn reregister_legacy_reviewer_hook(
-    config: &Config,
-    name: &str,
-    agent: &str,
-    env_inherit: &str,
-    spawn_cwd: &str,
-    id: &str,
-    reviewer_agent: &str,
-) {
-    let role = reviewer_agent
-        .strip_prefix(&format!("{name}-"))
-        .unwrap_or(reviewer_agent);
-    let claim_uri = format!("agent://{reviewer_agent}");
-    let description = format!("edict:{name}:reviewer-{role}");
-    let reviewer_ml = config
-        .agents
-        .reviewer
-        .as_ref()
-        .and_then(|r| r.memory_limit.as_deref());
-
-    let mut reviewer_args: Vec<&str> = vec![
-        "--agent",
-        agent,
-        "--channel",
-        name,
-        "--mention",
-        reviewer_agent,
-        "--claim",
-        &claim_uri,
-        "--claim-owner",
-        reviewer_agent,
-        "--ttl",
-        "600",
-        "--priority",
-        "1",
-        "--cwd",
-        spawn_cwd,
-        "--",
-        "vessel",
-        "spawn",
-        "--env-inherit",
-        env_inherit,
-    ];
-    if let Some(limit) = reviewer_ml {
-        reviewer_args.push("--memory-limit");
-        reviewer_args.push(limit);
-    }
-    reviewer_args.extend_from_slice(&[
-        "--name",
-        reviewer_agent,
-        "--cwd",
-        spawn_cwd,
-        "--",
-        "edict",
-        "run",
-        "reviewer-loop",
-        "--agent",
-        reviewer_agent,
-    ]);
-
-    match crate::subprocess::ensure_rite_hook(&description, &reviewer_args) {
-        Ok(_) => println!(
-            "  Migrated reviewer hook {id} → edict run reviewer-loop --agent {reviewer_agent}"
-        ),
-        Err(e) => {
-            tracing::warn!(agent = %reviewer_agent, "failed to re-register reviewer hook: {e}");
-        }
-    }
-}
-
 /// Fix hook --cwd for maw v2 bare repos.
 ///
 /// Earlier versions of `detect_hook_paths` checked for `.jj` to identify bare repos,
@@ -1183,13 +1115,6 @@ fn migrate_hook_cwd(config: &Config, project_root: &Path) {
 
     let name = &config.project.name;
     let agent = config.default_agent();
-    let reviewers: Vec<String> = config
-        .review
-        .reviewers
-        .iter()
-        .map(|r| format!("{name}-{r}"))
-        .collect();
-
     for hook in hooks {
         let desc = hook
             .get("description")
@@ -1239,26 +1164,7 @@ fn migrate_hook_cwd(config: &Config, project_root: &Path) {
             super::init::register_router_hook(&root_str, &root_str, name, &agent, responder_ml);
             println!("  Fixed hook --cwd: {desc} → repo root");
         } else {
-            let reviewer_ml = config
-                .agents
-                .reviewer
-                .as_ref()
-                .and_then(|r| r.memory_limit.as_deref());
-            // Find which reviewer this is for
-            for reviewer in &reviewers {
-                if desc.contains(&reviewer.replace(&format!("{name}-"), "")) {
-                    super::init::register_reviewer_hook(
-                        &root_str,
-                        &root_str,
-                        name,
-                        &agent,
-                        reviewer,
-                        reviewer_ml,
-                    );
-                    println!("  Fixed hook --cwd: {desc} → repo root");
-                    break;
-                }
-            }
+            println!("  Retired stale reviewer hook {desc}");
         }
     }
 }
@@ -1445,21 +1351,7 @@ fn migrate_vessel_hooks(config: &Config, project_root: &Path, config_path: &Path
             .strip_prefix(&format!("edict:{name}:reviewer-"))
             .filter(|r| !r.is_empty())
         {
-            let reviewer_agent = format!("{name}-{role}");
-            let ml = config
-                .agents
-                .reviewer
-                .as_ref()
-                .and_then(|r| r.memory_limit.as_deref());
-            super::init::register_reviewer_hook(
-                &root_str,
-                &root_str,
-                name,
-                &agent,
-                &reviewer_agent,
-                ml,
-            );
-            println!("  Migrated reviewer hook {role}: vessel spawn (was botty)");
+            println!("  Reviewer hook {role} will be retired");
         }
     }
 }
@@ -1530,99 +1422,6 @@ fn ensure_router_hook(config: &Config, project_root: &Path) {
     // `config.channel()` — the two differ on projects renamed since init.
     super::init::register_router_hook(&root_str, &root_str, name, &agent, ml);
     println!("  Registered missing router hook for #{name}");
-}
-
-/// Ensure reviewer hooks exist when review is enabled in config.
-///
-/// `edict init` registers these, but they can be lost during migrations or
-/// if a project was initialized before reviewer hooks were added. This checks
-/// for each configured reviewer role and registers the hook if missing.
-/// Reviewer roles that should have `@<project>-<role>` mention hooks registered.
-///
-/// Gated on seal being available and the role being *declared* in
-/// `review.reviewers` — deliberately NOT on `review.enabled`. `review.enabled`
-/// only governs whether the dev/worker loops auto-request a review and whether
-/// finish/merge gate on approval; tagging `@<project>-<role>` in a one-off
-/// message must spawn a reviewer even when auto-review is off.
-fn reviewer_hook_roles(config: &Config) -> &[String] {
-    if config.tools.seal {
-        &config.review.reviewers
-    } else {
-        &[]
-    }
-}
-
-fn ensure_reviewer_hooks(config: &Config, project_root: &Path) {
-    let roles = reviewer_hook_roles(config);
-    if roles.is_empty() {
-        return;
-    }
-
-    let output = match Tool::new("rite")
-        .args(&["hooks", "list", "--format", "json"])
-        .run()
-    {
-        Ok(o) if o.success() => o,
-        _ => return,
-    };
-
-    let parsed: serde_json::Value = match serde_json::from_str(&output.stdout) {
-        Ok(v) => v,
-        Err(_) => return,
-    };
-
-    let hooks = match parsed.get("hooks").and_then(|h| h.as_array()) {
-        Some(h) => h.clone(),
-        None => return,
-    };
-
-    let name = &config.project.name;
-    let agent = config.default_agent();
-
-    let bare_root = if project_root.ends_with("ws/default") {
-        project_root
-            .parent()
-            .and_then(Path::parent)
-            .filter(|r| r.join(".manifold").exists())
-    } else if project_root.join(".manifold").exists() {
-        Some(project_root)
-    } else {
-        None
-    };
-    let root_str = bare_root.map_or_else(
-        || project_root.display().to_string(),
-        |r| r.display().to_string(),
-    );
-
-    let ml = config
-        .agents
-        .reviewer
-        .as_ref()
-        .and_then(|r| r.memory_limit.as_deref());
-
-    for role in roles {
-        let description = format!("edict:{name}:reviewer-{role}");
-
-        // Check if hook already exists
-        let exists = hooks.iter().any(|h| {
-            h.get("description")
-                .and_then(|d| d.as_str())
-                .is_some_and(|d| d == description)
-        });
-
-        if !exists {
-            let reviewer_agent = format!("{name}-{role}");
-            super::init::register_reviewer_hook(
-                &root_str,
-                &root_str,
-                name,
-                &agent,
-                &reviewer_agent,
-                ml,
-            );
-            println!("  Registered missing reviewer hook: {role}");
-        }
-    }
 }
 
 /// Migrate hooks that still use BOTBUS_* env-inherit vars to RITE_*.
@@ -1698,21 +1497,7 @@ fn migrate_botbus_env_hooks(config: &Config, project_root: &Path) {
             .strip_prefix(&format!("edict:{name}:reviewer-"))
             .filter(|r| !r.is_empty())
         {
-            let reviewer_agent = format!("{name}-{role}");
-            let ml = config
-                .agents
-                .reviewer
-                .as_ref()
-                .and_then(|r| r.memory_limit.as_deref());
-            super::init::register_reviewer_hook(
-                &root_str,
-                &root_str,
-                name,
-                &agent,
-                &reviewer_agent,
-                ml,
-            );
-            println!("  Migrated reviewer hook {role}: RITE_* env vars (was BOTBUS_*)");
+            println!("  Reviewer hook {role} will be retired");
         }
     }
 }
@@ -1781,21 +1566,7 @@ fn migrate_hook_reply_env(config: &Config, project_root: &Path) {
             .strip_prefix(&format!("edict:{name}:reviewer-"))
             .filter(|r| !r.is_empty())
         {
-            let reviewer_agent = format!("{name}-{role}");
-            let ml = config
-                .agents
-                .reviewer
-                .as_ref()
-                .and_then(|r| r.memory_limit.as_deref());
-            super::init::register_reviewer_hook(
-                &root_str,
-                &root_str,
-                name,
-                &agent,
-                &reviewer_agent,
-                ml,
-            );
-            println!("  Converged reviewer hook {role} --env-inherit");
+            println!("  Reviewer hook {role} will be retired");
         }
     }
 }
@@ -1957,16 +1728,6 @@ pub fn compute_docs_version(layout: Layout) -> String {
     format!("{:x}", hasher.finalize())[..32].to_string()
 }
 
-/// Compute SHA-256 hash of all reviewer prompts
-fn compute_prompts_version() -> String {
-    let mut hasher = Sha256::new();
-    for (name, content) in REVIEWER_PROMPTS {
-        hasher.update(name.as_bytes());
-        hasher.update(content.as_bytes());
-    }
-    format!("{:x}", hasher.finalize())[..32].to_string()
-}
-
 /// Compute SHA-256 hash of all design docs
 fn compute_design_docs_version() -> String {
     let mut hasher = Sha256::new();
@@ -1986,10 +1747,6 @@ mod tests {
         let docs_ver = compute_docs_version(Layout::Bare);
         assert_eq!(docs_ver.len(), 32);
         assert!(docs_ver.chars().all(|c| c.is_ascii_hexdigit()));
-
-        let prompts_ver = compute_prompts_version();
-        assert_eq!(prompts_ver.len(), 32);
-        assert!(prompts_ver.chars().all(|c| c.is_ascii_hexdigit()));
 
         let design_ver = compute_design_docs_version();
         assert_eq!(design_ver.len(), 32);
@@ -2066,56 +1823,6 @@ strong = ["anthropic/claude-opus-4-6:high", "openai-codex/gpt-5.3-codex:xhigh"]
         assert!(!migrated.contains("openai-codex/gpt-5.3-codex:xhigh"));
     }
 
-    fn config_with(seal: bool, enabled: bool, reviewers: &[&str]) -> Config {
-        let reviewer_lines = reviewers
-            .iter()
-            .map(|r| format!("\"{r}\""))
-            .collect::<Vec<_>>()
-            .join(", ");
-        let toml_str = format!(
-            r#"
-version = "1.0.0"
-
-[project]
-name = "test"
-
-[tools]
-seal = {seal}
-
-[review]
-enabled = {enabled}
-reviewers = [{reviewer_lines}]
-"#
-        );
-        Config::parse_toml(&toml_str).unwrap()
-    }
-
-    #[test]
-    fn reviewer_hook_roles_ignore_review_enabled() {
-        // A declared reviewer role gets a mention hook regardless of whether
-        // auto-review (review.enabled) is on, so `@<project>-<role>` one-off
-        // tags work even when the dev/worker loops never auto-request review.
-        let off = config_with(true, false, &["security"]);
-        let on = config_with(true, true, &["security"]);
-        assert_eq!(reviewer_hook_roles(&off), &["security".to_string()]);
-        assert_eq!(reviewer_hook_roles(&on), &["security".to_string()]);
-    }
-
-    #[test]
-    fn reviewer_hook_roles_require_seal() {
-        // reviewer-loop needs seal; without it, registering a mention hook would
-        // spawn an agent that can't do anything.
-        let no_seal = config_with(false, true, &["security"]);
-        assert!(reviewer_hook_roles(&no_seal).is_empty());
-    }
-
-    #[test]
-    fn reviewer_hook_roles_empty_without_declared_reviewers() {
-        // No declared roles -> no hooks, even with seal + auto-review on.
-        let none = config_with(true, true, &[]);
-        assert!(reviewer_hook_roles(&none).is_empty());
-    }
-
     #[test]
     fn test_workflow_docs_embedded() {
         assert!(!WORKFLOW_DOCS.is_empty());
@@ -2135,13 +1842,54 @@ reviewers = [{reviewer_lines}]
     }
 
     #[test]
-    fn test_reviewer_prompts_embedded() {
-        assert_eq!(REVIEWER_PROMPTS.len(), 2);
-        assert!(REVIEWER_PROMPTS.iter().any(|(n, _)| *n == "reviewer.md"));
-        assert!(
-            REVIEWER_PROMPTS
-                .iter()
-                .any(|(n, _)| *n == "reviewer-security.md")
-        );
+    fn retired_reviewer_config_is_scoped_and_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let config_path = dir.path().join(".edict.toml");
+        fs::write(
+            &config_path,
+            r#"[agents.worker]
+model = "fast"
+
+[agents.reviewer]
+model = "strong"
+timeout = 900
+
+[review]
+reviewers = ["security"]
+"#,
+        )
+        .unwrap();
+
+        assert!(migrate_retired_reviewer_config(&config_path).unwrap());
+        assert!(!migrate_retired_reviewer_config(&config_path).unwrap());
+        let migrated = fs::read_to_string(&config_path).unwrap();
+        assert!(!migrated.contains("[agents.reviewer]"));
+        assert!(migrated.contains("[agents.worker]"));
+        assert!(migrated.contains("reviewers = [\"security\"]"));
+    }
+
+    #[test]
+    fn only_named_edict_reviewer_hooks_are_retired() {
+        let edict_hook = serde_json::json!({
+            "owner": "edict",
+            "name": "edict:demo:reviewer-security",
+        });
+        let user_hook = serde_json::json!({
+            "owner": "user",
+            "name": "edict:demo:reviewer-security",
+        });
+        let unnamed_hook = serde_json::json!({
+            "owner": "edict",
+            "description": "edict:demo:reviewer-security",
+        });
+        let other_project = serde_json::json!({
+            "owner": "edict",
+            "name": "edict:other:reviewer-security",
+        });
+
+        assert!(is_owned_reviewer_hook(&edict_hook, "demo"));
+        assert!(!is_owned_reviewer_hook(&user_hook, "demo"));
+        assert!(!is_owned_reviewer_hook(&unnamed_hook, "demo"));
+        assert!(!is_owned_reviewer_hook(&other_project, "demo"));
     }
 }

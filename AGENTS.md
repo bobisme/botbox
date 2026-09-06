@@ -40,7 +40,11 @@ Registered during `edict init` (and updated via migrations):
 | Hook Type | Trigger | Spawns | Example |
 |-----------|---------|--------|---------|
 | **Router** (claim-based) | Any message on project channel, when no agent claimed | `edict run responder` | `rite hooks add --channel myproject --claim "agent://myproject-dev" ...` |
-| **Reviewer** (mention-based) | `@myproject-security` mention | Reviewer agent | `rite hooks add --channel myproject --mention "myproject-security" ...` |
+
+Security review has no ambient Rite hook. The author starts one named Vessel
+Codex session for the exact Seal review using
+`.agents/edict/security-review.md`; it uses `gpt-daybreak-blue-latest` and is
+watched through Agentbus.
 
 The router hook spawns `edict run responder` which routes messages based on `!` prefixes:
 - `!dev [msg]` — create bone + spawn dev-loop
@@ -247,26 +251,18 @@ Sequential: one bone per iteration. Triage → start → work → review → fin
 3. Start: claim bone, create workspace, announce
 4. Work: implement in workspace using absolute paths
 5. Stuck check: 2 failed attempts = post and move on
-6. Review: `seal reviews create`, request reviewer, STOP and wait
+6. Review: create the Seal review, then launch its exact Daybreak reviewer
 7. Finish: close bone, merge workspace (`maw ws merge --into default --destroy`), release claims
 8. Release check: unreleased feat/fix → bump version
 
-### `edict run reviewer-loop` — Reviewer Agent
+### Dedicated Daybreak Security Reviewer
 
-Processes reviews, votes LGTM or BLOCK, leaves severity-tagged comments.
-
-**Config:** `.edict.toml` → `agents.reviewer.{model, timeout, maxLoops, pause}`
-
-**Role detection:** Agent name suffix determines role (e.g., `myproject-security` → loads `reviewer-security.md` prompt). Falls back to generic `reviewer.md`.
-
-**Per iteration:**
-1. Iterate workspaces via `maw ws list`, check `maw exec $WS -- seal inbox` per workspace
-2. Read review diff and source files from workspace (`ws/$WS/...`)
-3. Comment with severity: CRITICAL, HIGH, MEDIUM, LOW, INFO
-4. Vote: BLOCK if CRITICAL/HIGH issues, LGTM otherwise
-5. Post summary to project channel
-
-**Journal:** Maintains `.agents/edict/review-loop-<role>.txt` with iteration summaries.
+The author launches one short-lived Vessel Codex session per exact Seal review.
+It receives the review id, workspace, target commit, canonical Seal identity,
+and Rite reply anchor. It never scans workspaces or discovers other work.
+Follow `.agents/edict/security-review.md`; verify the actual Seal vote after
+Agentbus reports completion. Timeouts, blocked sessions, and unavailable
+Agentbus are blockers, never implicit approval.
 
 ### `edict run responder` — Universal Message Router
 
@@ -293,7 +289,6 @@ Subcommands require specific companion tools to be enabled in `.edict.toml`:
 | Subcommand | Requires |
 |------------|----------|
 | `worker-loop`, `dev-loop` | bones + maw + seal + rite |
-| `reviewer-loop` | seal + rite |
 | `responder` | rite |
 | `triage` | bones |
 | `iteration-start` | bones + seal + rite |
@@ -316,11 +311,10 @@ Hooks are registered in `.claude/settings.json` as `edict hooks run <name>` comm
 - **Workflow docs** (`.agents/edict/*.md`) — copied from bundled source
 - **AGENTS.md managed section** — regenerated from templates (between `<!-- edict:managed-start/end -->` markers)
 - **Claude Code hooks** — registered in `.claude/settings.json` as `edict hooks run` commands
-- **Prompts** (`.agents/edict/prompts/*.md`) — reviewer prompt templates
 - **Design docs** (`.agents/edict/design/*.md`) — copied based on project type
 - **Config migrations** (`.edict.toml`) — runs pending migrations
 
-Each component is version-tracked via SHA-256 content hashes stored in marker files (`.version`, `.hooks-version`, `.prompts-version`, `.design-docs-version`). Sync detects staleness by comparing installed hash vs current bundled hash.
+Each component is version-tracked via SHA-256 content hashes stored in marker files (`.version`, `.hooks-version`, `.design-docs-version`). Sync detects staleness by comparing installed hash vs current bundled hash.
 
 ### Migrations
 
@@ -356,7 +350,6 @@ Migrations run automatically during `edict sync` when the config version is behi
       "missions": { "enabled": true, "maxWorkers": 4, "maxChildren": 12, "checkpointIntervalSec": 30 }
     },
     "worker": { "model": "haiku", "timeout": 600 },
-    "reviewer": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 600 },
     "responder": { "model": "sonnet", "timeout": 300, "wait_timeout": 300, "max_conversations": 10 }
   }
 }
@@ -459,11 +452,11 @@ Drop whatever you're doing and run the tail command. Analyze the output and repo
 3. Check bone state: `bn show <id>` — is the bone in expected state?
 4. Check workspace: `maw ws list` — is workspace still alive?
 
-### Review not being picked up
-1. `maw exec $WS -- seal inbox --agent <reviewer>` — does it show the review? (check each workspace)
-2. Verify the @mention: the rite message MUST contain `@<project>-<role>` (no @ prefix in hook registration, but @ in message)
-3. Check hook: `rite hooks list` — is there a mention hook for that reviewer?
-4. Verify reviewer workspace path: reviewer reads code from workspace, not project root
+### Dedicated security review did not complete
+1. Confirm the exact target: `maw exec $WS -- seal review <review-id> --format json` and `seal diff`.
+2. Inspect the named session: `vessel snapshot <session>` and `vessel list --format json`.
+3. Inspect Agentbus with the recorded Vessel PID and send timestamp.
+4. If Agentbus or Seal cannot verify a vote, post an anchored blocker, release the review claim, and stop.
 
 ### Common pitfalls from evals
 - **Workspace path**: Workspace files are at `ws/$WS/`. Use absolute paths for file operations. Never `cd` into workspace.
@@ -471,7 +464,7 @@ Drop whatever you're doing and run the tail command. Analyze the output and repo
 - **Duplicate bones**: Check existing bones before creating from inbox messages
 - **bn via maw exec**: Always use `maw exec default -- bn ...` — never run `bn` directly
 - **seal via maw exec**: Always use `maw exec $WS -- seal ...` — seal runs in workspace context
-- **Mention format**: `--mention "agent-name"` in hook registration (no @), but `@agent-name` in rite messages
+- **Exact review target**: pass the Seal review id and workspace to the direct reviewer; never use a mention or scan to select work.
 
 ## Eval Framework
 
@@ -655,25 +648,29 @@ rite claims release --agent $AGENT --all  # when done
 
 ### Reviews
 
-Use `@<project>-<role>` mentions to request reviews. The @mention triggers the auto-spawn
-hook for the reviewer. Capture the request id and block on the verdict:
+`--reviewers` assigns the approval-gate identity in Seal. It does not spawn a
+reviewer. For security review, create a Rite request anchor and explicitly
+launch the one-review Daybreak session in
+[security-review.md](.agents/edict/security-review.md). Never use an
+`@<project>-security` mention: the ambient hook is retired.
 
 ```bash
 maw exec $WS -- seal reviews request <review-id> --reviewers $PROJECT-security --agent $AGENT
-req=$(rite send --agent $AGENT $PROJECT "Review requested: <review-id> @$PROJECT-security" -L review-request --format json | jq -r .id)
+req=$(rite send --agent $AGENT $PROJECT "Dedicated security re-review requested: <review-id> in $WS" -L review-response --format json | jq -r .id)
 bn bone comment add <bone-id> "Review anchor: $req for <review-id>"
-rite wait --agent $AGENT --reply-to "$req" -t 300 --format json
+# Set review_id=<review-id>, ws=$WS, request_anchor=$req, kind=review-response.
+# Follow .agents/edict/security-review.md's Launch contract exactly.
 ```
 
-- Exit 0: confirm the verdict with `maw exec $WS -- seal review <review-id>`, then finish
-  or fix in the same turn.
-- Exit 1: do NOT request the review again. Post one `-L task-blocked` message naming the
-  anchor and stop. The next turn reads review state from seal, not from a new request.
-- Exit 2: the anchor is wrong. Re-read it from history. Do NOT request the review again.
+- Agentbus completion is not approval. Confirm the verdict with
+  `maw exec $WS -- seal review <review-id> --format json` before proceeding.
+- Agentbus unresolved, blocked, unavailable, or timeout: post one anchored
+  `task-blocked` message, release the review claim, and stop. Do not retry by
+  mention or scan another review.
 
-**Reviewers**: post the verdict as a reply to the request that woke you
-(`--reply-to "$RITE_MESSAGE_ID"`, `-L review-done`). A top-level verdict leaves the author
-blocked until timeout.
+**Dedicated reviewers** reply to the supplied request anchor with
+`--reply-to "$request_anchor"` and `-L review-done`. A top-level verdict is not
+an anchored result.
 
 #### What a review covers
 
@@ -789,7 +786,7 @@ Do not apply STE to code, identifiers, commands, marketing copy, essays, or voic
 Keep a channel message to one or two lines. Lead with the subject of the label. The label and the bone ID already carry the context, so do not add status blocks, numbered steps, or closing actions.
 
 - `[task-claim] Working on <bone-id>: <title>`
-- `[review-request] Review requested: <review-id> for <bone-id> @<reviewer>`
+- `[review-request] Dedicated security review requested: <review-id> for <bone-id>`
 - `[task-blocked] Blocked on <thing>: <what unblocks it>`
 
 Anchor an answer with `--reply-to` instead of quoting the message you answer. The anchor
@@ -855,7 +852,7 @@ Use `cass search "error or problem"` to find how similar issues were solved in p
 
 - [Handle reviewer feedback (fix/address/defer)](.agents/edict/review-response.md)
 
-- [Reviewer agent loop](.agents/edict/review-loop.md)
+- [Launch one exact Daybreak security review](.agents/edict/security-review.md)
 
 - [Merge a worker workspace (protocol merge + conflict recovery)](.agents/edict/merge-check.md)
 

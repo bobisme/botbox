@@ -7,7 +7,7 @@ use clap::Args;
 
 use crate::config::{
     self, AgentsConfig, Config, DevAgentConfig, MissionsConfig, ModelsConfig, ProjectConfig,
-    ReviewConfig, ReviewerAgentConfig, ToolsConfig, WorkerAgentConfig,
+    ReviewConfig, ToolsConfig, WorkerAgentConfig,
 };
 use crate::error::ExitError;
 use crate::layout::Layout;
@@ -175,7 +175,7 @@ impl InitArgs {
         fs::create_dir_all(&agents_dir)?;
         println!("Created .agents/edict/");
 
-        // Run sync to copy workflow docs, prompts, design docs, hooks
+        // Run sync to copy workflow docs, design docs, hooks
         // We create config first so sync can read it
         let config = build_config(&choices);
 
@@ -190,10 +190,6 @@ impl InitArgs {
         // Copy workflow docs (reuse sync logic)
         sync_workflow_docs(&agents_dir, layout)?;
         println!("Copied workflow docs");
-
-        // Copy prompt templates
-        sync_prompts(&agents_dir)?;
-        println!("Copied prompt templates");
 
         // Copy design docs
         sync_design_docs(&agents_dir)?;
@@ -256,7 +252,7 @@ impl InitArgs {
 
         // Register rite hooks
         if choices.tools.contains(&"rite".to_string()) {
-            register_spawn_hooks(&project_dir, &choices.name, &choices.reviewers, &config);
+            register_spawn_hooks(&project_dir, &choices.name, &config);
         }
 
         // Generate .gitignore
@@ -804,13 +800,6 @@ fn build_config(choices: &InitChoices) -> Config {
                 timeout: 900,
                 memory_limit: None,
             }),
-            reviewer: Some(ReviewerAgentConfig {
-                model: "strong".into(),
-                max_loops: 100,
-                pause: 2,
-                timeout: 900,
-                memory_limit: None,
-            }),
             responder: None,
         },
         models: ModelsConfig::default(),
@@ -833,7 +822,7 @@ fn build_default_env(languages: &[String]) -> std::collections::HashMap<String, 
 // --- Sync helpers (reuse embedded content from sync.rs) ---
 
 // Re-embed the same workflow docs as sync.rs
-use crate::commands::sync::{DESIGN_DOCS, REVIEWER_PROMPTS, WORKFLOW_DOCS};
+use crate::commands::sync::{DESIGN_DOCS, WORKFLOW_DOCS};
 
 fn sync_workflow_docs(agents_dir: &Path, layout: Layout) -> Result<()> {
     for (name, content) in WORKFLOW_DOCS {
@@ -846,28 +835,6 @@ fn sync_workflow_docs(agents_dir: &Path, layout: Layout) -> Result<()> {
     // Write version marker (layout-aware, matching `edict sync`'s staleness check)
     let version = crate::commands::sync::compute_docs_version(layout);
     fs::write(agents_dir.join(".version"), version)?;
-
-    Ok(())
-}
-
-fn sync_prompts(agents_dir: &Path) -> Result<()> {
-    use sha2::{Digest, Sha256};
-
-    let prompts_dir = agents_dir.join("prompts");
-    fs::create_dir_all(&prompts_dir)?;
-
-    for (name, content) in REVIEWER_PROMPTS {
-        let path = prompts_dir.join(name);
-        fs::write(&path, content).with_context(|| format!("writing {}", path.display()))?;
-    }
-
-    let mut hasher = Sha256::new();
-    for (name, content) in REVIEWER_PROMPTS {
-        hasher.update(name.as_bytes());
-        hasher.update(content.as_bytes());
-    }
-    let version = format!("{:x}", hasher.finalize());
-    fs::write(prompts_dir.join(".prompts-version"), &version[..32])?;
 
     Ok(())
 }
@@ -898,7 +865,7 @@ fn sync_design_docs(agents_dir: &Path) -> Result<()> {
 
 // --- Hook registration ---
 
-fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String], config: &Config) {
+fn register_spawn_hooks(project_dir: &Path, name: &str, config: &Config) {
     let abs_path = project_dir
         .canonicalize()
         .unwrap_or_else(|_| project_dir.to_path_buf());
@@ -919,24 +886,6 @@ fn register_spawn_hooks(project_dir: &Path, name: &str, reviewers: &[String], co
         .as_ref()
         .and_then(|r| r.memory_limit.as_deref());
     register_router_hook(&hook_cwd, &spawn_cwd, name, &agent, responder_memory_limit);
-
-    // Register reviewer hooks
-    let reviewer_memory_limit = config
-        .agents
-        .reviewer
-        .as_ref()
-        .and_then(|r| r.memory_limit.as_deref());
-    for role in reviewers {
-        let reviewer_agent = format!("{name}-{role}");
-        register_reviewer_hook(
-            &hook_cwd,
-            &spawn_cwd,
-            name,
-            &agent,
-            &reviewer_agent,
-            reviewer_memory_limit,
-        );
-    }
 }
 
 fn detect_hook_paths(abs_path: &Path) -> (String, String) {
@@ -1002,68 +951,6 @@ pub(super) fn register_router_hook(
     match crate::subprocess::ensure_rite_hook(&description, &args) {
         Ok((action, _id)) => println!("Router hook {action} for #{name}"),
         Err(e) => eprintln!("Warning: Failed to register router hook: {e}"),
-    }
-}
-
-pub(super) fn register_reviewer_hook(
-    hook_cwd: &str,
-    spawn_cwd: &str,
-    name: &str,
-    agent: &str,
-    reviewer_agent: &str,
-    memory_limit: Option<&str>,
-) {
-    let env_inherit = crate::reply::hook_env_inherit();
-    let claim_uri = format!("agent://{reviewer_agent}");
-    // Extract role suffix from reviewer_agent (e.g., "myproject-security" → "security")
-    let role = reviewer_agent
-        .strip_prefix(&format!("{name}-"))
-        .unwrap_or(reviewer_agent);
-    let description = format!("edict:{name}:reviewer-{role}");
-
-    let mut args: Vec<&str> = vec![
-        "--agent",
-        agent,
-        "--channel",
-        name,
-        "--mention",
-        reviewer_agent,
-        "--claim",
-        &claim_uri,
-        "--claim-owner",
-        reviewer_agent,
-        "--ttl",
-        "600",
-        "--priority",
-        "1",
-        "--cwd",
-        hook_cwd,
-        "--",
-        "vessel",
-        "spawn",
-        "--env-inherit",
-        env_inherit,
-    ];
-    if let Some(limit) = memory_limit {
-        args.push("--memory-limit");
-        args.push(limit);
-    }
-    args.extend_from_slice(&[
-        "--name",
-        reviewer_agent,
-        "--cwd",
-        spawn_cwd,
-        "--",
-        "edict",
-        "run",
-        "reviewer-loop",
-        "--agent",
-        reviewer_agent,
-    ]);
-
-    match crate::subprocess::ensure_rite_hook(&description, &args) {
-        Ok((action, _id)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
-        Err(e) => eprintln!("Warning: Failed to register mention hook for @{reviewer_agent}: {e}"),
     }
 }
 

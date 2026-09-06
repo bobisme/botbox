@@ -656,7 +656,7 @@ mod tests {
         g.status = ProtocolStatus::NeedsReview;
         g.steps(vec![
             "maw exec brave-tiger -- seal reviews request cr-123 --reviewers edict-security --agent crimson-storm".to_string(),
-            "rite send --agent crimson-storm edict 'Review requested: cr-123 @edict-security' -L review-request".to_string(),
+            "rite send --agent crimson-storm edict 'Review requested: cr-123; dispatch assigned reviewers explicitly' -L review-request".to_string(),
         ]);
         g.advise("Review is open. Awaiting approval from edict-security.".to_string());
 

@@ -148,28 +148,12 @@ pub fn build(
         crate::reply::anchor_section(crate::reply::anchor_from_env().as_deref(), agent, project),
         crate::reply::ask_and_wait_section(agent, crate::reply::DEFAULT_WAIT_TIMEOUT),
     );
-    let wait_timeout = crate::reply::DEFAULT_WAIT_TIMEOUT;
-    let review_recipe = crate::reply::review_recipe(
-        crate::reply::ReviewAsk::New,
-        agent,
-        project,
-        wait_timeout,
-        "    ",
-    );
-    let review_recipe_2 = crate::reply::review_recipe(
-        crate::reply::ReviewAsk::New,
-        agent,
-        project,
-        wait_timeout,
-        "  ",
-    );
-    let review_update_recipe = crate::reply::review_recipe(
-        crate::reply::ReviewAsk::Update,
-        agent,
-        project,
-        wait_timeout,
-        "       ",
-    );
+    let review_recipe =
+        crate::reply::review_recipe(crate::reply::ReviewAsk::New, agent, project, "    ");
+    let review_recipe_2 =
+        crate::reply::review_recipe(crate::reply::ReviewAsk::New, agent, project, "  ");
+    let review_update_recipe =
+        crate::reply::review_recipe(crate::reply::ReviewAsk::Update, agent, project, "       ");
 
     let prompt = format!(
         r#"You are lead dev agent "{agent}" for project "{project}".
@@ -347,7 +331,7 @@ RISK:MEDIUM — Standard review (if REVIEW is true):
     CHECK for existing review: maw exec default -- bn comments <id> | grep "Review created:"
     Create review with reviewer (if none exists): maw exec $WS -- seal reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
     IMMEDIATELY record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace $WS"
-    The @mention in the request spawns the reviewer.
+    Launch the dedicated Daybreak reviewer through `.agents/edict/security-review.md`.
 {review_recipe}
 
 RISK:HIGH — Security review + failure-mode checklist:
@@ -942,10 +926,10 @@ mod tests {
         assert!(build_mission_triage(false, Some("bn-mission")).is_empty());
     }
 
-    /// The review flow must ask and wait, not ask and hope. Every rebuild of the
-    /// prompt carries the wait and the escalate-on-timeout rule.
+    /// The review flow must explicitly launch and verify the exact reviewer,
+    /// rather than post a mention and hope an ambient hook finds the work.
     #[test]
-    fn prompt_teaches_ask_and_wait_for_reviews() {
+    fn prompt_teaches_explicit_daybreak_reviews() {
         let ctx = test_ctx();
         let prompt = build(&ctx, None, &[], None);
 
@@ -954,16 +938,16 @@ mod tests {
             "dev-loop prompt must carry the ask-and-wait protocol"
         );
         assert!(
-            prompt.contains("rite wait --agent test-dev --reply-to \"$req\" -t 300"),
-            "review requests must block on a reply to the request itself"
+            prompt.contains("security-review.md"),
+            "review requests must point to the exact Daybreak launch contract"
         );
         assert!(
-            prompt.contains("Do NOT send the request again."),
-            "a timed-out request must escalate, never repeat"
+            prompt.contains("Do NOT auto-retry"),
+            "a failed direct-review launch must fail closed"
         );
         assert!(
             prompt.contains("-L review-response"),
-            "the re-request path must anchor its own announcement"
+            "the re-request path must create its own anchor"
         );
     }
 

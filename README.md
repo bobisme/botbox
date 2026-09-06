@@ -26,7 +26,7 @@ Setup, sync, and runtime for multi-agent workflows. Bootstraps projects with wor
 1. **Initializes projects** for multi-agent collaboration (interactive or via flags)
 2. **Syncs workflow docs** from embedded templates to `.agents/edict/`
 3. **Validates health** via `doctor` command
-4. **Runs agent loops** as built-in subcommands (`dev-loop`, `worker-loop`, `reviewer-loop`, `responder`)
+4. **Runs agent loops** as built-in subcommands (`dev-loop`, `worker-loop`, `responder`)
 5. **Provides protocol commands** that guide agents through state transitions (`protocol start`, `merge`, `finish`, etc.)
 
 It glues together 5 companion tools (rite, maw, br/bv, seal, vessel) into a cohesive workflow and provides the runtime that drives agent behavior.
@@ -60,7 +60,6 @@ edict doctor
 # Run agent loops (typically invoked by vessel spawn, not manually)
 edict run dev-loop --agent myproject-dev
 edict run worker-loop --agent myproject-dev/worker-1
-edict run reviewer-loop --agent myproject-security
 
 # Protocol commands — check state and get guidance at transitions
 edict protocol start <bead-id> --agent $AGENT
@@ -82,7 +81,7 @@ After `edict init`:
     worker-loop.md       # Full triage-start-work-finish lifecycle
     review-request.md    # Request code review via seal
     review-response.md   # Handle reviewer feedback (fix/address/defer)
-    review-loop.md       # Reviewer agent loop
+    security-review.md   # Exact Daybreak security-review launch contract
     merge-check.md       # Verify approval before merge
     preflight.md         # Validate toolchain health
     cross-channel.md     # Ask questions, report bugs across projects
@@ -95,9 +94,6 @@ After `edict init`:
     coordination.md      # Multi-agent coordination patterns
   design/
     cli-conventions.md   # CLI tool design for humans, agents, and machines
-  prompts/
-    reviewer.md          # Generic reviewer prompt template
-    reviewer-security.md # Security reviewer prompt template
   hooks/                 # Claude Code event hooks (SessionStart, PostToolUse)
   .version               # Version hash for sync tracking
 AGENTS.md                # Generated with managed section + project-specific content
@@ -124,7 +120,6 @@ Agent loops are built-in Rust subcommands of the `edict` binary:
 - **`edict run responder`** — Universal router. Routes `!dev`, `!q`, `!bead` prefixes; triages bare messages.
 - **`edict run dev-loop`** — Lead dev. Triages work, dispatches parallel workers, monitors progress, merges.
 - **`edict run worker-loop`** — Worker. Sequential: triage → start → work → review → finish.
-- **`edict run reviewer-loop`** — Reviewer. Processes seal reviews, votes LGTM or BLOCK.
 - **`edict run triage`** — Token-efficient triage. Wraps `bv --robot-triage` with scannable output.
 - **`edict run iteration-start`** — Combined status snapshot. Aggregates inbox, bones, reviews, claims.
 
@@ -157,7 +152,7 @@ Edict coordinates these specialized tools that work together to enable multi-age
 Edict is a Rust project (edition 2024) with:
 
 - **Zero build step** beyond `cargo build` — workflow docs are embedded at compile time via `include_str!` and rendered with `minijinja`
-- **Agent loops as subcommands** — `dev-loop`, `worker-loop`, `reviewer-loop`, `responder` are built into the binary
+- **Agent loops as subcommands** — `dev-loop`, `worker-loop`, and `responder` are built into the binary
 - **Protocol commands** — `edict protocol start/merge/finish` check preconditions and output guidance
 - **Config migrations** — `edict sync` runs version-based migrations to update `.edict.json` and rite hooks
 

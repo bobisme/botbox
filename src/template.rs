@@ -175,8 +175,8 @@ fn list_workflow_docs() -> Vec<DocEntry> {
             description: "Handle reviewer feedback (fix/address/defer)".to_string(),
         },
         DocEntry {
-            name: "review-loop.md".to_string(),
-            description: "Reviewer agent loop".to_string(),
+            name: "security-review.md".to_string(),
+            description: "Launch one exact Daybreak security review".to_string(),
         },
         DocEntry {
             name: "merge-check.md".to_string(),

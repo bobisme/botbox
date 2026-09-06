@@ -386,16 +386,12 @@ fn build_blocked_section(
     steps.push(shell::rite_send_cmd(
         "agent",
         project,
-        &format!(
-            "Review re-requested: {} @{}",
-            review_id,
-            required_reviewers.join(" @")
-        ),
+        &format!("Review re-requested: {review_id}; dispatch its assigned reviewers explicitly"),
         "review-request",
     ));
     guidance.steps(steps);
     guidance.advise(format!(
-        "Review {review_id} is blocked. Address reviewer feedback, then re-request review."
+        "Review {review_id} is blocked. Address reviewer feedback, then re-request the same review and explicitly dispatch its assigned reviewers. For security, follow .agents/edict/security-review.md."
     ));
 }
 
@@ -427,21 +423,16 @@ fn build_needs_review_section(
             &decision.missing_approvals.join(","),
             "agent",
         ));
-        let mentions: Vec<String> = decision
-            .missing_approvals
-            .iter()
-            .map(|r| format!("@{r}"))
-            .collect();
         steps.push(shell::rite_send_cmd(
             "agent",
             project,
-            &format!("Review pending: {} {}", review_id, mentions.join(" ")),
+            &format!("Review pending: {review_id}; dispatch missing reviewers explicitly"),
             "review-request",
         ));
     }
     guidance.steps(steps);
     guidance.advise(format!(
-        "Review {review_id} needs approval. Wait for reviewers or re-request."
+        "Review {review_id} needs approval. Explicitly dispatch the missing reviewers; for security, follow .agents/edict/security-review.md."
     ));
 }
 
@@ -458,27 +449,25 @@ fn build_no_review_section(
     guidance.status = ProtocolStatus::NeedsReview;
     guidance.diagnostic(format!("No review found for bone {bone_id}."));
 
-    let mut steps = Vec::new();
-    steps.push(shell::seal_create_cmd(
-        workspace,
-        "agent",
-        bone_id,
-        bead_title,
-        &required_reviewers.join(","),
-    ));
-    let mentions: Vec<String> = required_reviewers.iter().map(|r| format!("@{r}")).collect();
-    steps.push(shell::rite_send_cmd(
-        "agent",
-        project,
-        &format!("Review requested: <review-id> {}", mentions.join(" ")),
-        "review-request",
-    ));
+    let steps = vec![
+        shell::seal_create_cmd(
+            workspace,
+            "agent",
+            bone_id,
+            bead_title,
+            &required_reviewers.join(","),
+        ),
+        shell::rite_send_cmd(
+            "agent",
+            project,
+            "Review requested: <review-id>; dispatch assigned reviewers explicitly",
+            "review-request",
+        ),
+    ];
     guidance.steps(steps);
-    guidance.advise(format!(
-        "No review exists yet. Create one and request reviewers before finishing. {}",
-        // Matches the placeholder identity used by the steps above.
-        shell::review_wait_advice("agent", project),
-    ));
+    guidance.advise(
+        "No review exists yet. Create one, then explicitly dispatch its assigned reviewers before finishing. For security, follow .agents/edict/security-review.md.".to_string(),
+    );
 }
 
 /// Execute finish steps and render the execution report.

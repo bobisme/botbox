@@ -48,18 +48,6 @@ pub enum RunCommand {
         #[arg(long)]
         model: Option<String>,
     },
-    /// Run the reviewer-loop
-    ReviewerLoop {
-        /// Project root directory
-        #[arg(long)]
-        project_root: Option<PathBuf>,
-        /// Agent name override
-        #[arg(long)]
-        agent: Option<String>,
-        /// Model to use
-        #[arg(long)]
-        model: Option<String>,
-    },
     /// Run the responder (message router)
     Responder {
         /// Project root directory
@@ -126,15 +114,6 @@ impl RunCommand {
                 agent,
                 model,
             } => crate::commands::worker_loop::run_worker_loop(
-                project_root.clone(),
-                agent.clone(),
-                model.clone(),
-            ),
-            Self::ReviewerLoop {
-                project_root,
-                agent,
-                model,
-            } => crate::commands::run_reviewer_loop::run_reviewer_loop(
                 project_root.clone(),
                 agent.clone(),
                 model.clone(),

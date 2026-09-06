@@ -7,7 +7,6 @@ pub mod protocol;
 pub mod responder;
 pub mod run;
 pub mod run_agent;
-pub mod run_reviewer_loop;
 pub mod schema;
 pub mod status;
 pub mod sync;

@@ -253,8 +253,6 @@ pub struct AgentsConfig {
     #[serde(default)]
     pub worker: Option<WorkerAgentConfig>,
     #[serde(default)]
-    pub reviewer: Option<ReviewerAgentConfig>,
-    #[serde(default)]
     pub responder: Option<ResponderAgentConfig>,
 }
 
@@ -328,21 +326,6 @@ pub struct WorkerAgentConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ReviewerAgentConfig {
-    #[serde(default = "default_model_reviewer")]
-    pub model: String,
-    #[serde(default = "default_max_loops", alias = "maxLoops")]
-    pub max_loops: u32,
-    #[serde(default = "default_pause")]
-    pub pause: u32,
-    #[serde(default = "default_timeout_900")]
-    pub timeout: u64,
-    /// Memory limit for reviewer agents (e.g. "4G", "2G"). Passed as --memory-limit to vessel spawn.
-    #[serde(default)]
-    pub memory_limit: Option<String>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ResponderAgentConfig {
     #[serde(default = "default_model_responder")]
     pub model: String,
@@ -363,9 +346,6 @@ fn default_model_dev() -> String {
 }
 fn default_model_worker() -> String {
     "balanced".into()
-}
-fn default_model_reviewer() -> String {
-    "strong".into()
 }
 fn default_model_responder() -> String {
     "balanced".into()
@@ -636,12 +616,12 @@ impl Config {
 
 /// Resolve the identity a spawned agent loop should adopt.
 ///
-/// Agent loops (`responder`, `reviewer-loop`) are launched by rite hooks. In hook
+/// The responder loop is launched by a rite hook. In hook
 /// context, `$AGENT`/`$RITE_AGENT` in the environment are set to the *sender* of
 /// the triggering message — not the identity the loop should run as. Resolving
 /// from the environment is exactly the regression tracked by `bn-uwj7` (and the
-/// earlier `bd-3i5c` / `bd-2z38` fixes): a reviewer spawned for `@project-security`
-/// would vote and merge as the message sender instead of the mentioned reviewer.
+/// earlier `bd-3i5c` / `bd-2z38` fixes): a hook-spawned responder would act as
+/// the message sender instead of its configured identity.
 ///
 /// This resolver therefore **never reads the environment**. Identity comes only
 /// from the explicit `--agent` flag (`agent_override`), falling back to the
@@ -650,9 +630,7 @@ impl Config {
 ///
 /// Callers MUST then set `AGENT`/`RITE_AGENT` to the returned value so downstream
 /// tools (rite, seal, bn) and the `init-agent` hook resolve the loop's identity
-/// rather than the sender's. Both the responder and the reviewer-loop route
-/// through this single choke point so the two paths cannot drift apart and
-/// reintroduce sender-identity resolution on only one of them.
+/// rather than the sender's.
 #[must_use]
 pub fn resolve_loop_identity(agent_override: Option<String>, config: Option<&Config>) -> String {
     agent_override.unwrap_or_else(|| config.map(Config::default_agent).unwrap_or_default())
@@ -774,11 +752,6 @@ timeout = 900
 model = "haiku"
 timeout = 600
 
-[agents.reviewer]
-model = "opus"
-max_loops = 20
-pause = 2
-timeout = 600
 "#;
 
         let config = Config::parse_toml(toml_str).unwrap();
@@ -835,8 +808,7 @@ reviewers = ["security"]
     #[test]
     fn resolve_loop_identity_prefers_explicit_agent_flag() {
         let config = config_with_default_agent("myapp", Some("myapp-dev"));
-        // The --agent flag (e.g. the reviewer's own identity from its mention hook)
-        // always wins over the configured default.
+        // The explicit --agent flag always wins over the configured default.
         assert_eq!(
             resolve_loop_identity(Some("myapp-security".to_string()), Some(&config)),
             "myapp-security"
@@ -941,8 +913,7 @@ reviewers = ["security"]
             "pushMain": false,
             "agents": {
                 "dev": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 900 },
-                "worker": { "model": "haiku", "timeout": 600 },
-                "reviewer": { "model": "opus", "maxLoops": 20, "pause": 2, "timeout": 600 }
+                "worker": { "model": "haiku", "timeout": 600 }
             }
         }"#;
 

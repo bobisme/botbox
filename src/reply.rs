@@ -167,43 +167,40 @@ pub enum ReviewAsk {
     Update,
 }
 
-/// Build the review-request recipe: anchor the request, block on the verdict.
+/// Build the review-request recipe: anchor the request, then launch the exact
+/// dedicated Daybreak reviewer described in the managed workflow document.
 ///
 /// `indent` is the leading whitespace of the surrounding prompt step, so the
 /// recipe reads as part of it. The dev loop and the worker loop share this one
 /// text, so the two flows cannot drift apart.
 #[must_use]
-pub fn review_recipe(
-    ask: ReviewAsk,
-    agent: &str,
-    project: &str,
-    timeout: u64,
-    indent: &str,
-) -> String {
+pub fn review_recipe(ask: ReviewAsk, agent: &str, project: &str, indent: &str) -> String {
     let (message, label) = match ask {
         ReviewAsk::New => (
-            format!("Review requested: <review-id> for <id> @{project}-security"),
+            "Dedicated security review requested: <review-id> for <id>".to_string(),
             "review-request",
         ),
         ReviewAsk::Update => (
-            format!("Review updated: <review-id> — addressed feedback @{project}-security"),
+            "Dedicated security re-review requested: <review-id> — addressed feedback".to_string(),
             "review-response",
         ),
     };
 
     let body = format!(
-        r#"ANCHOR the request, then block on the verdict — do not post and hope:
+        r#"ANCHOR the request, then launch the dedicated reviewer — do not post and hope:
   req=$(rite send --agent {agent} {project} "{message}" -L {label} --format json | jq -r .id)
   maw exec default -- bn bone comment add <id> "Review anchor: $req for <review-id>"
-  rite wait --agent {agent} --reply-to "$req" -t {timeout} --format json
-- exit 0: the reviewer answered. Confirm the verdict with `maw exec $WS -- seal review <review-id>`.
+  Set `review_id=<review-id>`, `ws=$WS`, `request_anchor=$req`, and `kind={label}`. Then read and
+  execute `.agents/edict/security-review.md`'s **Launch contract** exactly. It starts one named,
+  labelled Vessel Codex session on `gpt-daybreak-blue-latest`, passes those exact values, and waits
+  through Agentbus. Do not use an @mention or scan for another pending review.
+- Agentbus done + a real Seal vote from `{project}-security` on this review is required before
+  continuing. Confirm it with `maw exec $WS -- seal review <review-id> --format json`.
   LGTM -> continue to finish in THIS iteration. BLOCKED -> fix the threads now, then re-request
-  with a NEW anchor. Do not wait for the next iteration.
-- exit 1: no answer inside {timeout}s. Do NOT send the request again. Post one message with
-  -L task-blocked that names the anchor, then STOP this iteration. The next iteration reads the
-  review state with `maw exec $WS -- seal review <review-id>` instead of asking again.
-- exit 2: the anchor is not a known id. Re-read it with
-  `rite history {project} --from {agent} -n 1 --format json`. Do NOT send the request again."#
+  the same review with a NEW Rite anchor and its new commit.
+- Agentbus unresolved, blocked, unavailable, or timeout: post one anchored `task-blocked` message,
+  record it on the bone, release `review://{project}/<review-id>`, and STOP. Do NOT auto-retry,
+  send an @mention, or substitute another review."#
     );
 
     body.lines()
@@ -285,32 +282,34 @@ mod tests {
 
     #[test]
     fn review_recipe_indents_every_line_and_covers_each_exit() {
-        let recipe = review_recipe(ReviewAsk::New, "edict-dev", "edict", 300, "    ");
+        let recipe = review_recipe(ReviewAsk::New, "edict-dev", "edict", "    ");
         assert!(
             recipe
                 .lines()
                 .all(|l| l.is_empty() || l.starts_with("    "))
         );
-        assert!(recipe.contains("rite wait --agent edict-dev --reply-to \"$req\" -t 300"));
-        for code in ["exit 0", "exit 1", "exit 2"] {
-            assert!(recipe.contains(code), "recipe must cover {code}");
-        }
+        assert!(recipe.contains("security-review.md"));
+        assert!(recipe.contains("gpt-daybreak-blue-latest"));
+        assert!(recipe.contains("Agentbus"));
         assert_eq!(
-            recipe.matches("Do NOT send the request again.").count(),
-            2,
-            "both the timeout and the bad-id path must forbid a re-send"
+            recipe.matches("Do NOT auto-retry").count(),
+            1,
+            "a failed direct-review launch must not silently retry"
         );
     }
 
     #[test]
     fn review_recipe_uses_the_label_of_the_ask() {
-        let new = review_recipe(ReviewAsk::New, "edict-dev", "edict", 300, "");
-        assert!(new.contains("Review requested: <review-id> for <id> @edict-security"));
+        let new = review_recipe(ReviewAsk::New, "edict-dev", "edict", "");
+        assert!(new.contains("Dedicated security review requested: <review-id> for <id>"));
+        assert!(!new.contains("@edict-security"));
         assert!(new.contains("-L review-request"));
 
-        let update = review_recipe(ReviewAsk::Update, "edict-dev", "edict", 300, "");
+        let update = review_recipe(ReviewAsk::Update, "edict-dev", "edict", "");
         assert!(
-            update.contains("Review updated: <review-id> — addressed feedback @edict-security")
+            update.contains(
+                "Dedicated security re-review requested: <review-id> — addressed feedback"
+            )
         );
         assert!(update.contains("-L review-response"));
     }

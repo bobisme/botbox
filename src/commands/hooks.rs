@@ -68,7 +68,7 @@ impl HooksCommand {
 
 /// Install global agent hooks into ~/.claude/settings.json (and Pi extensions).
 ///
-/// If `project_root` is provided, also registers rite hooks (router + reviewers).
+/// If `project_root` is provided, also registers the rite router hook.
 fn install_hooks(project_root: Option<&Path>) -> Result<()> {
     // Install global Claude Code hooks
     let home = dirs::home_dir().context("could not determine home directory")?;
@@ -81,7 +81,7 @@ fn install_hooks(project_root: Option<&Path>) -> Result<()> {
     install_pi_extension(&pi_ext_path)?;
     println!("Installed Pi extension at {}", pi_ext_path.display());
 
-    // If in a botbox project, also register rite hooks (router + reviewers)
+    // If in an Edict project, also register the rite router hook.
     if let Some(root) = project_root {
         let root = resolve_project_root(Some(root))?;
         let config = load_config(&root)?;
@@ -416,10 +416,6 @@ fn register_rite_hooks(root: &Path, config: &Config) -> Result<()> {
 
     validate_name(project_name, "project name")?;
     validate_name(&channel, "channel name")?;
-    for reviewer in &config.review.reviewers {
-        validate_name(reviewer, "reviewer name")?;
-    }
-
     let env_inherit = crate::reply::hook_env_inherit();
     let root_str = root.display().to_string();
 
@@ -431,15 +427,6 @@ fn register_rite_hooks(root: &Path, config: &Config) -> Result<()> {
         &root_str,
         env_inherit,
     );
-    register_reviewer_hooks(
-        config,
-        project_name,
-        &agent,
-        &channel,
-        &root_str,
-        env_inherit,
-    );
-
     Ok(())
 }
 
@@ -502,75 +489,6 @@ fn register_router_hook(
     }
 }
 
-/// Register mention-based reviewer hooks for each configured reviewer.
-fn register_reviewer_hooks(
-    config: &Config,
-    project_name: &str,
-    agent: &str,
-    channel: &str,
-    root_str: &str,
-    env_inherit: &str,
-) {
-    let reviewer_memory_limit = config
-        .agents
-        .reviewer
-        .as_ref()
-        .and_then(|r| r.memory_limit.as_deref());
-
-    for reviewer in &config.review.reviewers {
-        let reviewer_agent = format!("{project_name}-{reviewer}");
-        let claim_uri = format!("agent://{reviewer_agent}");
-        let desc = format!("edict:{project_name}:reviewer-{reviewer}");
-
-        let mut reviewer_args: Vec<&str> = vec![
-            "--agent",
-            agent,
-            "--channel",
-            channel,
-            "--mention",
-            &reviewer_agent,
-            "--claim",
-            &claim_uri,
-            "--claim-owner",
-            &reviewer_agent,
-            "--ttl",
-            "600",
-            "--priority",
-            "1",
-            "--cwd",
-            root_str,
-            "--",
-            "vessel",
-            "spawn",
-            "--env-inherit",
-            env_inherit,
-        ];
-        if let Some(limit) = reviewer_memory_limit {
-            reviewer_args.push("--memory-limit");
-            reviewer_args.push(limit);
-        }
-        reviewer_args.extend_from_slice(&[
-            "--name",
-            &reviewer_agent,
-            "--cwd",
-            root_str,
-            "--",
-            "edict",
-            "run",
-            "reviewer-loop",
-            "--agent",
-            &reviewer_agent,
-        ]);
-
-        match crate::subprocess::ensure_rite_hook(&desc, &reviewer_args) {
-            Ok((action, _)) => println!("Reviewer hook for @{reviewer_agent} {action}"),
-            Err(e) => {
-                eprintln!("Warning: failed to register reviewer hook for @{reviewer_agent}: {e}");
-            }
-        }
-    }
-}
-
 fn check_rite_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) {
     let output = run_command("rite", &["hooks", "list", "--format", "json"], Some(root));
 
@@ -594,12 +512,6 @@ fn check_rite_hooks(root: &Path, config: &Config, issues: &mut Vec<String>) {
     if !has_hook(hooks, &format!("edict:{name}:responder")) {
         issues.push(format!("Missing rite router hook (edict:{name}:responder)"));
     }
-
-    for reviewer in &config.review.reviewers {
-        if !has_hook(hooks, &format!("edict:{name}:reviewer-{reviewer}")) {
-            issues.push(format!("Missing rite reviewer hook for @{name}-{reviewer}"));
-        }
-    }
 }
 
 /// Report whether a hook with this edict description is registered.
@@ -616,21 +528,14 @@ mod tests {
     #[test]
     fn has_hook_matches_the_edict_description() {
         // Shape as rite emits it: no `condition.claim`, no `condition.mention`.
-        let hooks = vec![
-            json!({
-                "id": "hk-1",
-                "condition": {"type": "claim_available", "pattern": "agent://demo-dev"},
-                "description": "edict:demo:responder"
-            }),
-            json!({
-                "id": "hk-2",
-                "condition": {"type": "mention_received", "agent": "demo-security"},
-                "description": "edict:demo:reviewer-security"
-            }),
-        ];
+        let hooks = vec![json!({
+            "id": "hk-1",
+            "condition": {"type": "claim_available", "pattern": "agent://demo-dev"},
+            "description": "edict:demo:responder"
+        })];
 
         assert!(has_hook(&hooks, "edict:demo:responder"));
-        assert!(has_hook(&hooks, "edict:demo:reviewer-security"));
+        assert!(!has_hook(&hooks, "edict:demo:reviewer-security"));
         assert!(!has_hook(&hooks, "edict:other:responder"));
         assert!(!has_hook(&[], "edict:demo:responder"));
     }

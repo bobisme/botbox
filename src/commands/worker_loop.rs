@@ -302,7 +302,7 @@ Go directly to:
          - maw exec $WS -- seal reviews create --agent {agent} --title "<id>: <title>" --description "<summary>" --reviewers {project}-security
          - IMMEDIATELY record: maw exec default -- bn bone comment add <id> "Review created: <review-id> in workspace $WS"
        rite statuses set --agent {agent} "Review: <review-id>".
-       The @mention in the request spawns the reviewer.
+       Launch the dedicated Daybreak reviewer through `.agents/edict/security-review.md`.
 {review_recipe}
      Do NOT close the bone. Do NOT merge. Do NOT release claims until the verdict is LGTM.
      Output: <promise>COMPLETE</promise>
@@ -329,7 +329,6 @@ Go directly to:
                     crate::reply::ReviewAsk::New,
                     &self.agent,
                     &self.project,
-                    crate::reply::DEFAULT_WAIT_TIMEOUT,
                     "       ",
                 ),
                 critical_approvers = if self.critical_approvers.is_empty() {
@@ -458,7 +457,7 @@ At the end of your work, output exactly one of these completion signals:
          4. Announce and wait for the re-review:
 {review_update_recipe}
        * If PENDING (no votes yet): STOP this iteration. Wait for the reviewer.
-       * If review not found: DO NOT merge or create a new review. The reviewer may still be starting up (hooks have latency). STOP this iteration and wait. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
+       * If review not found: DO NOT merge or create a new review. Inspect the recorded dedicated-review session and its Agentbus result. STOP. Only create a new review if the workspace was destroyed AND 3+ iterations have passed since the review comment.
      - If no review comment (work was in progress when session ended):
        * Read the workspace code to see what's already done.
        * Complete the remaining work in the EXISTING workspace — do NOT create a new one.
@@ -583,7 +582,6 @@ Key rules:
                 crate::reply::ReviewAsk::Update,
                 &self.agent,
                 &self.project,
-                crate::reply::DEFAULT_WAIT_TIMEOUT,
                 "            ",
             ),
         )
@@ -1037,7 +1035,7 @@ mod tests {
     /// The worker must block on the review verdict and escalate on timeout,
     /// instead of re-requesting the review on the next iteration.
     #[test]
-    fn build_prompt_teaches_ask_and_wait_for_reviews() {
+    fn build_prompt_teaches_explicit_daybreak_reviews() {
         unsafe {
             std::env::set_var("EDICT_BONE", "");
             std::env::set_var("EDICT_WORKSPACE", "");
@@ -1061,8 +1059,9 @@ mod tests {
 
         let prompt = worker.build_prompt();
         assert!(prompt.contains("ASK AND WAIT"));
-        assert!(prompt.contains("rite wait --agent test-worker --reply-to \"$req\" -t 300"));
-        assert!(prompt.contains("Do NOT send the request again."));
+        assert!(prompt.contains("security-review.md"));
+        assert!(prompt.contains("gpt-daybreak-blue-latest"));
+        assert!(prompt.contains("Do NOT auto-retry"));
     }
 
     #[test]
