@@ -12,3 +12,5 @@
 1788735468297141	edict-dev	itc:v3:AWLkkmTOfzk5kQAAAAAAQeqtbv7rtAAAAAEvZg		item.link	bn-235r	{"link_type":"blocks","target":"bn-x963"}	blake3:QrXyOd7Tkhzr2fZjQKQC5l-OUSJ7ExIepaRWc_9wg7c
 1788735468314362	edict-dev	itc:v3:AWLkkmTOfzk5kQAAAAAAQeqtbv7rtAAAAAEvZw		item.update	bn-11qk	{"field":"labels","value":{"action":"remove","label":"proposal"}}	blake3:V7GxFChOVhZMRc2RCLgw58MAdBvIM43Ji2Z0FZSS1XI
 1788735468333789	edict-dev	itc:v3:AWLkkmTOfzk5kQAAAAAAQeqtbv7rtAAAAAEvaA		item.move	bn-11qk	{"reason":"Accepted: explicit Daybreak architecture validated and implementation goal/bones created.","state":"done"}	blake3:NCSARaSrGla7cUp12hOCYTG4BvzJl6trhbgyGTcHmhg
+1788735505451023	edict-dev	itc:v3:AWLkkmTOfzk5kQAAAAAAQeqtbv7rtAAAAAEvaQ		item.move	bn-cae8	{"state":"doing"}	blake3:yGDWuJEdJJ4w7Q6A5B_YJYao6lqprQos0w36KGjIBfA
+1788735505463180	edict-dev	itc:v3:AWLkkmTOfzk5kQAAAAAAQeqtbv7rtAAAAAEvag		item.assign	bn-cae8	{"action":"assign","agent":"edict-dev"}	blake3:g-49PP90zEU4BNxucjm9euLVlaFMXKk5WIE2tlkak4w
