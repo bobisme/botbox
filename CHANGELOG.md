@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1] — 2026-09-07
+
+### Fixed
+
+- Made the authoring agent, rather than the workspace-write Daybreak reviewer, own the anchored Rite handoff, review-claim release, and Vessel session lifecycle.
+- Explicitly terminate each exact security-review Vessel session after a verified Seal verdict or after a snapshot on an unverified outcome; graceful Codex exit is followed by a bounded exact-session kill backstop.
+
 ## [0.29.0] - 2026-09-06
 
 ### Changed
