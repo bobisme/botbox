@@ -378,6 +378,40 @@ mod tests {
         }
     }
 
+    #[test]
+    fn security_review_contract_terminates_its_exact_vessel_session() {
+        let content = WORKFLOW_DOCS
+            .iter()
+            .find_map(|(name, content)| (*name == "security-review.md").then_some(*content))
+            .expect("security review workflow doc is embedded");
+        let rendered = render_workflow_doc(content, Layout::Root).unwrap();
+
+        assert!(rendered.contains("terminate_security_review_session()"));
+        assert!(rendered.contains("vessel send-keys \"$session\" ctrl-c"));
+        assert!(rendered.contains("vessel kill \"$session\""));
+        assert!(rendered.contains("Do not send Rite messages, release $claim"));
+        assert!(rendered.contains("releasing `$claim`"));
+
+        let snapshot = rendered
+            .find("Inspect `vessel snapshot \"$session\"`")
+            .unwrap();
+        let failure_teardown = rendered[snapshot..]
+            .find("terminate_security_review_session`")
+            .expect("failure path terminates the session");
+        assert!(failure_teardown > 0, "failure snapshot precedes teardown");
+
+        let success_verify = rendered
+            .rfind("maw exec \"$ws\" -- seal review \"$review_id\" --format json")
+            .unwrap();
+        let success_teardown = rendered[success_verify..]
+            .find("terminate_security_review_session ||")
+            .expect("success path terminates before releasing the claim");
+        let claim_release = rendered[success_verify..]
+            .find("rite claims release --agent \"$reviewer\" \"$claim\"")
+            .expect("success path releases the claim");
+        assert!(success_teardown < claim_release);
+    }
+
     /// Rendering each templated doc in this repo's own layout must be
     /// byte-identical to the committed `.agents/edict/*.md` — guaranteeing the
     /// layout templating produces exactly what `edict sync` ships here. This repo

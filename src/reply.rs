@@ -192,15 +192,17 @@ pub fn review_recipe(ask: ReviewAsk, agent: &str, project: &str, indent: &str) -
   maw exec default -- bn bone comment add <id> "Review anchor: $req for <review-id>"
   Set `review_id=<review-id>`, `ws=$WS`, `request_anchor=$req`, and `kind={label}`. Then read and
   execute `.agents/edict/security-review.md`'s **Launch contract** exactly. It starts one named,
-  labelled Vessel Codex session on `gpt-daybreak-blue-latest`, passes those exact values, and waits
-  through Agentbus. Do not use an @mention or scan for another pending review.
+  labelled Vessel Codex session on `gpt-daybreak-blue-latest`, passes those exact values, waits
+  through Agentbus, and has the AUTHOR perform the Rite handoff and terminate that exact session.
+  Do not use an @mention or scan for another pending review.
 - Agentbus done + a real Seal vote from `{project}-security` on this review is required before
   continuing. Confirm it with `maw exec $WS -- seal review <review-id> --format json`.
   LGTM -> continue to finish in THIS iteration. BLOCKED -> fix the threads now, then re-request
   the same review with a NEW Rite anchor and its new commit.
-- Agentbus unresolved, blocked, unavailable, or timeout: post one anchored `task-blocked` message,
-  record it on the bone, release `review://{project}/<review-id>`, and STOP. Do NOT auto-retry,
-  send an @mention, or substitute another review."#
+- Agentbus unresolved, blocked, unavailable, or timeout: snapshot and terminate the named Vessel
+  session, then post one anchored `task-blocked` message and record it on the bone. Release
+  `review://{project}/<review-id>` only after teardown succeeds; otherwise retain the claim and
+  STOP. Do NOT auto-retry, send an @mention, or substitute another review."#
     );
 
     body.lines()
@@ -291,6 +293,8 @@ mod tests {
         assert!(recipe.contains("security-review.md"));
         assert!(recipe.contains("gpt-daybreak-blue-latest"));
         assert!(recipe.contains("Agentbus"));
+        assert!(recipe.contains("AUTHOR perform the Rite handoff"));
+        assert!(recipe.contains("only after teardown succeeds"));
         assert_eq!(
             recipe.matches("Do NOT auto-retry").count(),
             1,
